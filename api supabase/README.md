@@ -54,12 +54,15 @@ Keputusan Abe Din (2026-04-15): **cut Google habis**, tinggal PDF je.
 | Firebase Storage | → **Supabase Storage** |
 | Firebase Functions | → Cleanup (logic perlu pindah ke Cloud Run / Supabase Edge) |
 | Firebase Hosting (`rmsproapp/public/*`) | → Supabase Hosting / Vercel / Netlify |
-| FCM (push notification) | → **(BELUM DECIDE)** — OneSignal / Expo / kekal FCM / drop push |
+| ~~FCM (push notification)~~ | ✅ **KEKAL Firebase** (exception — lihat bawah) |
 
 - **Flutter (`rmsproapp`) DULU** → Web (`web_app`) mirror pattern Flutter kemudian.
 
-### ❌ Exclude — Kekal Google
-- **PDF generation KEKAL di Cloud Run** (`rmsproapp/functions/index.js` + `lib/utils/pdf_url_helper.dart`) — reason: Puppeteer/Chromium, pixel-perfect HTML→PDF, Supabase Edge Function tak mampu.
+### ❌ Exclude — Kekal Google (2 exception sahaja)
+1. **Cloud Run — PDF generation** (`rmsproapp/functions/index.js` + `lib/utils/pdf_url_helper.dart`)
+   - Reason: Puppeteer/Chromium, pixel-perfect HTML→PDF. Supabase Edge Function tak mampu.
+2. **FCM — Push Notification** (`firebase_messaging` package, `notification_service.dart`)
+   - Reason: Android push delivery **mandatory** guna FCM (tiada alternatif). Supabase tiada native push service. Firebase project tinggal minimal (FCM only).
 - **Marketplace feature POSPONE** — skip file berikut:
   - `rmsproapp/lib/services/marketplace_service.dart`
   - `rmsproapp/lib/services/billplz_service.dart`
@@ -86,11 +89,11 @@ Plan ni disusun ikut **dependency order**. Jangan skip fasa.
 - [x] `0.2` **Firebase Storage**: ✅ **Pindah ke Supabase Storage**
 - [ ] `0.3` **Credentials**: `.env + flutter_dotenv` / `--dart-define` / hardcode config file?
 - [ ] `0.4` **Realtime audit**: screen mana guna `.snapshots()` → perlu Supabase Realtime?
-- [ ] `0.5` **Push notification (FCM)**: OneSignal / Expo / kekal FCM / drop push?
+- [x] `0.5` **Push notification (FCM)**: ✅ **Kekal Firebase FCM** (mandatory untuk Android push)
 - [ ] `0.6` **Firebase Hosting**: pindah ke mana — Supabase / Vercel / Netlify?
-- [ ] `0.7` **Firebase Functions**: audit `rmsproapp/functions/index.js` — logic apa, pindah mana?
+- [ ] `0.7` **Firebase Functions**: audit `rmsproapp/functions/index.js` — logic apa, pindah mana (PDF logic kekal Cloud Run)?
 
-> ⚠️ 0.3–0.7 belum dijawab, jangan mula Fasa 1 sebelum clear.
+> ⚠️ 0.3, 0.4, 0.6, 0.7 belum dijawab — clear dulu sebelum Fasa 1.
 
 ---
 
@@ -200,8 +203,8 @@ Order ikut dependency (paling independent dulu):
 
 ### 🔹 FASA 8 — Flutter Cleanup *(~30-45 min)*
 - [ ] `8.1` Buang `cloud_firestore`, `firebase_auth`, `firebase_storage` dari `rmsproapp/pubspec.yaml`
-- [ ] `8.2` Buang `firebase_core` — kecuali kalau kekal FCM (Fasa 0.5)
-- [ ] `8.3` Kekal `firebase_messaging` kalau FCM dipilih
+- [ ] `8.2` **KEKAL** `firebase_core` + `firebase_messaging` (FCM exception)
+- [ ] `8.3` Firebase project minimal — disable Firestore/Auth/Storage, biar FCM je
 - [ ] `8.4` `flutter pub get` + build verify
 - [ ] `8.5` Full regression click-through
 - [ ] `8.6` Commit + tag `flutter-supabase-migrated`
