@@ -20,11 +20,33 @@ Tujuan: Claude (assistant) atau agent lain boleh rujuk balik pada future convers
 - **Domain**: `rmspro.net`
 - **Registrar + DNS**: **Cloudflare**
 - **Current hosting**: Firebase Hosting (project `rmspro-2f454`, IP `199.36.158.100`)
-- **Target hosting**: **Cloudflare Pages** (post-migration)
-- **Subdomain plan (cadangan)**:
-  - `rmspro.net` → `web_app` (dashboard)
-  - `app.rmspro.net` → Flutter web build
-  - `form.rmspro.net` atau path → static pages (tracking, booking, catalog)
+- **Target hosting**: **Cloudflare Pages** — ONE project serve semua
+
+### URL Structure (Final)
+
+| URL | Serve | Auth | Source folder |
+|---|---|---|---|
+| `rmspro.net/` | Staff login + dashboard | Public login, protected dalam | `web_app/` |
+| `rmspro.net/tracking` | Customer check status repair | ❌ Public | `rmsproapp/public/tracking.html` |
+| `rmspro.net/booking` | Customer borang booking online | ❌ Public | `rmsproapp/public/borang_booking.html` |
+| `rmspro.net/catalog` | Customer browse catalog | ❌ Public | `rmsproapp/public/catalog/` |
+| `rmspro.net/promote` | Landing page promosi | ❌ Public | `rmsproapp/public/promote/` |
+| `rmspro.net/form` | Borang pelanggan | ❌ Public | `rmsproapp/public/borangpelanggan/` |
+| `rmspro.net/link` | Link shortener | ❌ Public | `rmsproapp/public/link.html` |
+
+**Flutter mobile app (Android/iOS)** — takde URL, access Supabase API terus.
+
+### Flutter Web — DROP
+- `rmsproapp/build/web` + `rmsproapp/firebase.json` hosting config → **remove**.
+- Flutter = mobile platform sahaja (Android + iOS).
+
+### Public Pages Strategy
+- Public pages (tracking, booking, catalog) akses Supabase guna **anon key**.
+- **RLS policies khas** untuk public access:
+  - `tracking`: read job status by `job_id + phone` (no list all)
+  - `booking`: insert-only, no select/update (customer takleh baca booking orang lain)
+  - `catalog`: read-only product list (public)
+  - Rate limit via Cloudflare (kalau perlu)
 
 ## 🔑 Credentials
 
@@ -327,19 +349,24 @@ Order ikut Flutter untuk pattern consistency:
 - [ ] `12.5.1` Cloudflare Dashboard → Workers & Pages → Create `rmspro-web` project, connect GitHub repo
 - [ ] `12.5.2` Build config: root `web_app/`, framework Vite, build command `npm run build`, output `dist/`
 - [ ] `12.5.3` First deploy → verify `rmspro-web.pages.dev` jalan
-- [ ] `12.5.4` Create second Pages project `rmspro-app` untuk Flutter web build (`rmsproapp/build/web`)
-- [ ] `12.5.5` Setup GitHub Actions (atau Cloudflare build) — auto deploy Flutter web bila push
-- [ ] `12.5.6` Tambah custom domain:
-  - `rmspro.net` → `rmspro-web` (main dashboard)
-  - `app.rmspro.net` → `rmspro-app` (Flutter web)
-  - `form.rmspro.net` atau `rmspro.net/form/*` → static pages (tracking, booking, catalog)
+- [ ] `12.5.4` Consolidate folder structure:
+  - Copy `rmsproapp/public/tracking.html` → `web_app/tracking.html`
+  - Copy `rmsproapp/public/borang_booking.html` → `web_app/booking.html`
+  - Copy `rmsproapp/public/catalog/` → `web_app/catalog/`
+  - Copy `rmsproapp/public/promote/` → `web_app/promote/`
+  - Copy `rmsproapp/public/borangpelanggan/` → `web_app/form/`
+  - Copy `rmsproapp/public/link.html` → `web_app/link.html`
+- [ ] `12.5.5` Update Vite config untuk handle multi-page (MPA) kalau perlu
+- [ ] `12.5.6` Custom domain: `rmspro.net` → `rmspro-web` project
 - [ ] `12.5.7` Update DNS di Cloudflare:
   - Remove A record `199.36.158.100`
   - Add CNAME records untuk Pages custom domains
 - [ ] `12.5.8` Tunggu SSL provision (auto, ~1-5 min CF)
 - [ ] `12.5.9` Verify live semua domain — guna `curl` atau browser
 - [ ] `12.5.10` Firebase Hosting → disable (tapi JANGAN delete project — FCM masih kat sini)
-- [ ] `12.5.11` Update `.firebaserc` / `firebase.json` — buang hosting config, biar functions+FCM je
+- [ ] `12.5.11` Update `.firebaserc` / `firebase.json` — buang hosting config, biar FCM je
+- [ ] `12.5.12` Remove `rmsproapp/firebase.json` hosting config (Flutter web DROP)
+- [ ] `12.5.13` Remove `rmsproapp/public/` folder (dah consolidate ke `web_app/`)
 
 ---
 
