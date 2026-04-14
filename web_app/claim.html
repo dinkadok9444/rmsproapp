@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Claim Warranty</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/kerugian.css">
+  <link rel="stylesheet" href="css/claim.css">
+</head>
+<body class="claim-page">
+  <div class="lost-header claim-header">
+    <div class="lost-header__top">
+      <div class="lost-title"><i class="fas fa-shield-halved"></i> CLAIM WARRANTY <span class="claim-count" id="cwCount">0</span></div>
+      <button type="button" class="btn-new" id="cwNewBtn" style="background:var(--blue)"><i class="fas fa-plus"></i> DAFTAR CLAIM</button>
+    </div>
+    <div class="lost-searchrow">
+      <div class="lost-search">
+        <i class="fas fa-search"></i>
+        <input type="text" id="cwSearch" placeholder="Cari siri / nama / tel / model / claimID…">
+      </div>
+      <select id="cwFilter" class="lost-select">
+        <option value="ALL">Aktif (tanpa Approve)</option>
+        <option value="Claim Waiting Approval">Waiting Approval</option>
+        <option value="Claim Approve">Approve</option>
+        <option value="Claim In Progress">In Progress</option>
+        <option value="Claim Done">Done</option>
+        <option value="Claim Ready to Pickup">Ready to Pickup</option>
+        <option value="Claim Complete">Complete</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="lost-list" id="cwList"></div>
+  <div class="lost-empty hidden" id="cwEmpty">
+    <i class="fas fa-shield-halved"></i>
+    <div class="lbl">Tiada rekod claim.</div>
+    <div class="sub">Klik "Daftar Claim" untuk mula.</div>
+  </div>
+
+  <!-- Search repair modal -->
+  <div class="lost-modal-backdrop" id="cwSearchModal">
+    <div class="lost-modal">
+      <div class="lost-modal__head">
+        <span style="color:var(--primary)"><i class="fas fa-magnifying-glass"></i> CARI REPAIR UNTUK CLAIM</span>
+        <button type="button" class="lost-modal__close" id="cwSearchClose"><i class="fas fa-xmark"></i></button>
+      </div>
+      <p style="color:var(--text-muted); font-size:10px; margin:0">Cari berdasarkan siri atau nombor telefon. Hanya repair dari kedai ini.</p>
+      <input type="text" id="cwRepairSearch" class="lost-input" placeholder="Masukkan siri atau tel…">
+      <div class="cw-count" id="cwRepairCount">0 keputusan</div>
+      <div class="cw-results" id="cwRepairResults"></div>
+    </div>
+  </div>
+
+  <!-- Update modal -->
+  <div class="lost-modal-backdrop" id="cwUpdateModal">
+    <div class="lost-modal">
+      <div class="lost-modal__head">
+        <span style="color:var(--blue)"><i class="fas fa-pen-to-square"></i> KEMASKINI <span id="cwUpId"></span></span>
+        <button type="button" class="lost-modal__close" id="cwUpClose"><i class="fas fa-xmark"></i></button>
+      </div>
+
+      <div class="cw-info" id="cwUpInfo"></div>
+
+      <label>STATUS CLAIM</label>
+      <select id="cwUpStatus" class="lost-input">
+        <option>Claim Waiting Approval</option>
+        <option>Claim Approve</option>
+        <option>Claim In Progress</option>
+        <option>Claim Done</option>
+        <option>Claim Ready to Pickup</option>
+        <option>Claim Complete</option>
+      </select>
+
+      <div class="cw-group" style="--_c: var(--cyan)">
+        <div class="cw-group__title"><i class="fas fa-calendar-days"></i> TARIKH</div>
+        <div class="cw-3col">
+          <div><label>Hantar</label><input type="datetime-local" id="cwUpHantar" class="lost-input"></div>
+          <div><label>Siap</label><input type="datetime-local" id="cwUpSiap" class="lost-input"></div>
+          <div><label>Pickup</label><input type="datetime-local" id="cwUpPickup" class="lost-input"></div>
+        </div>
+      </div>
+
+      <div class="cw-group" style="--_c: var(--blue)">
+        <div class="cw-group__title"><i class="fas fa-user-gear"></i> STAF</div>
+        <div class="cw-3col">
+          <div><label>Terima</label><select id="cwUpStaffT" class="lost-input"></select></div>
+          <div><label>Repair</label><select id="cwUpStaffR" class="lost-input"></select></div>
+          <div><label>Serah</label><select id="cwUpStaffS" class="lost-input"></select></div>
+        </div>
+      </div>
+
+      <div class="cw-group" style="--_c: var(--yellow)">
+        <div class="cw-group__title"><i class="fas fa-shield-halved"></i> CLAIM WARRANTY</div>
+        <div class="cw-2col">
+          <div><label>Jenis</label>
+            <select id="cwUpWType" class="lost-input">
+              <option>TIADA</option><option>ASAL</option><option>TAMBAH</option>
+            </select>
+          </div>
+          <div id="cwUpWTempohWrap" class="hidden"><label>Tempoh (Hari)</label>
+            <select id="cwUpWTempoh" class="lost-input">
+              <option value="7">7</option><option value="14">14</option><option value="30">30</option><option value="90">90</option>
+            </select>
+          </div>
+        </div>
+        <div id="cwUpWExp" class="cw-exp hidden"></div>
+      </div>
+
+      <label>NOTA / CATATAN</label>
+      <textarea id="cwUpNota" class="lost-input" rows="3" placeholder="Nota atau catatan tambahan..."></textarea>
+
+      <div class="lost-modal__actions">
+        <button type="button" class="btn-danger" id="cwUpDelete"><i class="fas fa-trash-can"></i> PADAM</button>
+        <button type="button" class="btn-submit" id="cwUpSave" style="margin:0; padding:10px 18px; background:var(--green)"><i class="fas fa-floppy-disk"></i> SIMPAN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete confirm -->
+  <div class="lost-modal-backdrop" id="cwDelModal">
+    <div class="lost-modal lost-modal--sm">
+      <div class="lost-modal__head"><span style="color:var(--red)"><i class="fas fa-triangle-exclamation"></i> PADAM CLAIM?</span></div>
+      <p style="color:var(--text-sub); font-size:11px; margin:0 0 var(--sp-3)" id="cwDelMsg">Tindakan ini tidak boleh dibatalkan.</p>
+      <div class="lost-modal__actions">
+        <button type="button" class="btn-ghost" id="cwDelCancel">Batal</button>
+        <button type="button" class="btn-danger" id="cwDelOk">PADAM</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="lost-toast" id="cwToast" hidden></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/claim.js"></script>
+</body>
+</html>

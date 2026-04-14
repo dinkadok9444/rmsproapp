@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Kerugian</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/kerugian.css">
+</head>
+<body class="lost-page">
+  <div class="lost-header">
+    <div class="lost-header__top">
+      <div class="lost-title"><i class="fas fa-triangle-exclamation"></i> REKOD KERUGIAN</div>
+      <button type="button" class="btn-new" id="lsNewBtn"><i class="fas fa-plus"></i> REKOD BARU</button>
+    </div>
+    <div class="lost-summary">
+      <div>
+        <div class="lost-summary__lbl">JUMLAH KERUGIAN</div>
+        <div class="lost-summary__sub" id="lsCount">0 rekod</div>
+      </div>
+      <div class="lost-summary__amt" id="lsTotal">RM 0.00</div>
+    </div>
+    <div class="lost-searchrow">
+      <div class="lost-search">
+        <i class="fas fa-search"></i>
+        <input type="text" id="lsSearch" placeholder="Cari keterangan / jenis / siri…">
+      </div>
+      <select id="lsSort" class="lost-select">
+        <option value="ZA">Terbaru</option>
+        <option value="AZ">Terlama</option>
+      </select>
+    </div>
+    <div class="lost-chips" id="lsChips"></div>
+  </div>
+
+  <div class="lost-list" id="lsList"></div>
+  <div class="lost-empty hidden" id="lsEmpty">
+    <i class="fas fa-shield-heart"></i>
+    <div class="lbl">Tiada rekod kerugian.</div>
+    <div class="sub">Semoga perniagaan sentiasa selamat.</div>
+  </div>
+
+  <!-- Add/Edit modal -->
+  <div class="lost-modal-backdrop" id="lsFormModal">
+    <div class="lost-modal">
+      <div class="lost-modal__head">
+        <span><i class="fas fa-triangle-exclamation"></i> <span id="lsFormTitle">REKOD KERUGIAN</span></span>
+        <button type="button" class="lost-modal__close" id="lsFormClose"><i class="fas fa-xmark"></i></button>
+      </div>
+      <label>JENIS KERUGIAN</label>
+      <select id="lsJenis" class="lost-input">
+        <option>Pecah Masa Repair</option>
+        <option>CN Tak Approve</option>
+        <option>Rosak / Defect</option>
+        <option>Hilang</option>
+        <option>Lain-lain</option>
+      </select>
+      <label>NO SIRI (optional)</label>
+      <input type="text" id="lsSiri" class="lost-input" placeholder="Cth: RMS2024...">
+      <label>JUMLAH (RM)</label>
+      <input type="number" step="0.01" id="lsJumlah" class="lost-input" placeholder="0.00">
+      <label>KETERANGAN</label>
+      <textarea id="lsKeterangan" class="lost-input" rows="3" placeholder="Ceritakan apa yang berlaku..."></textarea>
+      <button type="button" class="btn-submit" id="lsSubmit"><i class="fas fa-floppy-disk"></i> <span id="lsSubmitLbl">SIMPAN</span></button>
+    </div>
+  </div>
+
+  <!-- Delete confirm -->
+  <div class="lost-modal-backdrop" id="lsDeleteModal">
+    <div class="lost-modal lost-modal--sm">
+      <div class="lost-modal__head"><span style="color:var(--red)">PADAM REKOD?</span></div>
+      <p style="color:var(--text-sub);font-size:var(--fs-xs);margin:0 0 var(--sp-3)">Rekod ini akan dipadam kekal. Teruskan?</p>
+      <div class="lost-modal__actions">
+        <button type="button" class="btn-ghost" id="lsDelCancel">Batal</button>
+        <button type="button" class="btn-danger" id="lsDelOk">PADAM</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="lost-toast" id="lsToast" hidden></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/kerugian.js"></script>
+</body>
+</html>

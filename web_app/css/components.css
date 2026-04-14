@@ -1,0 +1,236 @@
+/* ===== COMPONENTS ===== */
+
+/* ---- Header ---- */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: var(--header-h);
+  background: var(--bg-deep);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.app-header__inner {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-inline: var(--sp-4);
+  max-width: 1280px;
+  margin-inline: auto;
+}
+.app-header__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 900;
+  font-size: var(--fs-lg);
+  color: var(--primary);
+  letter-spacing: 1.5px;
+}
+.app-header__brand i { font-size: 1.2em; }
+.app-header__title {
+  font-weight: 800;
+  font-size: var(--fs-md);
+  color: var(--text-primary);
+}
+.app-header__spacer { flex: 1; }
+.app-header__actions { display: flex; gap: var(--sp-2); align-items: center; }
+
+.icon-btn {
+  width: 38px; height: 38px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-sub);
+  border: 1px solid var(--border);
+  transition: all .15s;
+}
+.icon-btn:hover { background: var(--side); color: var(--primary); }
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius);
+  font-weight: 800;
+  font-size: var(--fs-sm);
+  letter-spacing: .5px;
+  transition: all .15s;
+  min-height: 44px;
+}
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0,196,125,.3);
+}
+.btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+.btn-primary:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; box-shadow: none; }
+.btn-outline {
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+.btn-outline:hover { background: var(--primary-light); }
+.btn-block { width: 100%; }
+
+/* ---- Inputs ---- */
+.field { display: flex; flex-direction: column; gap: var(--sp-2); }
+.field__label {
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  color: var(--text-sub);
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+.field__row { display: flex; justify-content: space-between; align-items: center; }
+.field__link { font-size: var(--fs-xs); font-weight: 700; color: var(--primary); }
+.field__link:hover { text-decoration: underline; }
+.input {
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: border-color .15s, box-shadow .15s;
+  min-height: 46px;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0,196,125,.15);
+}
+.input::placeholder { color: var(--text-dim); font-weight: 500; }
+
+/* ---- Card ---- */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: var(--sp-5);
+}
+
+/* ---- Segment toggle (Pemilik/Staf) ---- */
+.segment {
+  display: flex;
+  background: var(--bg);
+  border: 1px solid var(--border-med);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 3px;
+}
+.segment__item {
+  flex: 1;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: 7px;
+  text-align: center;
+  font-size: var(--fs-xs);
+  font-weight: 900;
+  letter-spacing: .5px;
+  color: var(--text-muted);
+  transition: all .15s;
+}
+.segment__item.is-active {
+  background: var(--primary);
+  color: #000;
+}
+
+/* ---- Checkbox ---- */
+.checkbox {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+.checkbox input { accent-color: var(--primary); width: 18px; height: 18px; }
+
+/* ---- Alert ---- */
+.alert {
+  padding: var(--sp-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  text-align: center;
+}
+.alert-error {
+  background: rgba(239,68,68,.1);
+  border: 1px solid rgba(239,68,68,.3);
+  color: var(--red);
+}
+
+/* ---- Module grid (dashboard tiles) ---- */
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: var(--sp-3);
+}
+.module-tile {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-4) var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  text-align: center;
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+  min-height: 110px;
+}
+.module-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+  border-color: var(--primary);
+}
+.module-tile__icon {
+  width: clamp(40px, 4vw + 24px, 54px);
+  height: clamp(40px, 4vw + 24px, 54px);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: clamp(18px, 1.4vw + 10px, 22px);
+  color: #fff;
+  flex-shrink: 0;
+}
+.module-tile__label {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-sub);
+  line-height: 1.25;
+}
+
+/* Larger LCD: bigger tiles */
+@media (min-width: 1024px) {
+  .module-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .module-tile { min-height: 130px; }
+}
+
+/* ---- Bottom nav (mobile-style preserved on web) ---- */
+.bottom-nav {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 10px rgba(0,0,0,.05);
+  display: flex;
+  padding: var(--sp-1) var(--sp-2);
+  z-index: 40;
+}
+.bottom-nav__item {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px;
+  padding: var(--sp-2);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+}
+.bottom-nav__item.is-active { color: var(--primary); background: var(--primary-light); }
+.bottom-nav__item i { font-size: 1.3em; }

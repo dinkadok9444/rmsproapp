@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Referral Program</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <style>
+    .rf-head{display:flex;align-items:center;gap:8px;padding:12px;background:#fff;border-bottom:1px solid #e2e8f0;}
+    .rf-title{color:#10b981;font-size:14px;font-weight:900;flex:1;}
+    .rf-title i{margin-right:6px;}
+    .rf-count{color:#94a3b8;font-size:10px;font-weight:700;}
+    .rf-jana-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:#10b981;color:#000;border:none;border-radius:6px;font-size:9px;font-weight:900;cursor:pointer;}
+    .rf-search{padding:10px 12px;background:#fff;border-bottom:1px solid #e2e8f0;}
+    .rf-search input{width:100%;padding:10px 14px;border:none;border-radius:10px;background:#f1f5f9;font:inherit;font-size:12px;}
+    .rf-list{padding:12px;}
+    .rf-card{margin-bottom:10px;padding:12px;background:linear-gradient(#fff,#f8fafc);border-radius:12px;border:1px solid rgba(16,185,129,.2);cursor:pointer;}
+    .rf-card.suspended{border-color:rgba(220,38,38,.2);}
+    .rf-row1{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+    .rf-nama{color:#0f172a;font-size:13px;font-weight:800;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .rf-badge{padding:2px 6px;border-radius:4px;font-size:8px;font-weight:900;}
+    .rf-badge.active{background:rgba(16,185,129,.15);color:#10b981;}
+    .rf-badge.susp{background:rgba(220,38,38,.15);color:#dc2626;}
+    .rf-tel{color:#94a3b8;font-size:10px;margin-top:4px;}
+    .rf-row3{display:flex;align-items:center;gap:6px;margin-top:6px;}
+    .rf-code{padding:4px 8px;background:rgba(167,139,250,.15);border:1px solid rgba(167,139,250,.3);border-radius:6px;color:#a78bfa;font-size:11px;font-weight:900;}
+    .rf-wa{display:inline-flex;align-items:center;gap:4px;padding:4px 8px;background:rgba(37,211,102,.15);border:1px solid rgba(37,211,102,.3);border-radius:6px;color:#25d366;font-size:8px;font-weight:900;text-decoration:none;cursor:pointer;}
+    .rf-bank{margin-left:auto;text-align:right;}
+    .rf-bank-name{color:#94a3b8;font-size:8px;}
+    .rf-comm{color:#10b981;font-size:12px;font-weight:900;}
+    .rf-empty{text-align:center;padding:40px 20px;color:#94a3b8;}
+    .rf-empty i{font-size:40px;color:#cbd5e1;margin-bottom:12px;}
+    .rf-empty-t{font-weight:700;}
+    .rf-empty-s{font-size:10px;color:#cbd5e1;margin-top:4px;}
+
+    /* Modals */
+    .rf-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;z-index:1000;}
+    .rf-modal-bg.is-open{display:flex;}
+    .rf-modal{background:#fff;border-radius:20px 20px 0 0;padding:20px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto;}
+    .rf-modal-head{display:flex;justify-content:space-between;align-items:center;}
+    .rf-modal-title{font-size:13px;font-weight:900;display:flex;gap:8px;align-items:center;}
+    .rf-modal-title.green{color:#10b981;}
+    .rf-modal-title.purple{color:#a78bfa;}
+    .rf-x{background:none;border:none;color:#dc2626;font-size:16px;cursor:pointer;}
+    .rf-div{border-top:1px solid #e2e8f0;margin:14px 0;}
+    .rf-desc{color:#94a3b8;font-size:10px;margin-bottom:10px;}
+    .rf-search-box{position:relative;}
+    .rf-search-box input{width:100%;padding:10px 70px 10px 36px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font:inherit;font-size:12px;}
+    .rf-search-box .fa-search{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#64748b;font-size:14px;}
+    .rf-search-btn{position:absolute;right:4px;top:4px;padding:6px 10px;background:#10b981;color:#000;border:none;border-radius:6px;font-size:10px;font-weight:900;cursor:pointer;}
+    .rf-cust-hit{margin-bottom:6px;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;display:flex;align-items:center;gap:8px;}
+    .rf-cust-hit strong{color:#0f172a;font-size:12px;font-weight:800;}
+    .rf-cust-hit small{color:#94a3b8;font-size:10px;display:block;}
+    .rf-cust-hit .addbtn{padding:4px 8px;background:#10b981;color:#000;border:none;border-radius:6px;font-size:9px;font-weight:900;cursor:pointer;display:inline-flex;align-items:center;gap:4px;}
+    .rf-cust-hit .exists{padding:4px 8px;background:rgba(148,163,184,.2);color:#94a3b8;border-radius:6px;font-size:9px;font-weight:900;}
+    .rf-info-row{display:flex;margin-bottom:6px;}
+    .rf-info-row .lbl{width:80px;color:#94a3b8;font-size:10px;font-weight:800;}
+    .rf-info-row .val{flex:1;color:#475569;font-size:11px;font-weight:600;}
+    .rf-field{margin-bottom:10px;}
+    .rf-field label{display:block;color:#475569;font-size:10px;font-weight:900;margin-bottom:4px;}
+    .rf-field input{width:100%;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font:inherit;font-size:12px;}
+    .rf-actions{display:flex;gap:6px;margin-top:6px;}
+    .rf-actions button{flex:1;padding:10px;border:none;border-radius:8px;font-weight:900;font-size:11px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;}
+    .rf-save{background:#f59e0b;color:#000;}
+    .rf-toggle{background:#eab308;color:#000;}
+    .rf-toggle.active{background:#10b981;color:#000;}
+    .rf-del{background:#dc2626;color:#fff;flex:0 0 auto !important;padding:10px 14px !important;}
+    .rf-claim-hdr{display:flex;align-items:center;gap:6px;color:#06b6d4;font-size:11px;font-weight:900;margin:8px 0;}
+    .rf-claim{margin-bottom:6px;padding:10px;background:#f8fafc;border:1px solid rgba(234,179,8,.2);border-radius:8px;display:flex;gap:8px;align-items:center;}
+    .rf-claim.paid{border-color:rgba(16,185,129,.2);}
+    .rf-claim-info{flex:1;}
+    .rf-claim-nm{color:#0f172a;font-size:11px;font-weight:700;}
+    .rf-claim-pk{color:#94a3b8;font-size:9px;}
+    .rf-claim-ts{color:#cbd5e1;font-size:8px;}
+    .rf-claim-right{text-align:right;}
+    .rf-claim-amt{font-size:12px;font-weight:900;}
+    .rf-claim-pay{margin-top:4px;padding:3px 8px;border-radius:4px;font-size:8px;font-weight:900;cursor:pointer;border:1px solid;}
+    .rf-snack{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#10b981;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;}
+    .rf-snack.err{background:#dc2626;}
+  </style>
+</head>
+<body class="settings-page">
+
+  <div class="rf-head">
+    <div class="rf-title"><i class="fas fa-user-group"></i>REFERRAL</div>
+    <span class="rf-count" id="rfCount">0 rekod</span>
+    <button class="rf-jana-btn" id="btnJana"><i class="fas fa-plus"></i> JANA KOD</button>
+  </div>
+  <div class="rf-search">
+    <input id="rfSearch" placeholder="Cari nama, telefon, kod...">
+  </div>
+  <div class="rf-list" id="rfList"></div>
+
+  <!-- Search customer modal -->
+  <div class="rf-modal-bg" id="modalSearch">
+    <div class="rf-modal">
+      <div class="rf-modal-head">
+        <div class="rf-modal-title green"><i class="fas fa-user-plus"></i> CARI PELANGGAN</div>
+        <button class="rf-x" data-close="modalSearch"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="rf-div"></div>
+      <div class="rf-desc">Cari dengan no. siri atau no. telefon untuk menjana kod referral</div>
+      <div class="rf-search-box">
+        <i class="fas fa-search"></i>
+        <input id="custSearchInp" placeholder="No. Siri / Telefon">
+        <button class="rf-search-btn" id="custSearchBtn">CARI</button>
+      </div>
+      <div id="custResults" style="margin-top:10px;max-height:50vh;overflow-y:auto;"></div>
+    </div>
+  </div>
+
+  <!-- Edit referral modal -->
+  <div class="rf-modal-bg" id="modalEdit">
+    <div class="rf-modal">
+      <div class="rf-modal-head">
+        <div class="rf-modal-title purple"><i class="fas fa-pen-to-square"></i> EDIT REFERRAL</div>
+        <button class="rf-x" data-close="modalEdit"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="rf-div"></div>
+      <div id="editInfo"></div>
+      <div class="rf-div"></div>
+      <div class="rf-field"><label>NAMA BANK</label><input id="editBank" placeholder="Maybank, CIMB..."></div>
+      <div class="rf-field"><label>NO AKAUN</label><input id="editAcc" placeholder="1234567890"></div>
+      <div class="rf-field"><label>KOMISYEN (RM)</label><input id="editComm" type="number" step="0.01" placeholder="0.00"></div>
+      <div class="rf-actions">
+        <button class="rf-save" id="editSave"><i class="fas fa-floppy-disk"></i> SIMPAN</button>
+        <button class="rf-toggle" id="editToggle"><i class="fas fa-pause"></i> GANTUNG</button>
+        <button class="rf-del" id="editDel"><i class="fas fa-trash-can"></i></button>
+      </div>
+      <div class="rf-claim-hdr"><i class="fas fa-clock-rotate-left"></i><span id="claimHdrTxt">SEJARAH TUNTUTAN (0)</span></div>
+      <div id="claimList"></div>
+    </div>
+  </div>
+
+  <!-- PIN dialog -->
+  <div class="rf-modal-bg" id="modalPin" style="align-items:center;">
+    <div class="rf-modal" style="border-radius:16px;max-width:360px;">
+      <div class="rf-modal-title" style="color:#dc2626;"><i class="fas fa-triangle-exclamation"></i> PADAM REFERRAL</div>
+      <div style="color:#475569;font-size:12px;margin:12px 0;" id="pinMsg"></div>
+      <label style="color:#475569;font-size:10px;font-weight:900;">MASUKKAN PIN SV</label>
+      <input id="pinInp" type="password" maxlength="4" style="width:100%;padding:12px;font-size:16px;text-align:center;letter-spacing:4px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin-top:4px;">
+      <div class="rf-actions">
+        <button style="background:#94a3b8;color:#fff;" data-close="modalPin">BATAL</button>
+        <button class="rf-del" id="pinOk" style="flex:1 !important;">PADAM</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/referral.js"></script>
+</body>
+</html>

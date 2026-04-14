@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#6366F1">
+  <title>RMS Pro — Supervisor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/supervisor.css">
+</head>
+<body class="supervisor-page">
+  <!-- ===== HEADER (sticky top) ===== -->
+  <header class="sup-header">
+    <div class="sup-header__avatar" id="supAvatar"><i class="fas fa-user-shield"></i></div>
+    <div class="sup-header__info">
+      <h1 class="sup-header__shop" id="shopName">RMS PRO</h1>
+      <div class="sup-header__meta">
+        <span class="sup-header__badge" id="shopBranch"><i class="fas fa-building"></i> <span id="shopBranchText">—</span></span>
+        <span class="sup-header__staff" id="staffPill"><i class="fas fa-user"></i> <span id="staffName">SUPERVISOR</span></span>
+      </div>
+    </div>
+    <a class="sup-header__switch" id="btnBranchSwitch" href="branch.html" title="Tukar ke Mod Cawangan">
+      <i class="fas fa-store"></i> BRANCH
+    </a>
+    <button class="sup-header__bell" id="btnBell" title="Notifikasi" aria-label="Notifikasi">
+      <i class="fas fa-bell"></i>
+      <span class="sup-header__badge-count hidden" id="notifBadge">0</span>
+    </button>
+    <button class="sup-header__logout" id="btnLogout" title="Log Keluar" aria-label="Log Keluar">
+      <i class="fas fa-right-from-bracket"></i>
+    </button>
+  </header>
+
+  <!-- ===== TOP TAB TILES (sticky under header) ===== -->
+  <div class="sup-tabs-wrap">
+    <div class="sup-tabs" id="supTabs">
+      <button class="sup-tile is-active c-indigo" data-tab="DASHBOARD">
+        <span class="sup-tile__icon"><i class="fas fa-chart-pie"></i></span>
+        <span class="sup-tile__label" data-i18n="tab.dashboard">Dashboard</span>
+      </button>
+      <button class="sup-tile c-amber" data-tab="INVENTORY">
+        <span class="sup-tile__icon"><i class="fas fa-boxes-stacked"></i></span>
+        <span class="sup-tile__label" data-i18n="tab.inventory">Inventori</span>
+      </button>
+      <button class="sup-tile c-teal" data-tab="KEWANGAN">
+        <span class="sup-tile__icon"><i class="fas fa-sack-dollar"></i></span>
+        <span class="sup-tile__label" data-i18n="tab.kewangan">Kewangan</span>
+      </button>
+      <button class="sup-tile c-red" data-tab="REFUND">
+        <span class="sup-tile__icon"><i class="fas fa-file-shield"></i></span>
+        <span class="sup-tile__label" data-i18n="tab.refund">Refund</span>
+      </button>
+      <button class="sup-tile c-sky" data-tab="STAFF">
+        <span class="sup-tile__icon"><i class="fas fa-users"></i></span>
+        <span class="sup-tile__label" data-i18n="tab.staff">Staf</span>
+      </button>
+      <button class="sup-tile c-pink" data-tab="MARKETING">
+        <span class="sup-tile__icon"><i class="fas fa-bullhorn"></i></span>
+        <span class="sup-tile__label" data-i18n="tab.marketing">Marketing</span>
+      </button>
+      <button class="sup-tile c-orange" data-tab="EXPENSE">
+        <span class="sup-tile__icon"><i class="fas fa-receipt"></i></span>
+        <span class="sup-tile__label" data-i18n="tab.expense">Perbelanjaan</span>
+      </button>
+      <button class="sup-tile c-green" data-tab="UNTUNGRUGI">
+        <span class="sup-tile__icon"><i class="fas fa-chart-line"></i></span>
+        <span class="sup-tile__label" data-i18n="tab.untungrugi">Untung Rugi</span>
+      </button>
+      <button class="sup-tile c-violet" data-tab="MARKETPLACE">
+        <span class="sup-tile__icon"><i class="fas fa-store"></i></span>
+        <span class="sup-tile__label" data-i18n="tab.marketplace">Marketplace</span>
+      </button>
+      <button class="sup-tile c-slate" data-tab="SETTINGS">
+        <span class="sup-tile__icon"><i class="fas fa-gear"></i></span>
+        <span class="sup-tile__label" data-i18n="tab.settings">Tetapan</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== CONTENT AREA — tab body swaps here ===== -->
+  <main class="sup-content" id="supContent">
+    <!-- DASHBOARD -->
+    <section class="sup-tab-pane is-active" data-tab="DASHBOARD">
+      <div class="sv-dash" id="svDash">
+        <header class="sv-dash__head">
+          <h2 class="sv-dash__title" data-i18n="dash.title">DASHBOARD</h2>
+          <p class="sv-dash__sub" data-i18n="dash.sub">Statistik jualan &amp; job</p>
+        </header>
+
+        <!-- Segment toggle -->
+        <div class="sv-seg" id="svSeg">
+          <button class="sv-seg__btn is-active" data-seg="0">
+            <i class="fas fa-screwdriver-wrench"></i>
+            <span data-i18n="dash.segRepair">Job Repair</span>
+          </button>
+          <button class="sv-seg__btn" data-seg="1" id="svSegPhone">
+            <i class="fas fa-mobile-screen-button"></i>
+            <span data-i18n="dash.segPhone">Jualan Telefon</span>
+          </button>
+        </div>
+
+        <!-- Filter -->
+        <div class="sv-filter">
+          <select class="sv-filter__sel" id="svFilter">
+            <option value="SEMUA"      data-i18n="dash.fAll">Semua</option>
+            <option value="HARI_INI"   data-i18n="dash.fToday">Hari Ini</option>
+            <option value="MINGGU_INI" data-i18n="dash.fWeek">Minggu Ini</option>
+            <option value="BULAN_INI"  data-i18n="dash.fMonth">Bulan Ini</option>
+            <option value="TAHUN_INI"  data-i18n="dash.fYear">Tahun Ini</option>
+            <option value="CUSTOM"     data-i18n="dash.fCustom">Pilih Tarikh</option>
+          </select>
+        </div>
+        <div class="sv-range hidden" id="svRangePick">
+          <input type="date" id="svRangeFrom">
+          <span>—</span>
+          <input type="date" id="svRangeTo">
+        </div>
+        <div class="sv-range-pill hidden" id="svRangePill">
+          <i class="fas fa-calendar-day"></i>
+          <span id="svRangeText">—</span>
+        </div>
+
+        <!-- Body -->
+        <div class="sv-dash__body" id="svDashBody"></div>
+      </div>
+    </section>
+
+    <!-- INVENTORY -->
+    <section class="sup-tab-pane" data-tab="INVENTORY">
+      <div class="sup-placeholder">
+        <div class="sup-placeholder__icon c-amber"><i class="fas fa-boxes-stacked"></i></div>
+        <h2 class="sup-placeholder__title">INVENTORI</h2>
+        <p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p>
+      </div>
+    </section>
+
+    <!-- KEWANGAN -->
+    <section class="sup-tab-pane" data-tab="KEWANGAN">
+      <div class="sup-placeholder">
+        <div class="sup-placeholder__icon c-teal"><i class="fas fa-sack-dollar"></i></div>
+        <h2 class="sup-placeholder__title">KEWANGAN</h2>
+        <p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p>
+      </div>
+    </section>
+
+    <!-- REFUND/CLAIM -->
+    <section class="sup-tab-pane" data-tab="REFUND">
+      <div class="sup-placeholder">
+        <div class="sup-placeholder__icon c-red"><i class="fas fa-file-shield"></i></div>
+        <h2 class="sup-placeholder__title">REFUND / CLAIM</h2>
+        <p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p>
+      </div>
+    </section>
+
+    <!-- STAFF --><section class="sup-tab-pane" data-tab="STAFF"><div class="sup-placeholder"><div class="sup-placeholder__icon c-sky"><i class="fas fa-users"></i></div><h2 class="sup-placeholder__title">STAF</h2><p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p></div></section>
+    <!-- MARKETING --><section class="sup-tab-pane" data-tab="MARKETING"><div class="sup-placeholder"><div class="sup-placeholder__icon c-amber"><i class="fas fa-bullhorn"></i></div><h2 class="sup-placeholder__title">MARKETING</h2><p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p></div></section>
+    <!-- EXPENSE --><section class="sup-tab-pane" data-tab="EXPENSE"><div class="sup-placeholder"><div class="sup-placeholder__icon c-amber"><i class="fas fa-receipt"></i></div><h2 class="sup-placeholder__title">PERBELANJAAN</h2><p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p></div></section>
+    <!-- UNTUNGRUGI --><section class="sup-tab-pane" data-tab="UNTUNGRUGI"><div class="sup-placeholder"><div class="sup-placeholder__icon c-teal"><i class="fas fa-chart-line"></i></div><h2 class="sup-placeholder__title">UNTUNG RUGI</h2><p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p></div></section>
+    <!-- MARKETPLACE --><section class="sup-tab-pane" data-tab="MARKETPLACE"><div class="sup-placeholder"><div class="sup-placeholder__icon c-indigo"><i class="fas fa-store"></i></div><h2 class="sup-placeholder__title">MARKETPLACE</h2><p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p></div></section>
+    <!-- SETTINGS --><section class="sup-tab-pane" data-tab="SETTINGS"><div class="sup-placeholder"><div class="sup-placeholder__icon"><i class="fas fa-gear"></i></div><h2 class="sup-placeholder__title">TETAPAN</h2><p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p></div></section>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/supervisor.js"></script>
+  <script src="js/sv_dashboard.js"></script>
+</body>
+</html>

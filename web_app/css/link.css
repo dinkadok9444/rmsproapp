@@ -1,0 +1,126 @@
+/* ===== LINK MODULE ===== */
+.link-page { padding: 0 0 80px; }
+
+/* Container shared style — banner, domain, dan kad pautan kongsi saiz penuh container */
+.link-banner,
+.domain-card,
+.link-card {
+  width: 100%;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: var(--sp-4);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--sp-3);
+  align-items: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  box-sizing: border-box;
+}
+.link-banner { border-color: transparent; color: #fff;
+  background: linear-gradient(135deg, #0EA5E9, #3B82F6); }
+.link-list { display: grid; gap: var(--sp-4); width: 100%; }
+
+/* Icons — sama saiz untuk ketiga-tiga */
+.link-banner__icon,
+.domain-card__icon,
+.link-card__icon {
+  width: 48px; height: 48px;
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.link-banner__icon { background: rgba(255,255,255,.2); }
+.domain-card__icon { background: var(--green-light); color: var(--green); }
+
+/* Texts */
+.link-banner h2 { margin: 0; font-size: 14px; font-weight: 900; letter-spacing: .5px; }
+.link-banner p  { margin: 2px 0 0; font-size: 11px; opacity: .9; }
+.domain-card__url { font-size: 13px; font-weight: 800; color: var(--text-primary); word-break: break-all; }
+.domain-card__status { font-size: 10px; font-weight: 700; margin-top: 2px; }
+.status-active  { color: var(--green); }
+.status-pending { color: var(--yellow); }
+.link-card__head { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.link-card__title { margin: 0; font-size: 13px; font-weight: 900; color: var(--text-primary); }
+.link-card__url   { font-size: 11px; color: var(--text-muted); font-weight: 500; word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* Action buttons — sebaris dengan ikon & teks supaya kad serendah domain card */
+.link-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.link-btn {
+  width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 800;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-sub);
+  transition: all .15s;
+}
+.link-btn span { display: none; }
+.link-btn:hover { background: var(--side); transform: translateY(-1px); }
+.link-btn--copy   { color: var(--blue);     border-color: var(--blue-light); }
+.link-btn--open   { color: var(--green);    border-color: var(--green-light); }
+.link-btn--wa     { color: var(--whatsapp); border-color: color-mix(in srgb, var(--whatsapp) 25%, transparent); }
+.link-btn--custom { color: var(--purple);   border-color: color-mix(in srgb, var(--purple) 25%, transparent); }
+
+/* Toast */
+.link-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #0F172A; color: #fff;
+  padding: 10px 20px; border-radius: 999px;
+  font-size: 12px; font-weight: 700;
+  box-shadow: 0 8px 20px rgba(0,0,0,.2);
+  z-index: 200;
+  animation: linkToastIn .25s;
+}
+@keyframes linkToastIn { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* Custom theme modal */
+.link-modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  display: none; align-items: center; justify-content: center;
+  z-index: 250;
+  padding: var(--sp-4);
+}
+.link-modal-backdrop.is-open { display: flex; }
+.link-modal {
+  width: 100%; max-width: 480px;
+  background: #fff;
+  border-radius: 18px;
+  padding: var(--sp-4);
+  max-height: 90vh; overflow: auto;
+}
+.link-modal h3 { margin: 0 0 var(--sp-3); font-size: 15px; font-weight: 900; }
+.link-modal__row { margin-bottom: var(--sp-3); }
+.link-modal__row > .set-label { display: block; margin-bottom: 6px; }
+
+.theme-swatch-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
+.theme-swatch {
+  aspect-ratio: 1;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.08);
+}
+.theme-swatch.is-active { border-color: var(--text-primary); transform: scale(1.1); }
+
+.preview-box {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: var(--sp-3);
+  text-align: center;
+  font-weight: 800;
+  margin-top: var(--sp-2);
+  transition: all .2s;
+}
+
+.link-modal__actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-4); }
+.link-modal__actions .btn { flex: 1; }

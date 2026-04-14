@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Refund</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/kerugian.css">
+  <link rel="stylesheet" href="css/refund.css">
+</head>
+<body class="refund-page">
+  <div class="lost-header">
+    <div class="lost-header__top">
+      <div class="lost-title"><i class="fas fa-clock-rotate-left"></i> SEJARAH & STATUS</div>
+      <button type="button" class="btn-new" id="rdNewBtn"><i class="fas fa-plus"></i> MOHON REFUND</button>
+    </div>
+    <div class="lost-searchrow">
+      <div class="lost-search">
+        <i class="fas fa-search"></i>
+        <input type="text" id="rdSearch" placeholder="Cari siri / pelanggan / sebab…">
+      </div>
+      <select id="rdSort" class="lost-select">
+        <option value="ZA">Terbaru</option>
+        <option value="AZ">Terlama</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="lost-list" id="rdList"></div>
+  <div class="lost-empty hidden" id="rdEmpty">
+    <i class="fas fa-receipt"></i>
+    <div class="lbl">Tiada permohonan refund.</div>
+    <div class="sub"></div>
+  </div>
+
+  <!-- Request modal -->
+  <div class="lost-modal-backdrop" id="rdFormModal">
+    <div class="lost-modal">
+      <div class="lost-modal__head">
+        <span><i class="fas fa-file-invoice-dollar"></i> MOHON REFUND HQ</span>
+        <button type="button" class="lost-modal__close" id="rdFormClose"><i class="fas fa-xmark"></i></button>
+      </div>
+
+      <label style="color:var(--primary)">CARI SIRI REPAIR</label>
+      <div style="display:flex; gap:8px">
+        <input type="text" id="rdSiri" class="lost-input" placeholder="Cth: RMS2024..." style="flex:1; text-transform:uppercase">
+        <button type="button" class="btn-submit" id="rdSearchBtn" style="margin:0; padding:10px 14px"><i class="fas fa-magnifying-glass"></i></button>
+      </div>
+
+      <div class="rd-found hidden" id="rdFound">
+        <div class="rd-found__grid">
+          <div><div class="rd-lbl">Nama Pelanggan</div><div class="rd-val" id="rdFoundNama">-</div></div>
+          <div><div class="rd-lbl">Harga Asal (RM)</div><div class="rd-val" id="rdFoundHarga">-</div></div>
+          <div><div class="rd-lbl">Model</div><div class="rd-val" id="rdFoundModel">-</div></div>
+          <div><div class="rd-lbl">Kerosakan</div><div class="rd-val" id="rdFoundKero">-</div></div>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px">
+        <div>
+          <label>AMAUN REFUND (RM)</label>
+          <input type="number" step="0.01" id="rdAmount" class="lost-input" placeholder="0.00">
+        </div>
+        <div>
+          <label>KAEDAH BAYARAN</label>
+          <select id="rdMethod" class="lost-input"><option>TRANSFER</option><option>CASH</option></select>
+        </div>
+      </div>
+
+      <label>SEBAB REFUND</label>
+      <input type="text" id="rdReason" class="lost-input" placeholder="Cth: Barang defect, pelanggan tidak puas hati...">
+
+      <label>KELAJUAN</label>
+      <select id="rdSpeed" class="lost-input"><option>SEGERA</option><option>TERTUNDA</option></select>
+
+      <div class="rd-bank">
+        <div class="rd-bank__title">MAKLUMAT BAYARAN</div>
+        <label>NAMA PEMILIK AKAUN</label>
+        <input type="text" id="rdAccName" class="lost-input">
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px">
+          <div>
+            <label>NAMA BANK</label>
+            <input type="text" id="rdBankName" class="lost-input" placeholder="Cth: Maybank">
+          </div>
+          <div>
+            <label>NO AKAUN</label>
+            <input type="text" id="rdAccNo" class="lost-input">
+          </div>
+        </div>
+      </div>
+
+      <button type="button" class="btn-submit" id="rdSubmit"><i class="fas fa-paper-plane"></i> HANTAR PERMOHONAN</button>
+      <p style="color:var(--text-muted); font-size:10px; font-style:italic; text-align:center; margin:6px 0 0">
+        * Pastikan maklumat bayaran betul sebelum hantar.
+      </p>
+    </div>
+  </div>
+
+  <!-- Approve password modal -->
+  <div class="lost-modal-backdrop" id="rdApproveModal">
+    <div class="lost-modal lost-modal--sm">
+      <div class="lost-modal__head"><span>PENGESAHAN ADMIN</span></div>
+      <label>KATA LALUAN</label>
+      <input type="password" id="rdPass" class="lost-input" placeholder="******" style="letter-spacing:4px; text-align:center">
+      <div class="rd-err hidden" id="rdPassErr">Kata laluan salah.</div>
+      <div class="lost-modal__actions">
+        <button type="button" class="btn-ghost" id="rdApproveCancel">Batal</button>
+        <button type="button" class="btn-submit" id="rdApproveOk" style="background:var(--green); margin:0; padding:10px 16px">APPROVE</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="lost-toast" id="rdToast" hidden></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/refund.js"></script>
+</body>
+</html>

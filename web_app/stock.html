@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Stock</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/inventory.css">
+  <style>
+    .st-top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+    .st-top .btn{padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:#fff;font-weight:900;font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+    .st-top .btn.orange{background:#f9731615;color:#f97316;border-color:#f9731655;}
+    .st-top .btn.red{background:#ef444415;color:#ef4444;border-color:#ef444455;}
+    .st-top .btn.green{background:#10b981;color:#fff;border-color:#10b981;}
+    .st-search-row{display:flex;gap:8px;align-items:center;}
+    .st-search-row .input{flex:1;}
+    .st-card{display:flex;gap:12px;padding:12px;background:#fff;border:1px solid var(--border);border-radius:12px;margin-bottom:10px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.03);}
+    .st-card.low{border-color:#ef444433;}
+    .st-qty{width:44px;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:16px;color:#2563eb;background:#2563eb1a;border:1px solid #2563eb33;flex-shrink:0;}
+    .st-qty.low{color:#ef4444;background:#ef44441f;border-color:#ef444455;}
+    .st-body{flex:1;min-width:0;}
+    .st-row1{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:10px;}
+    .st-kod{color:#2563eb;font-weight:900;letter-spacing:.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .st-mini{padding:2px 6px;border-radius:4px;font-size:9px;font-weight:900;margin-left:4px;}
+    .st-nama{font-weight:700;font-size:12px;color:var(--text);margin-top:2px;}
+    .st-meta{margin-top:2px;font-size:9px;color:var(--text-muted);display:flex;flex-wrap:wrap;gap:8px;}
+    .st-jual{color:#10b981;font-weight:700;font-size:9px;}
+    .st-empty{text-align:center;padding:40px;color:var(--text-muted);}
+    .st-empty i{font-size:40px;opacity:.3;display:block;margin-bottom:8px;}
+    .st-footer{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;}
+    .st-foot-chip{padding:4px 8px;border-radius:4px;font-size:10px;font-weight:900;}
+    .st-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center;z-index:9999;}
+    .st-modal-bg.show{display:flex;}
+    .st-modal{background:#fff;width:100%;max-width:560px;max-height:90vh;overflow:auto;border-radius:20px 20px 0 0;padding:20px;}
+    .st-modal__head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-weight:900;font-size:13px;}
+    .st-field{margin-bottom:10px;}
+    .st-field label{display:block;font-size:10px;font-weight:900;color:var(--text-muted);margin-bottom:4px;}
+    .st-field .input{width:100%;}
+    .st-imgpick{width:100%;height:120px;background:#f1f5f9;border:1px dashed var(--border);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:#94a3b8;background-size:cover;background-position:center;}
+    .st-btn{width:100%;padding:12px;border:none;border-radius:10px;color:#fff;font-weight:900;font-size:11px;cursor:pointer;letter-spacing:.5px;display:inline-flex;align-items:center;justify-content:center;gap:8px;}
+    .st-btn.primary{background:#2563eb;}
+    .st-btn.blue{background:#3b82f6;}
+    .st-btn.red{background:#ef4444;}
+    .st-act{padding:8px 10px;border-radius:8px;font-size:9px;font-weight:900;border:1px solid;cursor:pointer;display:inline-flex;align-items:center;gap:4px;background:#fff;}
+    .st-snack{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;z-index:10000;}
+    .st-snack.err{background:#dc2626;}
+    .st-hist-row{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;display:flex;gap:10px;align-items:center;}
+    .rms-printer-bar{position:fixed;bottom:16px;right:16px;z-index:500;}
+    .pos-printer{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;font-weight:800;font-size:11px;cursor:pointer;color:#64748b;box-shadow:0 2px 6px rgba(0,0,0,.06);}
+    .pos-printer:hover{border-color:#2563eb;color:#2563eb;}
+    .pos-printer.is-on{background:#dbeafe;color:#2563eb;border-color:#2563eb;}
+    .pos-printer.is-disabled{opacity:.5;cursor:not-allowed;}
+  </style>
+</head>
+<body class="settings-page stock-page">
+  <div class="rms-printer-bar">
+    <button type="button" id="posPrinterBtn" class="pos-printer" title="Printer">
+      <i class="fas fa-print"></i><span id="posPrinterLbl">PRINTER</span>
+    </button>
+  </div>
+  <main class="settings-container">
+
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-boxes-stacked"></i></span>
+        <h2 class="settings-section__title">STOCK CN</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="st-top">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn orange" id="btnUsed"><i class="fas fa-clock-rotate-left"></i> H/USED</button>
+            <button class="btn red" id="btnReturn"><i class="fas fa-rotate-left"></i> H/RETURN</button>
+          </div>
+          <button class="btn green" id="btnAdd"><i class="fas fa-plus"></i> TAMBAH</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-search"></i></span>
+        <h2 class="settings-section__title">Cari</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="st-search-row">
+          <input class="input" id="stSearch" placeholder="Cari kod / nama / siri…">
+          <button class="btn" id="btnScan" title="Scan barcode (web: input code)"><i class="fas fa-barcode" style="color:#2563eb;"></i></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-list"></i></span>
+        <h2 class="settings-section__title">Inventori</h2>
+      </div>
+      <div class="settings-section__body">
+        <div id="stList"></div>
+        <div id="stEmpty" class="st-empty" hidden>
+          <i class="fas fa-box-open"></i>
+          <p>Tiada item dijumpai.</p>
+        </div>
+        <div id="stFooter" class="st-footer"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Add Modal -->
+  <div class="st-modal-bg" id="mAdd">
+    <div class="st-modal">
+      <div class="st-modal__head">
+        <span style="color:#2563eb;"><i class="fas fa-box-open"></i> TAMBAH STOK</span>
+        <span data-close style="color:#ef4444;cursor:pointer;"><i class="fas fa-xmark"></i></span>
+      </div>
+      <div class="st-imgpick" id="addImgPick">
+        <i class="fas fa-camera" style="font-size:22px;"></i>
+        <div style="font-size:10px;margin-top:4px;font-weight:700;">TAMBAH GAMBAR</div>
+      </div>
+      <input type="file" id="addImgFile" accept="image/*" hidden>
+      <div style="display:flex;gap:6px;margin-top:10px;">
+        <div class="st-field" style="flex:1;margin-bottom:0;">
+          <label>Kod Item</label>
+          <input class="input" id="addKod" placeholder="Cth: LCD-IP13">
+        </div>
+        <div style="display:flex;gap:4px;align-self:flex-end;">
+          <button class="st-act" id="addCopy" style="color:#64748b;border-color:#64748b55;"><i class="fas fa-copy"></i>SALIN</button>
+          <button class="st-act" id="addAuto" style="color:#06b6d4;border-color:#06b6d455;"><i class="fas fa-rotate"></i>AUTO</button>
+          <button class="st-act" id="addScan" style="color:#3b82f6;border-color:#3b82f655;"><i class="fas fa-barcode"></i>SCAN</button>
+        </div>
+      </div>
+      <div class="st-field" style="margin-top:10px;">
+        <label>Tarikh Masuk</label>
+        <input class="input" type="date" id="addTarikh">
+      </div>
+      <div class="st-field">
+        <label>Nama Item</label>
+        <input class="input" id="addNama" placeholder="Cth: LCD iPhone 13">
+      </div>
+      <div class="st-field">
+        <label>KATEGORI</label>
+        <select class="set-select" id="addCategory">
+          <option value="SPAREPART">SPAREPART</option>
+          <option value="FAST SERVICE">FAST SERVICE</option>
+        </select>
+      </div>
+      <div class="st-field">
+        <label>Harga Jual (RM)</label>
+        <input class="input" type="number" step="0.01" id="addJual" placeholder="0.00">
+      </div>
+      <button class="st-btn primary" id="addSave"><i class="fas fa-floppy-disk"></i> SIMPAN STOK</button>
+    </div>
+  </div>
+
+  <!-- Edit Modal -->
+  <div class="st-modal-bg" id="mEdit">
+    <div class="st-modal">
+      <div class="st-modal__head">
+        <span style="color:#eab308;"><i class="fas fa-pen-to-square"></i> <span id="editTitle">EDIT</span></span>
+        <span data-close style="color:#ef4444;cursor:pointer;"><i class="fas fa-xmark"></i></span>
+      </div>
+      <div id="editBody"></div>
+    </div>
+  </div>
+
+  <!-- History Used Modal -->
+  <div class="st-modal-bg" id="mUsed">
+    <div class="st-modal">
+      <div class="st-modal__head">
+        <span style="color:#f97316;"><i class="fas fa-clock-rotate-left"></i> HISTORY USED</span>
+        <span data-close style="color:#ef4444;cursor:pointer;"><i class="fas fa-xmark"></i></span>
+      </div>
+      <div id="usedBody"></div>
+    </div>
+  </div>
+
+  <!-- History Return Modal -->
+  <div class="st-modal-bg" id="mReturn">
+    <div class="st-modal">
+      <div class="st-modal__head">
+        <span style="color:#ef4444;"><i class="fas fa-rotate-left"></i> HISTORY RETURN</span>
+        <span data-close style="color:#ef4444;cursor:pointer;"><i class="fas fa-xmark"></i></span>
+      </div>
+      <div id="returnBody"></div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-storage-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/printer.js"></script>
+  <script src="js/stock.js"></script>
+</body>
+</html>

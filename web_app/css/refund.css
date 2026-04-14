@@ -1,0 +1,61 @@
+/* ===== REFUND (extends kerugian.css) ===== */
+.rd-found {
+  padding: var(--sp-3);
+  background: var(--bg);
+  border: 1px solid var(--border-med);
+  border-radius: var(--radius);
+}
+.rd-found__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.rd-lbl { color: var(--text-muted); font-weight: 900; font-size: 9px; }
+.rd-val { color: var(--text-primary); font-weight: 700; font-size: var(--fs-xs); margin-top: 2px; }
+
+.rd-bank {
+  padding: var(--sp-3);
+  background: var(--bg);
+  border: 1px solid var(--border-med);
+  border-radius: var(--radius);
+  display: grid; gap: 6px;
+}
+.rd-bank__title { color: var(--primary); font-weight: 900; font-size: 10px; margin-bottom: 2px; }
+
+.rd-err {
+  color: var(--red);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-align: center;
+  margin-top: 4px;
+}
+
+/* Refund cards */
+.rd-siri { color: var(--text-primary); font-weight: 900; font-size: var(--fs-sm); letter-spacing: .5px; }
+.rd-status {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 8px;
+  font-weight: 900; font-size: 9px;
+  border: 1px solid;
+}
+.rd-status.c-green  { color: var(--green);  background: color-mix(in srgb, var(--green) 15%, transparent);  border-color: var(--green); }
+.rd-status.c-red    { color: var(--red);    background: color-mix(in srgb, var(--red) 15%, transparent);    border-color: var(--red); }
+.rd-status.c-yellow { color: var(--yellow); background: color-mix(in srgb, var(--yellow) 15%, transparent); border-color: var(--yellow); }
+
+.rd-cust { color: var(--yellow); font-weight: 900; font-size: var(--fs-xs); }
+.rd-info { color: var(--text-muted); font-size: 10px; }
+.rd-amounts { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 2px; }
+.rd-asal { color: var(--text-dim); font-size: 10px; }
+.rd-date { color: var(--text-dim); font-size: 9px; }
+.rd-amt  { color: var(--red); font-weight: 900; font-size: var(--fs-md); }
+
+.rd-approve {
+  margin-top: 8px;
+  padding: 9px;
+  background: var(--green); color: #fff;
+  border-radius: 10px;
+  font-weight: 900; font-size: 10px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%;
+}
+.rd-approve:hover { background: #0ea372; }
+
+.rd-card.c-green  { border-left-color: var(--green); }
+.rd-card.c-yellow { border-left-color: var(--yellow); }
+.rd-card.c-red    { border-left-color: var(--red); }

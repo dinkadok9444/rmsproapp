@@ -1,0 +1,166 @@
+/* Jualan Telefon page */
+.jp-segment {
+  display: flex;
+  gap: var(--sp-2);
+  background: var(--bg-subtle, #f1f5f9);
+  padding: 4px;
+  border-radius: var(--radius, 10px);
+  margin-bottom: var(--sp-2);
+}
+.jp-seg-btn {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  padding: 10px 12px;
+  font: inherit;
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--text-muted, #64748b);
+  border-radius: calc(var(--radius, 10px) - 2px);
+  cursor: pointer;
+  transition: all .15s ease;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+.jp-seg-btn.is-active {
+  background: var(--card-bg, #fff);
+  color: var(--primary, #2563eb);
+  box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+
+.jp-tabs {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.jp-tab-btn {
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--card-bg, #fff);
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  color: var(--text-muted, #64748b);
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.jp-tab-btn.is-active {
+  background: var(--primary, #2563eb);
+  border-color: var(--primary, #2563eb);
+  color: #fff;
+}
+
+.jp-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-3);
+}
+@media (min-width: 720px) {
+  .jp-stats { grid-template-columns: repeat(4, 1fr); }
+}
+.jp-stat {
+  background: var(--bg-subtle, #f8fafc);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius, 10px);
+  padding: var(--sp-3);
+}
+.jp-stat__label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 600;
+}
+.jp-stat__val {
+  margin-top: 4px;
+  font-size: var(--fs-lg, 18px);
+  font-weight: 800;
+  color: var(--text, #0f172a);
+}
+.jp-stat[data-k="sales"] .jp-stat__val { color: #2563eb; }
+.jp-stat[data-k="profit"] .jp-stat__val { color: #059669; }
+
+.jp-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.jp-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius, 10px);
+  background: var(--card-bg, #fff);
+  align-items: center;
+}
+.jp-item__badge {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: #fef3c7;
+  color: #d97706;
+}
+.jp-item--dealer .jp-item__badge { background: #ede9fe; color: #7c3aed; }
+.jp-item--archived { opacity: .75; }
+.jp-item--deleted { opacity: .6; }
+
+.jp-item__main { min-width: 0; }
+.jp-item__title {
+  font-weight: 700;
+  font-size: var(--fs-sm);
+  color: var(--text, #0f172a);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jp-item__sub {
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-muted, #64748b);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jp-item__meta {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+.jp-item__meta span {
+  background: var(--bg-subtle, #f1f5f9);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.jp-item__amount {
+  font-weight: 800;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  color: #059669;
+}
+
+.jp-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  background: #dbeafe;
+  color: #2563eb;
+  text-transform: uppercase;
+}
+.jp-pill--archived { background: #fef3c7; color: #d97706; }
+.jp-pill--deleted { background: #fee2e2; color: #dc2626; }
+
+.jp-empty {
+  text-align: center;
+  padding: var(--sp-4) var(--sp-3);
+  color: var(--text-muted, #64748b);
+}
+.jp-empty i { font-size: 32px; margin-bottom: 8px; opacity: .6; }

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Kolaborasi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/kerugian.css">
+  <link rel="stylesheet" href="css/kolaborasi.css">
+</head>
+<body class="collab-page">
+  <div class="lost-header collab-header">
+    <div class="lost-header__top">
+      <div class="lost-title" id="clTitle"><i class="fas fa-paper-plane"></i> OUTBOX <span class="collab-count" id="clCount">0</span></div>
+      <div style="display:flex; gap:6px">
+        <button type="button" class="btn-chip" id="clArchiveBtn"><i class="fas fa-box-archive"></i> ARKIB</button>
+        <button type="button" class="btn-new" id="clNewBtn"><i class="fas fa-plus"></i> HANTAR TUGASAN</button>
+      </div>
+    </div>
+    <div class="lost-searchrow" id="clFilterRow">
+      <select id="clStatus" class="lost-select" style="flex:1">
+        <option value="SEMUA">Semua Status</option>
+        <option value="PENDING">PENDING</option>
+        <option value="TERIMA">TERIMA</option>
+        <option value="IN PROGRESS">IN PROGRESS</option>
+        <option value="COMPLETED">COMPLETED</option>
+        <option value="REJECT">REJECT</option>
+        <option value="RETURN REJECT">RETURN REJECT</option>
+        <option value="DELIVERED">DELIVERED</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="lost-list" id="clList"></div>
+  <div class="lost-empty hidden" id="clEmpty">
+    <i class="fas fa-paper-plane"></i>
+    <div class="lbl">Tiada rekod dihantar.</div>
+    <div class="sub">Tekan "Hantar Tugasan" untuk mula.</div>
+  </div>
+
+  <!-- Send Task modal -->
+  <div class="lost-modal-backdrop" id="clSendModal">
+    <div class="lost-modal">
+      <div class="lost-modal__head">
+        <span style="color:var(--blue)"><i class="fas fa-handshake"></i> HANTAR TUGASAN</span>
+        <button type="button" class="lost-modal__close" id="clSendClose"><i class="fas fa-xmark"></i></button>
+      </div>
+
+      <label style="color:var(--primary)">CARI SIRI REPAIR</label>
+      <div style="display:flex; gap:8px">
+        <input type="text" id="clSiri" class="lost-input" placeholder="Cth: RMS2024..." style="flex:1; text-transform:uppercase">
+        <button type="button" class="btn-submit" id="clSiriBtn" style="margin:0; padding:10px 14px; background:var(--primary)"><i class="fas fa-magnifying-glass"></i></button>
+      </div>
+      <div class="cl-found hidden" id="clTicket">
+        <div class="rd-found__grid">
+          <div><div class="rd-lbl">Nama</div><div class="rd-val" id="clTkNama">-</div></div>
+          <div><div class="rd-lbl">Model</div><div class="rd-val" id="clTkModel">-</div></div>
+          <div><div class="rd-lbl">Tel</div><div class="rd-val" id="clTkTel">-</div></div>
+          <div><div class="rd-lbl">Kerosakan</div><div class="rd-val" id="clTkKero">-</div></div>
+          <div style="grid-column:1/-1"><div class="rd-lbl">Password / Pattern</div><div class="rd-val" style="color:var(--orange)" id="clTkPass">-</div></div>
+        </div>
+      </div>
+
+      <label style="color:var(--blue); margin-top:10px">KOD DEALER</label>
+      <div style="display:flex; gap:8px">
+        <input type="text" id="clDealer" class="lost-input" placeholder="Cari kod dealer..." style="flex:1; text-transform:uppercase">
+        <button type="button" class="btn-submit" id="clDealerBtn" style="margin:0; padding:10px 14px; background:var(--blue)"><i class="fas fa-magnifying-glass"></i></button>
+      </div>
+      <div class="cl-dealer-status" id="clDealerStatus"></div>
+      <div class="cl-found hidden" id="clDealerInfo">
+        <div class="rd-found__grid">
+          <div><div class="rd-lbl">Kedai</div><div class="rd-val" id="clDlKedai">-</div></div>
+          <div><div class="rd-lbl">Tel</div><div class="rd-val" id="clDlTel">-</div></div>
+        </div>
+      </div>
+      <div class="cl-saved hidden" id="clSaved">
+        <div class="rd-lbl" style="margin-bottom:4px">KEDAI TERSIMPAN <span style="font-weight:600; font-size:9px; color:var(--text-dim)">(klik = pilih, shift-klik = buang)</span></div>
+        <div class="cl-chips" id="clSavedChips"></div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px">
+        <div><label>KURIER</label><input type="text" id="clKurier" class="lost-input" placeholder="Cth: J&T"></div>
+        <div><label>NO TRACKING</label><input type="text" id="clTrack" class="lost-input" placeholder="No Track"></div>
+      </div>
+      <label>CATATAN / ARAHAN KERJA</label>
+      <textarea id="clCatatan" class="lost-input" rows="2" placeholder="Cth: Tolong repair board..."></textarea>
+
+      <button type="button" class="btn-submit" id="clSubmit" style="background:var(--primary)"><i class="fas fa-paper-plane"></i> HANTAR TUGASAN</button>
+    </div>
+  </div>
+
+  <!-- Status info modal -->
+  <div class="lost-modal-backdrop" id="clInfoModal">
+    <div class="lost-modal lost-modal--sm">
+      <div class="lost-modal__head"><span style="color:var(--primary)"><i class="fas fa-circle-info"></i> MAKLUMAT TUGASAN</span>
+        <button type="button" class="lost-modal__close" id="clInfoClose"><i class="fas fa-xmark"></i></button></div>
+      <div class="cl-info-row"><div class="rd-lbl">STATUS TERKINI</div><div class="cl-info-status" id="clInfoStatus">-</div></div>
+      <div class="cl-info-row"><div class="rd-lbl">NOTA DEALER</div><div class="cl-info-val" id="clInfoNota">-</div></div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
+        <div class="cl-info-row"><div class="rd-lbl">KURIER RETURN</div><div class="cl-info-val" id="clInfoKurier">-</div></div>
+        <div class="cl-info-row"><div class="rd-lbl">TRACKING RETURN</div><div class="cl-info-val" id="clInfoTrack">-</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="lost-toast" id="clToast" hidden></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/kolaborasi.js"></script>
+</body>
+</html>

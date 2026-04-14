@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#00C47D">
+  <title>RMS Pro — Admin Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/jual_phone.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__inner">
+      <div class="app-header__brand"><i class="fas fa-shield-halved"></i><span>RMS PRO</span></div>
+      <span class="app-header__title">Admin Dashboard</span>
+      <div class="app-header__spacer"></div>
+      <div class="app-header__actions">
+        <button class="icon-btn" id="btnLogout" title="Log Keluar"><i class="fas fa-right-from-bracket"></i></button>
+      </div>
+    </div>
+  </header>
+  <main class="container dashboard-main">
+    <section class="dashboard-section">
+      <div class="dashboard-greeting"><h2>Admin SaaS 👋</h2><p>Pilih modul untuk mula bekerja.</p></div>
+
+      <!-- RINGKASAN JUALAN -->
+      <section class="settings-section">
+        <div class="settings-section__head">
+          <span class="settings-section__icon"><i class="fas fa-chart-pie"></i></span>
+          <h2 class="settings-section__title">Ringkasan Jualan</h2>
+        </div>
+        <div class="settings-section__body">
+          <div class="jp-stats">
+            <div class="jp-stat" data-k="count">
+              <div class="jp-stat__label">Jumlah Bil</div>
+              <div class="jp-stat__val" id="stCount">0</div>
+            </div>
+            <div class="jp-stat" data-k="sales">
+              <div class="jp-stat__label">Jumlah Jualan</div>
+              <div class="jp-stat__val" id="stSales">RM 0.00</div>
+            </div>
+            <div class="jp-stat" data-k="profit">
+              <div class="jp-stat__label">Untung</div>
+              <div class="jp-stat__val" id="stProfit">RM 0.00</div>
+            </div>
+            <div class="jp-stat" data-k="unit">
+              <div class="jp-stat__label">Unit</div>
+              <div class="jp-stat__val" id="stUnit">0</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="module-grid" id="moduleGrid"></div>
+    </section>
+  </main>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/dashboard_summary.js"></script>
+</body>
+</html>

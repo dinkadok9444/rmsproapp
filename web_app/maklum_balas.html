@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Prestasi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/maklum-balas.css">
+</head>
+<body class="mb-page">
+  <!-- Header: prestasi kedai -->
+  <div class="mb-header">
+    <div class="mb-header__title">
+      <i class="fas fa-star"></i>
+      <span>PRESTASI KEDAI</span>
+    </div>
+    <div class="mb-score">
+      <span class="mb-score__num" id="mbAvg">0.0</span>
+      <div class="mb-score__meta">
+        <span class="mb-score__denom">/ 5.0</span>
+        <span class="mb-score__count" id="mbCount">0 Maklum Balas</span>
+      </div>
+    </div>
+    <div class="mb-controls">
+      <select id="mbFilter" class="mb-select">
+        <option value="Semua_Terbaru">Semua — Terbaru</option>
+        <option value="Semua_Terdahulu">Semua — Terdahulu</option>
+        <option value="5">5 Bintang</option>
+        <option value="4">4 Bintang</option>
+        <option value="3">3 Bintang</option>
+        <option value="2">2 Bintang</option>
+        <option value="1">1 Bintang</option>
+      </select>
+      <button id="mbSearchToggle" class="mb-icon-btn" title="Cari"><i class="fas fa-search"></i></button>
+    </div>
+    <div class="mb-search hidden" id="mbSearchWrap">
+      <i class="fas fa-search"></i>
+      <input type="text" id="mbSearch" placeholder="Cari siri / nama / telefon…">
+    </div>
+  </div>
+
+  <div class="mb-count" id="mbShowing">Menunjukkan 0 rekod</div>
+  <div class="mb-list" id="mbList"></div>
+  <div class="mb-empty hidden" id="mbEmpty">Tiada maklum balas.</div>
+
+  <!-- Staff modal -->
+  <div class="mb-modal-backdrop" id="mbStaffModal">
+    <div class="mb-modal">
+      <div class="mb-modal__head">
+        <span><i class="fas fa-id-badge"></i> MAKLUMAT STAF</span>
+        <button type="button" id="mbStaffClose" class="mb-modal__close">X</button>
+      </div>
+      <div class="mb-staff-row"><span class="lbl">Terima</span><span class="sep">:</span><span class="val c-blue" id="mbStaffTerima">-</span></div>
+      <div class="mb-staff-row"><span class="lbl">Repair</span><span class="sep">:</span><span class="val c-green" id="mbStaffRepair">-</span></div>
+      <div class="mb-staff-row"><span class="lbl">Serah</span><span class="sep">:</span><span class="val c-pink" id="mbStaffSerah">-</span></div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/maklum-balas.js"></script>
+</body>
+</html>

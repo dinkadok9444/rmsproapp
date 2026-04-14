@@ -1,0 +1,74 @@
+/* ===== LOGIN PAGE ===== */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5) var(--sp-4);
+  position: relative;
+  overflow: hidden;
+}
+.login-page::before {
+  content: "";
+  position: absolute;
+  top: 20%;
+  left: 50%;
+  width: 350px; height: 350px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 0 120px 20px rgba(0,196,125,.15);
+  pointer-events: none;
+}
+
+.login-card {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  padding: var(--sp-6) var(--sp-5);
+  background: var(--card);
+  border: 1px solid var(--border-med);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 20px 40px rgba(0,0,0,.08);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  animation: slideUp .6s cubic-bezier(.22,1,.36,1);
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.login-logo {
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.login-logo i {
+  font-size: clamp(36px, 3vw + 24px, 48px);
+  color: var(--primary);
+}
+.login-logo h1 {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: var(--primary);
+  text-shadow: 0 4px 10px rgba(0,196,125,.25);
+}
+
+.login-footer {
+  border-top: 1px solid var(--border-med);
+  padding-top: var(--sp-4);
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-3);
+}
+.login-footer p {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Tighten on very small LCD */
+@media (max-width: 380px) {
+  .login-card { padding: var(--sp-5) var(--sp-4); }
+}

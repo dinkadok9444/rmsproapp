@@ -1,0 +1,36 @@
+/* ===== DASHBOARD PAGE ===== */
+.dashboard-main {
+  padding-block: var(--sp-4) var(--sp-6);
+}
+.dashboard-section {
+  display: flex; flex-direction: column;
+  gap: var(--sp-4);
+}
+.dashboard-greeting h2 {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-lg);
+  font-weight: 900;
+  color: var(--text-primary);
+}
+.dashboard-greeting p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+/* Color modifiers for module tile icons */
+.bg-green   { background: var(--green); }
+.bg-blue    { background: var(--blue); }
+.bg-orange  { background: var(--orange); }
+.bg-indigo  { background: var(--indigo); }
+.bg-red     { background: var(--red); }
+.bg-cyan    { background: var(--cyan); }
+.bg-muted   { background: var(--text-muted); }
+.bg-purple  { background: var(--purple); }
+.bg-violet  { background: var(--violet); }
+.bg-pink    { background: var(--pink); }
+.bg-whatsapp{ background: var(--whatsapp); }
+.bg-primary { background: var(--primary); }
+.bg-sky     { background: var(--sky); }
+.bg-teal    { background: var(--teal); }
+.bg-yellow  { background: var(--yellow); }

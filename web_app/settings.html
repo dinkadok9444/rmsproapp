@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Tetapan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/settings.css">
+</head>
+<body class="settings-page">
+  <main class="settings-container">
+
+    <!-- 1. MAKLUMAT CAWANGAN -->
+    <section class="settings-section" id="sec-shop">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-store"></i></span>
+        <h2 class="settings-section__title">Maklumat Cawangan</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="set-row">
+          <label class="set-label">Logo</label>
+          <div class="logo-uploader">
+            <div class="logo-preview" id="logoPreview"><i class="fas fa-image"></i></div>
+            <div class="logo-actions">
+              <label class="btn btn-primary" for="logoFile"><i class="fas fa-upload"></i> Muat Naik</label>
+              <button class="btn btn-ghost" type="button" id="logoRemove"><i class="fas fa-trash"></i> Buang</button>
+              <input type="file" id="logoFile" accept="image/*" hidden>
+            </div>
+          </div>
+        </div>
+        <div class="set-row"><label class="set-label">Nama Kedai</label><div class="set-value set-value--readonly" id="fShopName">—</div></div>
+        <div class="set-row"><label class="set-label">SSM</label><div class="set-value set-value--readonly" id="fSsm">—</div></div>
+        <div class="set-row"><label class="set-label">Alamat</label><div class="set-value set-value--readonly" id="fAddress">—</div></div>
+        <div class="set-row"><label class="set-label">No Telefon</label><input class="input" type="tel" id="fPhone"></div>
+        <div class="set-row"><label class="set-label">Emel</label><div class="set-value set-value--readonly" id="fEmail">—</div></div>
+        <div class="set-row"><label class="set-label">ID Cawangan</label><div class="set-value set-value--readonly" id="fBranchId">—</div></div>
+      </div>
+    </section>
+
+    <!-- 2. WARNA HEADER -->
+    <section class="settings-section" id="sec-color">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-palette"></i></span>
+        <h2 class="settings-section__title">Warna Header</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="color-grid" id="colorGrid"></div>
+      </div>
+    </section>
+
+    <!-- 3. TETAPAN BORANG -->
+    <section class="settings-section" id="sec-form">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-sliders"></i></span>
+        <h2 class="settings-section__title">Tetapan Borang</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="set-row">
+          <label class="set-label">Bilangan Staff Box</label>
+          <select class="set-select" id="fStaffBox">
+            <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+          </select>
+        </div>
+        <div class="set-row">
+          <label class="set-label">Template PDF</label>
+          <div class="tpl-grid" id="tplGrid"></div>
+        </div>
+        <div class="set-row" style="grid-template-columns: 1fr;">
+          <label class="set-label">Nota Borang</label>
+          <div class="notes-grid">
+            <div><label class="set-label">Invois</label><textarea id="fNotaInvoice"></textarea></div>
+            <div><label class="set-label">Quotation</label><textarea id="fNotaQuotation"></textarea></div>
+            <div><label class="set-label">Claim</label><textarea id="fNotaClaim"></textarea></div>
+            <div><label class="set-label">Booking</label><textarea id="fNotaBooking"></textarea></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. TETAPAN PRINTER -->
+    <section class="settings-section" id="sec-printer">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-print"></i></span>
+        <h2 class="settings-section__title">Tetapan Printer</h2>
+      </div>
+      <div class="settings-section__body">
+
+        <!-- BLUETOOTH -->
+        <div class="prn-card" id="prnBT">
+          <div class="prn-card__head">
+            <span class="prn-card__ico" style="color:var(--blue); background:var(--blue-light)"><i class="fab fa-bluetooth-b"></i></span>
+            <div class="prn-card__title">
+              <strong>Bluetooth (Web Bluetooth)</strong>
+              <span class="prn-card__sub" id="prnBTSub">Tidak disambung</span>
+            </div>
+            <span class="prn-dot" id="prnBTDot"></span>
+          </div>
+          <div class="prn-card__actions">
+            <button type="button" class="btn btn-primary" id="prnBTConnect"><i class="fas fa-link"></i> Sambung</button>
+            <button type="button" class="btn btn-ghost" id="prnBTDisconnect" hidden><i class="fas fa-unlink"></i> Putuskan</button>
+            <button type="button" class="btn btn-ghost" id="prnBTTest"><i class="fas fa-print"></i> Uji Cetak</button>
+          </div>
+          <p class="prn-note" id="prnBTNote"></p>
+        </div>
+
+        <!-- USB / CABLE -->
+        <div class="prn-card" id="prnUSB">
+          <div class="prn-card__head">
+            <span class="prn-card__ico" style="color:var(--purple); background:color-mix(in srgb, var(--purple) 15%, white)"><i class="fab fa-usb"></i></span>
+            <div class="prn-card__title">
+              <strong>USB / Kabel (WebUSB)</strong>
+              <span class="prn-card__sub" id="prnUSBSub">Tidak disambung</span>
+            </div>
+            <span class="prn-dot" id="prnUSBDot"></span>
+          </div>
+          <div class="prn-card__actions">
+            <button type="button" class="btn btn-primary" id="prnUSBConnect"><i class="fas fa-plug"></i> Pilih Peranti USB</button>
+            <button type="button" class="btn btn-ghost" id="prnUSBDisconnect" hidden><i class="fas fa-unlink"></i> Putuskan</button>
+            <button type="button" class="btn btn-ghost" id="prnUSBTest"><i class="fas fa-print"></i> Uji Cetak</button>
+          </div>
+          <p class="prn-note" id="prnUSBNote"></p>
+        </div>
+
+        <!-- WIFI / LAN -->
+        <div class="prn-card" id="prnWIFI">
+          <div class="prn-card__head">
+            <span class="prn-card__ico" style="color:var(--teal); background:color-mix(in srgb, var(--teal) 15%, white)"><i class="fas fa-wifi"></i></span>
+            <div class="prn-card__title">
+              <strong>WiFi / LAN</strong>
+              <span class="prn-card__sub">Memerlukan bridge HTTP (browser tiada akses TCP mentah)</span>
+            </div>
+            <span class="prn-dot" id="prnWIFIDot"></span>
+          </div>
+          <div class="prn-wifi-grid">
+            <div>
+              <label class="set-label">Alamat IP</label>
+              <input class="input" type="text" id="prnWifiIp" placeholder="Cth: 192.168.1.100">
+            </div>
+            <div>
+              <label class="set-label">Port</label>
+              <input class="input" type="number" id="prnWifiPort" placeholder="9100" value="9100">
+            </div>
+            <div style="grid-column: 1 / -1;">
+              <label class="set-label">Bridge URL (HTTP POST raw bytes)</label>
+              <input class="input" type="url" id="prnWifiBridge" placeholder="Cth: http://localhost:3333/print">
+            </div>
+          </div>
+          <div class="prn-card__actions">
+            <button type="button" class="btn btn-primary" id="prnWifiSave"><i class="fas fa-floppy-disk"></i> Simpan</button>
+            <button type="button" class="btn btn-ghost" id="prnWifiTest"><i class="fas fa-print"></i> Uji Cetak</button>
+          </div>
+          <p class="prn-note">
+            <i class="fas fa-info-circle"></i>
+            Browser tidak boleh buka soket TCP. Jalankan bridge setempat (cth: Node.js) yang terima <code>POST</code> binary lalu hantar ke printer <code>IP:Port</code>.
+          </p>
+        </div>
+
+        <!-- AKTIF -->
+        <div class="prn-active">
+          <span class="set-label">Transport Aktif</span>
+          <span class="prn-active__val" id="prnActive">—</span>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 5. BAHASA -->
+    <section class="settings-section" id="sec-lang">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-globe"></i></span>
+        <h2 class="settings-section__title">Bahasa</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="set-row">
+          <label class="set-label">Pilih Bahasa</label>
+          <select class="set-select" id="fLang">
+            <option value="ms">Bahasa Melayu</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. KESELAMATAN ADMIN -->
+    <section class="settings-section" id="sec-admin">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-shield-halved"></i></span>
+        <h2 class="settings-section__title">Keselamatan Admin</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="set-row"><label class="set-label">No Telefon Admin</label><input class="input" type="tel" id="fSvTel"></div>
+        <div class="set-row"><label class="set-label">Password Admin</label>
+          <div class="lock-row">
+            <input class="input" type="password" id="fSvPass">
+            <button class="btn btn-ghost" type="button" id="btnTogglePass" title="Papar"><i class="fas fa-eye"></i></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <div class="save-bar is-hidden" id="saveBar">
+    <button class="btn btn-ghost" type="button" id="btnReset"><i class="fas fa-rotate-left"></i> Reset</button>
+    <button class="btn btn-primary" type="button" id="btnSave"><i class="fas fa-floppy-disk"></i> Simpan Perubahan</button>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/printer.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/settings-printer.js"></script>
+</body>
+</html>

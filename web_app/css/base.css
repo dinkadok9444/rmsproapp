@@ -1,0 +1,105 @@
+/* ===== RMS PRO WEB — BASE ===== */
+/* Brand colors mirror lib/theme/app_theme.dart */
+:root {
+  --primary: #00C47D;
+  --primary-dark: #009960;
+  --primary-light: #E6FFF5;
+
+  --bg: #F8FAFC;
+  --bg-deep: #FFFFFF;
+  --card: #FFFFFF;
+  --side: #F1F5F9;
+
+  --yellow: #F59E0B;
+  --yellow-light: #FEF3C7;
+  --blue: #3B82F6;
+  --blue-light: #DBEAFE;
+  --red: #EF4444;
+  --red-dark: #DC2626;
+  --red-light: #FEE2E2;
+  --green: #10B981;
+  --green-light: #D1FAE5;
+  --cyan: #06B6D4;
+  --orange: #F97316;
+  --orange-light: #FED7AA;
+  --indigo: #6366F1;
+  --purple: #8B5CF6;
+  --violet: #6D28D9;
+  --pink: #EC4899;
+  --whatsapp: #25D366;
+  --sky: #0EA5E9;
+  --teal: #14B8A6;
+
+  --text-primary: #0F172A;
+  --text-sub: #334155;
+  --text-muted: #64748B;
+  --text-dim: #94A3B8;
+
+  --border: #E2E8F0;
+  --border-med: #CBD5E1;
+  --border-light: #F1F5F9;
+
+  /* Fluid sizing — stable across LCD sizes */
+  --fs-xs:   clamp(10px, 0.7vw + 6px, 12px);
+  --fs-sm:   clamp(11px, 0.8vw + 7px, 13px);
+  --fs-base: clamp(13px, 0.9vw + 8px, 15px);
+  --fs-md:   clamp(14px, 1.0vw + 9px, 17px);
+  --fs-lg:   clamp(16px, 1.2vw + 10px, 20px);
+  --fs-xl:   clamp(20px, 1.6vw + 12px, 26px);
+  --fs-2xl:  clamp(24px, 2.0vw + 14px, 32px);
+
+  --sp-1: clamp(4px, 0.4vw, 6px);
+  --sp-2: clamp(6px, 0.6vw, 10px);
+  --sp-3: clamp(10px, 1.0vw, 14px);
+  --sp-4: clamp(14px, 1.4vw, 20px);
+  --sp-5: clamp(20px, 2.0vw, 28px);
+  --sp-6: clamp(28px, 2.8vw, 40px);
+
+  --radius-sm: 8px;
+  --radius:    12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.04);
+  --shadow:    0 4px 12px rgba(0,0,0,.06);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,.10);
+
+  --header-h: clamp(56px, 5.5vh + 28px, 72px);
+}
+
+/* Reset */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+img, svg { display: block; max-width: 100%; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+input, textarea, select { font-family: inherit; }
+a { color: inherit; text-decoration: none; }
+
+/* Layout container — clamps width on huge LCDs */
+.container {
+  width: 100%;
+  max-width: 1280px;
+  margin-inline: auto;
+  padding-inline: var(--sp-4);
+}
+
+/* Utility */
+.hidden { display: none !important; }
+.text-center { text-align: center; }
+.flex { display: flex; }
+.flex-1 { flex: 1; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.gap-2 { gap: var(--sp-2); }
+.gap-3 { gap: var(--sp-3); }
+.gap-4 { gap: var(--sp-4); }

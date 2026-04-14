@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Accessories</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <style>
+    .ac-head{display:flex;align-items:center;gap:8px;padding:12px 16px;background:#fff;border-bottom:1px solid #e2e8f0;flex-wrap:wrap;}
+    .ac-title{color:#f59e0b;font-size:14px;font-weight:900;letter-spacing:1px;flex:1;}
+    .ac-title i{margin-right:6px;}
+    .ac-pill{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:6px;border:1px solid;font-size:9px;font-weight:900;cursor:pointer;background:transparent;}
+    .ac-pill.orange{color:#f59e0b;border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.12);}
+    .ac-pill.red{color:#dc2626;border-color:rgba(220,38,38,.3);background:rgba(220,38,38,.12);}
+    .ac-pill.green{color:#fff;border-color:#10b981;background:#10b981;}
+    .ac-search{padding:10px 12px;background:#fff;border-bottom:1px solid #e2e8f0;position:relative;}
+    .ac-search .inp-wrap{position:relative;}
+    .ac-search input{width:100%;padding:10px 68px 10px 36px;border:none;border-radius:10px;background:#f1f5f9;font:inherit;font-size:12px;}
+    .ac-search .fa-search{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#64748b;}
+    .ac-search .ac-clear{position:absolute;right:36px;top:50%;transform:translateY(-50%);border:none;background:none;color:#64748b;cursor:pointer;}
+    .ac-search .ac-scan{position:absolute;right:10px;top:50%;transform:translateY(-50%);border:none;background:none;color:#f59e0b;cursor:pointer;font-size:14px;}
+    .ac-list{padding:12px;}
+    .ac-card{display:flex;gap:12px;align-items:center;margin-bottom:10px;padding:12px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;cursor:pointer;}
+    .ac-qty{width:44px;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;background:rgba(245,158,11,.1);color:#f59e0b;border:1px solid rgba(245,158,11,.2);}
+    .ac-card.low .ac-qty{background:rgba(220,38,38,.12);color:#dc2626;border-color:rgba(220,38,38,.3);}
+    .ac-card.low{border-color:rgba(220,38,38,.2);}
+    .ac-content{flex:1;min-width:0;}
+    .ac-row1{display:flex;align-items:center;gap:6px;}
+    .ac-kod{color:#f59e0b;font-size:10px;font-weight:900;letter-spacing:.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .ac-cat,.ac-status{padding:2px 6px;border-radius:4px;font-size:7px;font-weight:900;}
+    .ac-cat{background:rgba(6,182,212,.15);color:#06b6d4;}
+    .ac-nama{color:#0f172a;font-size:12px;font-weight:700;margin-top:2px;}
+    .ac-info{font-size:9px;font-weight:700;margin-top:2px;}
+    .ac-info .jual{color:#10b981;}
+    .ac-info .supp{color:#eab308;margin-left:10px;}
+    .ac-meta{font-size:8px;color:#cbd5e1;margin-top:2px;}
+    .ac-meta .siri{color:#2563eb;font-weight:700;margin-left:8px;}
+    .ac-chev{color:#cbd5e1;font-size:10px;}
+    .ac-empty{text-align:center;padding:40px 20px;color:#94a3b8;}
+    .ac-empty i{font-size:40px;color:#cbd5e1;margin-bottom:12px;}
+    .ac-foot{padding:8px 12px;background:#fff;border-top:1px solid #e2e8f0;display:flex;gap:6px;}
+    .ac-chip{padding:4px 8px;border-radius:4px;font-size:9px;font-weight:900;}
+
+    /* Modal */
+    .ac-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;z-index:1000;}
+    .ac-modal-bg.is-open{display:flex;}
+    .ac-modal{background:#fff;border-radius:20px 20px 0 0;padding:20px;max-width:600px;width:100%;max-height:92vh;overflow-y:auto;}
+    .ac-mhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+    .ac-mtitle{font-size:13px;font-weight:900;display:flex;gap:8px;align-items:center;}
+    .ac-mtitle.primary{color:#f59e0b;}
+    .ac-mtitle.yellow{color:#eab308;}
+    .ac-mtitle.orange{color:#f97316;}
+    .ac-mtitle.red{color:#dc2626;}
+    .ac-x{background:none;border:none;color:#dc2626;font-size:16px;cursor:pointer;}
+    .ac-img-picker{width:100%;height:120px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:#cbd5e1;cursor:pointer;background-size:cover;background-position:center;}
+    .ac-field{margin-bottom:10px;}
+    .ac-field label{display:block;color:#475569;font-size:10px;font-weight:900;margin-bottom:4px;}
+    .ac-field input,.ac-field select{width:100%;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font:inherit;font-size:12px;}
+    .ac-kod-row{display:flex;gap:4px;align-items:end;}
+    .ac-kod-row > :first-child{flex:1;}
+    .ac-act-btn{display:inline-flex;align-items:center;gap:4px;padding:8px 10px;border:1px solid;border-radius:8px;font-size:9px;font-weight:900;cursor:pointer;background:transparent;margin-bottom:10px;}
+    .ac-act-btn.gray{color:#64748b;border-color:rgba(100,116,139,.3);background:rgba(100,116,139,.15);}
+    .ac-act-btn.cyan{color:#06b6d4;border-color:rgba(6,182,212,.3);background:rgba(6,182,212,.15);}
+    .ac-act-btn.blue{color:#2563eb;border-color:rgba(37,99,235,.3);background:rgba(37,99,235,.15);}
+    .ac-act-btn.red{color:#dc2626;border-color:rgba(220,38,38,.3);background:rgba(220,38,38,.15);}
+    .ac-gbtn{display:inline-flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px;border:none;border-radius:10px;color:#fff;font-size:11px;font-weight:900;letter-spacing:.5px;cursor:pointer;}
+    .ac-gbtn.primary{background:linear-gradient(135deg,#f59e0b,rgba(245,158,11,.7));}
+    .ac-gbtn.blue{background:linear-gradient(135deg,#2563eb,rgba(37,99,235,.7));}
+    .ac-gbtn.red{background:linear-gradient(135deg,#dc2626,rgba(220,38,38,.7));}
+    .ac-status-row{display:flex;gap:8px;align-items:center;margin-bottom:12px;}
+    .ac-badge{padding:3px 8px;border-radius:4px;font-size:9px;font-weight:900;border:1px solid;}
+    .ac-hist-item{display:flex;gap:10px;align-items:center;margin-bottom:8px;padding:10px;border-radius:10px;}
+    .ac-snack{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#10b981;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;}
+    .ac-snack.err{background:#dc2626;}
+    .rms-printer-bar{position:fixed;bottom:16px;right:16px;z-index:500;}
+    .pos-printer{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;font-weight:800;font-size:11px;cursor:pointer;color:#64748b;box-shadow:0 2px 6px rgba(0,0,0,.06);}
+    .pos-printer:hover{border-color:#2563eb;color:#2563eb;}
+    .pos-printer.is-on{background:#dbeafe;color:#2563eb;border-color:#2563eb;}
+    .pos-printer.is-disabled{opacity:.5;cursor:not-allowed;}
+  </style>
+</head>
+<body class="settings-page">
+
+  <div class="rms-printer-bar">
+    <button type="button" id="posPrinterBtn" class="pos-printer" title="Printer">
+      <i class="fas fa-print"></i><span id="posPrinterLbl">PRINTER</span>
+    </button>
+  </div>
+
+  <div class="ac-head">
+    <div class="ac-title"><i class="fas fa-boxes-stacked"></i>STOCK CN</div>
+    <button class="ac-pill orange" id="btnHistUsed"><i class="fas fa-clock-rotate-left"></i> H. USED</button>
+    <button class="ac-pill red" id="btnHistReturn"><i class="fas fa-rotate-left"></i> H. RETURN</button>
+    <button class="ac-pill green" id="btnAdd"><i class="fas fa-plus"></i> TAMBAH</button>
+  </div>
+
+  <div class="ac-search">
+    <div class="inp-wrap">
+      <i class="fas fa-search"></i>
+      <input id="acSearch" placeholder="Cari kod, nama, siri jual...">
+      <button class="ac-clear" id="acClear" hidden><i class="fas fa-xmark"></i></button>
+      <button class="ac-scan" id="acScan" title="Scan barcode"><i class="fas fa-barcode"></i></button>
+    </div>
+  </div>
+
+  <div class="ac-list" id="acList"><div class="ac-empty"><i class="fas fa-spinner fa-spin"></i><div>Memuatkan...</div></div></div>
+
+  <div class="ac-foot" id="acFoot" hidden></div>
+
+  <!-- ADD / EDIT MODAL -->
+  <div class="ac-modal-bg" id="modalAdd">
+    <div class="ac-modal">
+      <div class="ac-mhead">
+        <div class="ac-mtitle primary"><i class="fas fa-box-open"></i> <span id="addTitle">TAMBAH STOK</span></div>
+        <button class="ac-x" data-close="modalAdd"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="ac-img-picker" id="imgPicker">
+        <i class="fas fa-camera" style="font-size:24px;"></i>
+        <div style="font-size:9px;font-weight:700;">TAMBAH GAMBAR</div>
+      </div>
+      <input type="file" id="imgFile" accept="image/*" hidden>
+      <div style="height:12px;"></div>
+      <div class="ac-kod-row">
+        <div class="ac-field"><label>KOD ITEM</label><input id="fKod" placeholder="Cth: LCD-IP13"></div>
+        <button class="ac-act-btn gray" id="kodCopy"><i class="fas fa-copy"></i> SALIN</button>
+        <button class="ac-act-btn cyan" id="kodAuto"><i class="fas fa-rotate"></i> AUTO</button>
+        <button class="ac-act-btn blue" id="kodScan"><i class="fas fa-barcode"></i> SCAN</button>
+      </div>
+      <div class="ac-field"><label>TARIKH MASUK</label><input id="fTarikh" placeholder="yyyy-mm-dd"></div>
+      <div class="ac-field"><label>NAMA ITEM</label><input id="fNama" placeholder="Cth: LCD iPhone 13"></div>
+      <div class="ac-field"><label>KATEGORI</label><select id="fCat"><option>SPAREPART</option><option selected>ACCESSORIES</option></select></div>
+      <div class="ac-field"><label>HARGA JUAL (RM)</label><input id="fJual" type="number" step="0.01" placeholder="0.00"></div>
+      <button class="ac-gbtn primary" id="saveStock"><i class="fas fa-floppy-disk"></i> <span id="saveLbl">SIMPAN STOK</span></button>
+    </div>
+  </div>
+
+  <!-- EDIT MODAL -->
+  <div class="ac-modal-bg" id="modalEdit">
+    <div class="ac-modal">
+      <div class="ac-mhead">
+        <div class="ac-mtitle yellow"><i class="fas fa-pen-to-square"></i> <span id="editTitle">EDIT</span></div>
+        <button class="ac-x" data-close="modalEdit"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="ac-status-row" id="editStatusRow"></div>
+      <div class="ac-field"><label>NAMA ITEM</label><input id="eNama"></div>
+      <div class="ac-field"><label>HARGA JUAL (RM)</label><input id="eJual" type="number" step="0.01"></div>
+      <div style="display:flex;gap:8px;">
+        <button class="ac-gbtn primary" id="eUpdate"><i class="fas fa-floppy-disk"></i> KEMASKINI</button>
+        <button class="ac-gbtn blue" id="ePrint"><i class="fas fa-print"></i> CETAK LABEL</button>
+      </div>
+      <div style="margin-top:14px;color:#dc2626;font-size:11px;font-weight:900;"><i class="fas fa-clock-rotate-left"></i> REVERSE STOCK</div>
+      <div style="display:flex;gap:8px;align-items:end;margin-top:8px;">
+        <div class="ac-field" style="flex:1;margin-bottom:0;"><label>NO. SIRI JOB</label><input id="eSiri" placeholder="Cth: RMS-00001"></div>
+        <button class="ac-act-btn red" id="eReverse" style="margin-bottom:0;"><i class="fas fa-arrows-rotate"></i> REVERSE</button>
+      </div>
+      <div style="height:12px;"></div>
+      <button class="ac-gbtn red" id="eDelete"><i class="fas fa-trash-can"></i> PADAM ITEM</button>
+    </div>
+  </div>
+
+  <!-- HISTORY USED MODAL -->
+  <div class="ac-modal-bg" id="modalUsed">
+    <div class="ac-modal">
+      <div class="ac-mhead">
+        <div class="ac-mtitle orange"><i class="fas fa-clock-rotate-left"></i> HISTORY USED</div>
+        <button class="ac-x" data-close="modalUsed"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div id="usedList"></div>
+    </div>
+  </div>
+
+  <!-- HISTORY RETURN MODAL -->
+  <div class="ac-modal-bg" id="modalReturn">
+    <div class="ac-modal">
+      <div class="ac-mhead">
+        <div class="ac-mtitle red"><i class="fas fa-rotate-left"></i> HISTORY RETURN</div>
+        <button class="ac-x" data-close="modalReturn"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div id="returnList"></div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-storage-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/printer.js"></script>
+  <script src="js/accessories.js"></script>
+</body>
+</html>

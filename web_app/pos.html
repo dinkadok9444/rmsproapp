@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — POS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/kerugian.css">
+  <link rel="stylesheet" href="css/pos.css">
+</head>
+<body class="pos-page">
+  <!-- Top bar -->
+  <div class="pos-top">
+    <div class="pos-top__left">
+      <i class="fas fa-cash-register"></i>
+      <strong>POS</strong>
+      <span class="pos-top__shop" id="posShop">—</span>
+    </div>
+    <div class="pos-top__right">
+      <button type="button" id="posHistoryBtn" class="pos-printer" title="Sejarah Jualan">
+        <i class="fas fa-clock-rotate-left"></i>
+        <span>SEJARAH</span>
+      </button>
+      <button type="button" id="posPrinterBtn" class="pos-printer" title="Printer Bluetooth">
+        <i class="fas fa-print"></i>
+        <span id="posPrinterLbl">PRINTER</span>
+      </button>
+      <select id="posStaff" class="pos-input" title="Staff"></select>
+    </div>
+  </div>
+
+  <!-- Search + Category -->
+  <div class="pos-filter">
+    <div class="pos-search">
+      <i class="fas fa-search"></i>
+      <input type="text" id="posSearch" placeholder="Cari nama atau kod produk…">
+    </div>
+    <div class="pos-cats" id="posCats"></div>
+  </div>
+
+  <!-- Split: products (left) + cart (right) -->
+  <div class="pos-main">
+    <div class="pos-products" id="posProducts"></div>
+    <div class="pos-products-empty hidden" id="posProductsEmpty">
+      <i class="fas fa-box-open"></i>
+      <div>Tiada produk.</div>
+    </div>
+
+    <aside class="pos-cart">
+      <div class="pos-cart__head">
+        <div><i class="fas fa-cart-shopping"></i> <strong>CART</strong> <span class="pos-cart__count" id="posCartCount">0</span></div>
+        <button type="button" id="posCartClear" class="pos-cart__clear"><i class="fas fa-trash-can"></i></button>
+      </div>
+      <div class="pos-cart__list" id="posCartList"></div>
+      <div class="pos-cart__empty hidden" id="posCartEmpty">Cart kosong. Klik produk untuk tambah.</div>
+      <div class="pos-cart__total">
+        <span>JUMLAH</span>
+        <span class="pos-cart__amt" id="posCartTotal">RM 0.00</span>
+      </div>
+      <button type="button" class="btn-submit pos-cart__pay" id="posPayBtn" style="background:var(--primary)" disabled>
+        <i class="fas fa-credit-card"></i> BAYAR
+      </button>
+    </aside>
+  </div>
+
+  <!-- Payment modal -->
+  <div class="lost-modal-backdrop" id="posPayModal">
+    <div class="lost-modal">
+      <div class="lost-modal__head">
+        <span style="color:var(--primary)"><i class="fas fa-credit-card"></i> BAYARAN</span>
+        <button type="button" class="lost-modal__close" id="posPayClose"><i class="fas fa-xmark"></i></button>
+      </div>
+
+      <div class="pos-seg" id="posCustType">
+        <button type="button" class="pos-seg__item is-active" data-type="WALK-IN">WALK-IN</button>
+        <button type="button" class="pos-seg__item" data-type="ONLINE">ONLINE</button>
+      </div>
+
+      <div class="cw-2col">
+        <div><label>NAMA PELANGGAN</label>
+          <input type="text" id="posCustName" class="lost-input" list="posCustList" placeholder="Opsyenal">
+          <datalist id="posCustList"></datalist>
+        </div>
+        <div><label>TELEFON</label>
+          <input type="text" id="posCustTel" class="lost-input" placeholder="Opsyenal">
+        </div>
+      </div>
+      <label>ALAMAT</label>
+      <input type="text" id="posCustAlamat" class="lost-input" placeholder="Opsyenal">
+
+      <label>KAEDAH BAYARAN</label>
+      <div class="pos-pay-grid" id="posPayGrid"></div>
+
+      <div class="pos-pay-sum">
+        <span>JUMLAH DIBAYAR</span>
+        <span class="pos-pay-sum__amt" id="posPayTotal">RM 0.00</span>
+      </div>
+
+      <div class="pos-toggles">
+        <label class="pos-toggle">
+          <input type="checkbox" id="posAutoPrint" checked>
+          <span><i class="fas fa-print"></i> Auto-Print Resit</span>
+        </label>
+        <label class="pos-toggle">
+          <input type="checkbox" id="posAutoDrawer" checked>
+          <span><i class="fas fa-cash-register"></i> Kick Cash Drawer (CASH)</span>
+        </label>
+      </div>
+
+      <button type="button" class="btn-submit" id="posPayConfirm" style="background:var(--green)">
+        <i class="fas fa-check"></i> SAHKAN BAYARAN
+      </button>
+    </div>
+  </div>
+
+  <!-- Success modal -->
+  <div class="lost-modal-backdrop" id="posDoneModal">
+    <div class="lost-modal lost-modal--sm" style="border-top-color:var(--green)">
+      <div class="lost-modal__head"><span style="color:var(--green)"><i class="fas fa-circle-check"></i> JUALAN BERJAYA</span></div>
+      <div class="pos-done">
+        <div class="pos-done__siri" id="posDoneSiri">#—</div>
+        <div class="pos-done__amt" id="posDoneAmt">RM 0.00</div>
+        <div class="pos-done__method" id="posDoneMethod">CASH</div>
+      </div>
+      <div class="pos-done__status" id="posDoneStatus"></div>
+      <div style="display:flex; gap:8px">
+        <button type="button" class="btn-ghost" id="posDoneReprint" style="flex:1"><i class="fas fa-print"></i> CETAK SEMULA</button>
+        <button type="button" class="btn-submit" id="posDoneOk" style="background:var(--primary); margin:0; flex:1">TUTUP</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History modal -->
+  <div class="lost-modal-backdrop" id="posHistModal">
+    <div class="lost-modal pos-hist-modal">
+      <div class="lost-modal__head">
+        <span style="color:var(--primary)"><i class="fas fa-clock-rotate-left"></i> SEJARAH JUALAN</span>
+        <button type="button" class="lost-modal__close" id="posHistClose"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="pos-hist-filter">
+        <div class="pos-search" style="flex:1">
+          <i class="fas fa-search"></i>
+          <input type="text" id="posHistSearch" placeholder="Cari siri / pelanggan / tel…">
+        </div>
+        <select id="posHistRange" class="pos-input">
+          <option value="today">Hari Ini</option>
+          <option value="week">7 Hari</option>
+          <option value="month">30 Hari</option>
+          <option value="all">Semua</option>
+        </select>
+      </div>
+      <div class="pos-hist-summary" id="posHistSummary">
+        <span><strong id="posHistCount">0</strong> rekod</span>
+        <span>Jumlah: <strong id="posHistTotal">RM 0.00</strong></span>
+      </div>
+      <div class="pos-hist-list" id="posHistList"></div>
+      <div class="pos-hist-empty hidden" id="posHistEmpty">Tiada jualan dijumpai.</div>
+    </div>
+  </div>
+
+  <div class="lost-toast" id="posToast" hidden></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/printer.js"></script>
+  <script src="js/pos.js"></script>
+</body>
+</html>

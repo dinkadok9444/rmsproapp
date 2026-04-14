@@ -1,0 +1,313 @@
+/* ===== BRANCH DASHBOARD ===== */
+:root {
+  --branch-theme: #0D9488; /* default teal — boleh override dari settings */
+  --branch-theme-dark: #115E59;
+}
+
+.branch-page { min-height: 100vh; display: flex; flex-direction: column; }
+.branch-header { position: sticky; top: 0; z-index: 50; }
+.branch-grid-wrap {
+  position: sticky;
+  top: 72px; /* tinggi header */
+  z-index: 40;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.module-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  display: block;
+  background: var(--bg);
+  min-height: calc(100vh - 200px);
+}
+.module-empty {
+  padding: var(--sp-6) var(--sp-4);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+/* ---- Slim horizontal header (logo tepi kiri) ---- */
+.branch-header {
+  position: relative;
+  background: linear-gradient(135deg, var(--branch-theme-dark), var(--branch-theme));
+  color: #fff;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--branch-theme) 25%, transparent);
+  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 72px;
+}
+.branch-header__avatar {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.2);
+  border: 1.5px solid rgba(255,255,255,.45);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; color: #fff;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.branch-header__avatar img { width: 100%; height: 100%; object-fit: cover; }
+.branch-header__info {
+  display: flex; flex-direction: column; align-items: center;
+  min-width: 0;
+  line-height: 1.15;
+  text-align: center;
+}
+.branch-header__shop {
+  font-size: 14px;
+  font-weight: 900; letter-spacing: .5px; text-transform: uppercase;
+  margin: 0;
+  max-width: min(80vw, 480px);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.branch-header__addr {
+  margin: 2px 0 0;
+  font-size: 10px;
+  font-weight: 500; color: rgba(255,255,255,.8);
+  max-width: min(85vw, 520px);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.branch-header__badge {
+  position: absolute;
+  top: 8px; left: var(--sp-4);
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px;
+  background: rgba(255,255,255,.2);
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 12px;
+  font-size: 10px; font-weight: 700; color: #fff;
+  white-space: nowrap;
+}
+.branch-header__clock {
+  position: absolute;
+  top: 8px; right: 64px;
+  display: flex; flex-direction: column; align-items: flex-end;
+  line-height: 1.05;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.branch-header__time {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .5px;
+}
+.branch-header__date {
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(255,255,255,.85);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+.branch-header__logout {
+  position: absolute;
+  top: 8px; right: var(--sp-4);
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.18);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 12px;
+}
+.branch-header__logout:hover { background: rgba(255,255,255,.32); }
+
+/* Supervisor switch — bawah badge ID kedai */
+.branch-header__sup {
+  position: absolute;
+  top: 34px; left: var(--sp-4);
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px;
+  background: rgba(99,102,241,.95); /* indigo — warna supervisor */
+  border: 1px solid rgba(255,255,255,.35);
+  border-radius: 12px;
+  font-size: 10px; font-weight: 900; color: #fff;
+  letter-spacing: .5px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: transform .15s, box-shadow .15s;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+}
+.branch-header__sup:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,.22); }
+.branch-header__sup i { font-size: 9px; }
+
+/* ---- Branch module tiles — kecil, 1 baris, scroll horizontal ---- */
+.branch-grid {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: stretch;
+  gap: 6px;
+  padding: var(--sp-3) var(--sp-4);
+  max-width: 1280px;
+  margin-inline: auto;
+}
+
+.branch-tile {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 4px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px;
+  text-align: center;
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+.branch-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0,0,0,.08);
+}
+.branch-tile.is-active {
+  border-color: var(--branch-theme);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--branch-theme) 25%, transparent);
+}
+.branch-tile__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px;
+}
+.branch-tile__label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.15;
+  word-break: break-word;
+}
+.branch-tile__badge {
+  position: absolute;
+  top: 4px; right: 4px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 7px;
+  font-weight: 900;
+}
+.badge-on  { background: rgba(16,185,129,.15); color: var(--green); }
+.badge-off { background: rgba(148,163,184,.15); color: var(--text-dim); }
+
+/* ---- Top tab bar (di bawah header, bukan di bawah skrin) ---- */
+.branch-tabbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  overflow-x: auto;
+}
+.branch-tabbar::-webkit-scrollbar { display: none; }
+.branch-tab {
+  flex: 1 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: all .15s;
+  min-height: 40px;
+}
+.branch-tab i { font-size: 14px; }
+.branch-tab:hover { background: var(--side); color: var(--branch-theme); }
+.branch-tab.is-active {
+  background: color-mix(in srgb, var(--branch-theme) 12%, white);
+  color: var(--branch-theme);
+}
+.branch-tab--add {
+  background: linear-gradient(135deg, var(--branch-theme), var(--branch-theme-dark));
+  color: #fff;
+  font-weight: 900;
+  box-shadow: 0 4px 10px color-mix(in srgb, var(--branch-theme) 35%, transparent);
+}
+.branch-tab--add:hover { color: #fff; transform: translateY(-1px); }
+
+/* ---- Bottom sheet (Add popup) ---- */
+.sheet-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.45);
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn .2s;
+}
+.sheet-backdrop.is-open { display: flex; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.sheet {
+  width: 100%;
+  max-width: 480px;
+  margin: var(--sp-3);
+  background: #fff;
+  border-radius: 20px;
+  padding: var(--sp-4);
+  box-shadow: 0 -4px 20px rgba(0,0,0,.1);
+  animation: slideUpSheet .25s cubic-bezier(.22,1,.36,1);
+}
+@keyframes slideUpSheet { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.sheet__handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto var(--sp-3); }
+.sheet__title {
+  text-align: center;
+  font-size: var(--fs-sm); font-weight: 900; letter-spacing: 1px;
+  color: var(--text-primary);
+  margin: 0 0 var(--sp-3);
+}
+.sheet__row { display: flex; gap: var(--sp-3); }
+.sheet__action {
+  flex: 1;
+  border-radius: 16px;
+  padding: var(--sp-4) var(--sp-2);
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+  border: 1px solid currentColor;
+  background: var(--bg);
+}
+.sheet__action-icon {
+  width: 46px; height: 46px;
+  background: #fff;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  box-shadow: 0 4px 8px rgba(0,0,0,.06);
+}
+.sheet__action-label {
+  font-size: 10px; font-weight: 800;
+}
+
+/* Color helper map (uses CSS color-mix) */
+.c-teal   { --c: #0D9488; }
+.c-amber  { --c: #F59E0B; }
+.c-violet { --c: #8B5CF6; }
+.c-cyan   { --c: #06B6D4; }
+.c-pink   { --c: #EC4899; }
+.c-indigo { --c: #6366F1; }
+.c-purple { --c: #A855F7; }
+.c-red    { --c: #EF4444; }
+.c-redd   { --c: #DC2626; }
+.c-sky    { --c: #0EA5E9; }
+.c-slate  { --c: #64748B; }
+.c-gray   { --c: #6B7280; }
+[class*="c-"] .branch-tile__icon {
+  background: color-mix(in srgb, var(--c) 18%, white);
+  color: var(--c);
+}
+.sheet__action[class*="c-"] {
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 12%, white);
+  border-color: color-mix(in srgb, var(--c) 25%, transparent);
+}
+.sheet__action[class*="c-"] .sheet__action-icon { color: var(--c); }

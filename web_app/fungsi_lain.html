@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Fungsi Lain</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <style>
+    .fl-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:16px;}
+    .fl-card.blue{border-color:rgba(37,99,235,.3);}
+    .fl-card.primary{border-color:rgba(245,158,11,.3);}
+    .fl-head{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:900;letter-spacing:.5px;}
+    .fl-head.blue{color:#2563eb;}
+    .fl-head.primary{color:#f59e0b;}
+    .fl-ann-empty{color:#94a3b8;font-size:11px;font-style:italic;margin-top:10px;}
+    .fl-ann{margin-top:10px;padding:10px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;color:#b45309;font-size:12px;font-weight:800;}
+    .fl-sub{color:#64748b;font-size:10px;margin:4px 0 10px;}
+    .fl-input{width:100%;border:1px solid #e2e8f0;border-radius:8px;padding:10px;font:inherit;background:#f8fafc;resize:vertical;}
+    .fl-input:focus{outline:none;border-color:#f59e0b;}
+    .fl-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;background:#f59e0b;color:#000;border:none;border-radius:8px;font-weight:900;font-size:11px;cursor:pointer;width:100%;margin-top:10px;}
+    .fl-btn[disabled]{opacity:.6;cursor:not-allowed;}
+    .fl-btn.blue{background:#2563eb;color:#fff;}
+    .fl-btn.green{background:#10b981;color:#fff;}
+    .fl-btn.red{background:#dc2626;color:#fff;}
+    .fl-btn.yellow{background:#eab308;color:#000;}
+    .fl-btn.gray{background:#94a3b8;color:#fff;}
+    .fl-div{border-top:1px solid #e2e8f0;margin:14px 0 10px;}
+    .fl-sec-lbl{color:#64748b;font-size:10px;font-weight:900;letter-spacing:.5px;margin-bottom:8px;}
+    .fl-fb-item{margin-bottom:8px;padding:10px;border-radius:8px;border-left:3px solid #2563eb;background:#f1f5f9;}
+    .fl-fb-item.resolved{border-left-color:#f59e0b;background:#fff7ed;}
+    .fl-fb-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+    .fl-badge{padding:2px 6px;border-radius:4px;color:#fff;font-size:8px;font-weight:900;background:#2563eb;}
+    .fl-badge.resolved{background:#f59e0b;}
+    .fl-fb-time{color:#94a3b8;font-size:9px;}
+    .fl-fb-msg{color:#0f172a;font-size:11px;line-height:1.3;}
+    .fl-resolve-note{margin-top:6px;padding:6px;background:#fff;border:1px solid rgba(245,158,11,.3);border-radius:6px;color:#64748b;font-size:10px;font-style:italic;display:flex;gap:6px;}
+    .fl-resolve-note i{color:#f59e0b;font-size:10px;}
+    .fl-resolved-at{margin-top:4px;color:#f59e0b;font-size:9px;font-weight:800;}
+    .fl-pos-add{display:inline-flex;align-items:center;gap:4px;padding:6px 10px;background:#f59e0b;color:#000;border:none;border-radius:8px;font-size:9px;font-weight:900;cursor:pointer;}
+    .fl-pos-row{margin-bottom:8px;padding:12px;background:#f1f5f9;border-left:3px solid #f59e0b;border-radius:8px;display:flex;gap:8px;}
+    .fl-pos-tarikh{color:#94a3b8;font-size:9px;}
+    .fl-pos-track{color:#f59e0b;font-size:11px;font-weight:900;letter-spacing:1px;}
+    .fl-pos-kurier{color:#94a3b8;font-size:9px;}
+    .fl-pos-item{color:#475569;font-size:10px;}
+    .fl-pos-status{display:inline-block;margin-top:4px;padding:2px 6px;border:1px solid;border-radius:4px;font-size:9px;font-weight:900;background:#fff;}
+    .fl-icon-btn{padding:6px;border:1px solid;border-radius:6px;background:transparent;cursor:pointer;}
+    .fl-empty{padding:20px;text-align:center;color:#94a3b8;font-size:11px;font-style:italic;}
+    .fl-snack{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;}
+    .fl-snack.err{background:#dc2626;}
+    .fl-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px;}
+    .fl-modal-bg.is-open{display:flex;}
+    .fl-modal{background:#fff;border-radius:16px;padding:20px;max-width:440px;width:100%;}
+    .fl-modal h3{margin:0 0 14px;color:#f59e0b;font-size:13px;font-weight:900;}
+    .fl-field{margin-bottom:10px;}
+    .fl-field label{display:block;color:#64748b;font-size:10px;font-weight:900;margin-bottom:4px;}
+    .fl-field input,.fl-field select{width:100%;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font:inherit;background:#f8fafc;}
+    .fl-modal-actions{display:flex;gap:8px;margin-top:12px;}
+    .fl-modal-actions button{flex:1;}
+  </style>
+</head>
+<body class="settings-page">
+  <main class="settings-container">
+
+    <!-- Announcement -->
+    <div class="fl-card blue">
+      <div class="fl-head blue"><i class="fas fa-bullhorn"></i> NOTIFIKASI ADMIN</div>
+      <div id="annBox" class="fl-ann-empty">Tiada pengumuman</div>
+    </div>
+
+    <!-- Feedback -->
+    <div class="fl-card primary">
+      <div class="fl-head primary"><i class="fas fa-comment-dots"></i> FEEDBACK KE RMS PRO</div>
+      <div class="fl-sub">Hantar cadangan / aduan / bug kepada pembangun</div>
+      <textarea id="fbInput" class="fl-input" rows="3" placeholder="Tulis feedback anda di sini..."></textarea>
+      <button id="fbSend" class="fl-btn"><i class="fas fa-paper-plane"></i> <span id="fbSendLbl">HANTAR FEEDBACK</span></button>
+      <div id="fbHistWrap" hidden>
+        <div class="fl-div"></div>
+        <div class="fl-sec-lbl">SEJARAH FEEDBACK</div>
+        <div id="fbHist"></div>
+      </div>
+    </div>
+
+    <!-- Pos & Tracking -->
+    <div class="fl-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div class="fl-head primary"><i class="fas fa-truck-fast"></i> REKOD POS</div>
+        <button class="fl-pos-add" id="btnAddPos"><i class="fas fa-plus-circle"></i> TAMBAH</button>
+      </div>
+      <div id="posList" style="margin-top:12px;"></div>
+    </div>
+
+  </main>
+
+  <!-- POS MODAL -->
+  <div class="fl-modal-bg" id="posModal">
+    <div class="fl-modal">
+      <h3 id="posModalTitle"><i class="fas fa-truck-fast"></i> TAMBAH REKOD</h3>
+      <div class="fl-field"><label>TARIKH</label><input id="posTarikh" placeholder="yyyy-mm-dd"></div>
+      <div class="fl-field"><label>ITEM / TUJUAN</label><input id="posItem" placeholder="Maklumat barang"></div>
+      <div style="display:flex;gap:8px;">
+        <div class="fl-field" style="flex:1;"><label>KURIER</label><input id="posKurier" placeholder="J&T / PosLaju"></div>
+        <div class="fl-field" style="flex:1;"><label>NO TRACKING</label><input id="posTrack" placeholder="No Track" style="text-transform:uppercase;"></div>
+      </div>
+      <div class="fl-field"><label>STATUS</label>
+        <select id="posStatus"><option>DIPOS</option><option>DALAM PERJALANAN</option><option>SELESAI</option></select>
+      </div>
+      <div class="fl-modal-actions">
+        <button class="fl-btn gray" id="posCancel">BATAL</button>
+        <button class="fl-btn" id="posSave"><i class="fas fa-save"></i> SIMPAN</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/fungsi_lain.js"></script>
+</body>
+</html>

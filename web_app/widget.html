@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/kerugian.css">
+  <link rel="stylesheet" href="css/widget.css">
+</head>
+<body class="wg-page">
+  <div class="wg-container">
+
+    <!-- Quote card -->
+    <section class="wg-quote">
+      <i class="fas fa-quote-left"></i>
+      <p id="wgQuote">"Konsisten adalah kunci kejayaan. Lakukan yang terbaik hari ini."</p>
+    </section>
+
+    <!-- Stats + Komponen side-by-side -->
+    <div class="wg-grid">
+
+      <!-- STATS BOX -->
+      <section class="wg-box">
+        <div class="wg-box__head">
+          <div class="wg-box__title"><i class="fas fa-chart-simple" style="color:var(--primary)"></i> STATISTIK REPAIR</div>
+          <select id="wgStatsFilter" class="wg-select">
+            <option value="TODAY">Hari Ini</option>
+            <option value="WEEK">Minggu Ini</option>
+            <option value="MONTH">Bulan Ini</option>
+            <option value="YEAR">Tahun Ini</option>
+            <option value="ALL">Semua</option>
+          </select>
+        </div>
+        <div class="wg-stats">
+          <div class="wg-stat c-primary"><div class="wg-stat__val" id="wgStTotal">0</div><div class="wg-stat__lbl">JUMLAH</div></div>
+          <div class="wg-stat c-blue"><div class="wg-stat__val" id="wgStProg">0</div><div class="wg-stat__lbl">IN PROGRESS</div></div>
+          <div class="wg-stat c-yellow"><div class="wg-stat__val" id="wgStWait">0</div><div class="wg-stat__lbl">WAITING PART</div></div>
+          <div class="wg-stat c-purple"><div class="wg-stat__val" id="wgStReady">0</div><div class="wg-stat__lbl">READY PICKUP</div></div>
+          <div class="wg-stat c-green"><div class="wg-stat__val" id="wgStComp">0</div><div class="wg-stat__lbl">COMPLETED</div></div>
+          <div class="wg-stat c-red"><div class="wg-stat__val" id="wgStCancel">0</div><div class="wg-stat__lbl">CANCELLED</div></div>
+        </div>
+      </section>
+
+      <!-- KOMPONEN BOX -->
+      <section class="wg-box">
+        <div class="wg-box__head">
+          <div class="wg-box__title"><i class="fas fa-microchip" style="color:var(--cyan)"></i> CARI KOMPONEN</div>
+        </div>
+        <div class="wg-komp-search">
+          <input type="text" id="wgKompInput" class="bp-input" placeholder="Cth: iPhone 13, SM-A135…">
+          <button type="button" id="wgKompBtn" class="btn-submit" style="margin:0; padding:9px 14px; background:var(--cyan)"><i class="fas fa-magnifying-glass"></i></button>
+        </div>
+        <div class="wg-komp-tabs">
+          <button type="button" class="wg-komp-tab is-active" data-tab="bateri"><i class="fas fa-battery-full"></i> BATERI <span id="wgBatCount">0</span></button>
+          <button type="button" class="wg-komp-tab" data-tab="lcd"><i class="fas fa-mobile-screen"></i> LCD <span id="wgLcdCount">0</span></button>
+        </div>
+        <div class="wg-komp-results" id="wgKompResults">
+          <div class="wg-komp-empty"><i class="fas fa-magnifying-glass"></i><div>Cari model untuk papar kod bateri/LCD</div></div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- KEWANGAN BOX (full width) -->
+    <section class="wg-box">
+      <div class="wg-box__head">
+        <div class="wg-box__title"><i class="fas fa-wallet" style="color:var(--teal)"></i> KEWANGAN</div>
+        <select id="wgKewFilter" class="wg-select">
+          <option value="TODAY">Hari Ini</option>
+          <option value="WEEK">Minggu Ini</option>
+          <option value="MONTH">Bulan Ini</option>
+          <option value="YEAR">Tahun Ini</option>
+          <option value="ALL">Semua</option>
+        </select>
+      </div>
+      <div class="wg-kew">
+        <div class="wg-kew__card c-green">
+          <div class="wg-kew__ico"><i class="fas fa-arrow-trend-up"></i></div>
+          <div>
+            <div class="wg-kew__lbl">JUALAN</div>
+            <div class="wg-kew__val" id="wgKwSales">RM 0.00</div>
+          </div>
+        </div>
+        <div class="wg-kew__card c-orange">
+          <div class="wg-kew__ico"><i class="fas fa-rotate-left"></i></div>
+          <div>
+            <div class="wg-kew__lbl">REFUND</div>
+            <div class="wg-kew__val" id="wgKwRefund">RM 0.00</div>
+          </div>
+        </div>
+        <div class="wg-kew__card c-red">
+          <div class="wg-kew__ico"><i class="fas fa-arrow-trend-down"></i></div>
+          <div>
+            <div class="wg-kew__lbl">PERBELANJAAN</div>
+            <div class="wg-kew__val" id="wgKwExp">RM 0.00</div>
+          </div>
+        </div>
+        <div class="wg-kew__card c-primary">
+          <div class="wg-kew__ico"><i class="fas fa-coins"></i></div>
+          <div>
+            <div class="wg-kew__lbl">UNTUNG BERSIH</div>
+            <div class="wg-kew__val" id="wgKwNet">RM 0.00</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <div class="lost-toast" id="wgToast" hidden></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/widget.js"></script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — DB Pelanggan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/senarai_job.css">
+  <style>
+    .dc-toggle{display:flex;gap:8px;margin-bottom:10px;}
+    .dc-toggle button{flex:1;padding:10px;border-radius:10px;border:1px solid var(--border,#e2e8f0);background:#fff;color:var(--text-muted,#64748b);font-weight:800;cursor:pointer;font-size:12px;letter-spacing:.5px;}
+    .dc-toggle button.is-active.repair{background:#2563eb22;border-color:#2563eb;color:#2563eb;}
+    .dc-toggle button.is-active.jualan{background:#06b6d422;border-color:#06b6d4;color:#06b6d4;}
+    .dc-toggle .count{display:inline-block;margin-left:6px;padding:2px 6px;border-radius:8px;background:#e2e8f0;font-size:10px;}
+    .dc-filter-row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+    .dc-search-row{display:flex;gap:8px;align-items:center;}
+    .dc-search-row .input{flex:1;}
+    .dc-date-btn{padding:10px;border-radius:10px;border:1px solid var(--border,#e2e8f0);background:#fff;cursor:pointer;white-space:nowrap;font-weight:700;color:var(--text-muted);}
+    .dc-date-btn.is-active{background:#2563eb22;border-color:#2563eb;color:#2563eb;}
+    .dc-card{background:#fff;border:1px solid var(--border,#e2e8f0);border-radius:12px;padding:12px;margin-bottom:10px;}
+    .dc-card.has-ref{border-color:#eab30855;}
+    .dc-card.sales{border-color:#06b6d455;display:flex;gap:12px;}
+    .dc-card__nama{font-weight:900;font-size:14px;color:var(--text,#0f172a);text-decoration:underline dotted #2563eb;cursor:pointer;}
+    .dc-card__harga{color:#10b981;font-weight:900;font-size:14px;}
+    .dc-info{display:flex;flex-wrap:wrap;gap:12px;margin-top:6px;font-size:12px;color:var(--text-muted);}
+    .dc-info i{margin-right:4px;}
+    .dc-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+    .dc-badge{padding:4px 8px;border-radius:6px;font-size:10px;font-weight:900;display:inline-flex;align-items:center;gap:4px;}
+    .dc-phone-img{width:48px;height:48px;border-radius:8px;background:#06b6d422;display:flex;align-items:center;justify-content:center;border:1px solid #06b6d455;flex-shrink:0;overflow:hidden;}
+    .dc-phone-img img{width:100%;height:100%;object-fit:cover;}
+    .dc-pagination{display:flex;justify-content:center;align-items:center;gap:12px;padding:10px;}
+    .dc-page-btn{padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:#fff;cursor:pointer;}
+    .dc-page-btn:disabled{opacity:.4;cursor:not-allowed;}
+    .dc-footer{padding:8px 12px;color:var(--text-muted);font-size:11px;font-weight:700;}
+    .dc-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-end;justify-content:center;z-index:9999;}
+    .dc-modal-bg.show{display:flex;}
+    .dc-modal{background:#fff;width:100%;max-width:560px;max-height:90vh;overflow:auto;border-radius:20px 20px 0 0;padding:20px;}
+    .dc-modal__head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-weight:900;font-size:14px;}
+    .dc-modal__close{cursor:pointer;color:#ef4444;}
+    .dc-action{display:flex;align-items:center;gap:12px;padding:14px;border-radius:12px;margin-bottom:10px;cursor:pointer;font-weight:900;font-size:12px;letter-spacing:.3px;}
+    .dc-link-box{padding:12px;border-radius:10px;margin-bottom:10px;}
+    .dc-link-box .code{font-size:14px;font-weight:900;}
+    .dc-link-box .url{font-size:10px;color:var(--text-dim,#94a3b8);word-break:break-all;margin:6px 0;}
+    .dc-link-actions{display:flex;gap:8px;}
+    .dc-link-actions button{flex:1;padding:10px;border-radius:8px;border:none;cursor:pointer;font-weight:900;font-size:10px;color:#fff;}
+    .dc-gallery{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    .dc-gal-cell{background:#f1f5f9;border-radius:12px;overflow:hidden;aspect-ratio:1/1;display:flex;flex-direction:column;border:1px solid var(--border);}
+    .dc-gal-cell .label{font-size:9px;font-weight:900;text-align:center;padding:6px;letter-spacing:.5px;}
+    .dc-gal-cell .img{flex:1;background-size:cover;background-position:center;background-color:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;cursor:pointer;}
+    .dc-snack{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;z-index:10000;box-shadow:0 8px 24px rgba(0,0,0,.2);}
+    .dc-snack.err{background:#dc2626;}
+    .dc-empty{text-align:center;padding:40px 16px;color:var(--text-muted);}
+    .dc-empty i{font-size:36px;opacity:.3;display:block;margin-bottom:8px;}
+    .dc-claim{background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;}
+  </style>
+</head>
+<body class="settings-page dbcust-page">
+  <main class="settings-container">
+
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-database"></i></span>
+        <h2 class="settings-section__title">DB PELANGGAN</h2>
+        <button id="btnExport" class="dc-date-btn" style="margin-left:auto;color:#10b981;border-color:#10b98155;background:#10b98115;">
+          <i class="fas fa-file-csv"></i> EXCEL
+        </button>
+      </div>
+      <div class="settings-section__body">
+        <div class="dc-toggle">
+          <button type="button" class="is-active repair" data-seg="0"><i class="fas fa-screwdriver-wrench"></i> REPAIR <span class="count" id="cntRepair">0</span></button>
+          <button type="button" class="jualan" data-seg="1"><i class="fas fa-cart-shopping"></i> JUALAN <span class="count" id="cntSales">0</span></button>
+        </div>
+
+        <div class="dc-search-row" style="margin-bottom:8px;">
+          <input class="input" id="dcSearch" placeholder="Cari nama / telefon / model…">
+          <button type="button" id="dcDateBtn" class="dc-date-btn"><i class="fas fa-calendar-day"></i> <span id="dcDateLbl">TARIKH</span></button>
+          <input type="date" id="dcDate" style="display:none;">
+        </div>
+
+        <div class="dc-filter-row">
+          <select class="set-select" id="fSort">
+            <option value="TERBARU">TERBARU</option>
+            <option value="A-Z">A-Z</option>
+          </select>
+          <select class="set-select" id="fTime">
+            <option value="SEMUA">SEMUA</option>
+            <option value="HARI_INI">HARI INI</option>
+            <option value="BULAN_INI">BULAN INI</option>
+          </select>
+          <select class="set-select" id="fAff">
+            <option value="SEMUA">SEMUA</option>
+            <option value="AFFILIATE">AFFILIATE</option>
+            <option value="BELUM">BELUM</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-users"></i></span>
+        <h2 class="settings-section__title">Senarai</h2>
+      </div>
+      <div class="settings-section__body">
+        <div id="dcList"></div>
+        <div id="dcEmpty" class="dc-empty" hidden>
+          <i class="fas fa-user-slash"></i>
+          <p>Tiada rekod.</p>
+        </div>
+        <div class="dc-pagination" id="dcPagination" hidden>
+          <button class="dc-page-btn" id="btnPrev"><i class="fas fa-chevron-left"></i></button>
+          <span id="pageInfo">1 / 1</span>
+          <button class="dc-page-btn" id="btnNext"><i class="fas fa-chevron-right"></i></button>
+        </div>
+        <div class="dc-footer" id="dcFooter">0 rekod</div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Action Modal -->
+  <div class="dc-modal-bg" id="modalAction">
+    <div class="dc-modal">
+      <div class="dc-modal__head">
+        <span style="color:#2563eb;"><i class="fas fa-bullseye"></i> PUSAT TINDAKAN</span>
+        <span class="dc-modal__close" data-close><i class="fas fa-xmark"></i></span>
+      </div>
+      <div id="actionBody"></div>
+    </div>
+  </div>
+
+  <!-- Referral Modal -->
+  <div class="dc-modal-bg" id="modalReferral">
+    <div class="dc-modal">
+      <div class="dc-modal__head">
+        <span style="color:#eab308;"><i class="fas fa-handshake"></i> GENERATE REFERRAL</span>
+        <span class="dc-modal__close" data-close><i class="fas fa-xmark"></i></span>
+      </div>
+      <div id="referralBody"></div>
+    </div>
+  </div>
+
+  <!-- Link Modal -->
+  <div class="dc-modal-bg" id="modalLink">
+    <div class="dc-modal">
+      <div class="dc-modal__head">
+        <span style="color:#10b981;"><i class="fas fa-share-nodes"></i> HANTAR LINK</span>
+        <span class="dc-modal__close" data-close><i class="fas fa-xmark"></i></span>
+      </div>
+      <div id="linkBody"></div>
+    </div>
+  </div>
+
+  <!-- Gallery Modal -->
+  <div class="dc-modal-bg" id="modalGallery">
+    <div class="dc-modal">
+      <div class="dc-modal__head">
+        <span style="color:#eab308;"><i class="fas fa-images"></i> <span id="galTitle">GALERI</span></span>
+        <span class="dc-modal__close" data-close><i class="fas fa-xmark"></i></span>
+      </div>
+      <div id="galleryBody" class="dc-gallery"></div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/db_cust.js"></script>
+</body>
+</html>

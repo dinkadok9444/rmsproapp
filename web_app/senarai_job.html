@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Senarai Job</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/senarai_job.css">
+  <style>
+    .sj-item{cursor:pointer;}
+    .sj-item:hover{box-shadow:0 4px 12px rgba(0,0,0,.06);}
+    .sj-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:1000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px;}
+    .sj-modal-bg.is-open{display:flex;}
+    .sj-modal{background:#fff;border-radius:14px;max-width:780px;width:100%;padding:16px;max-height:95vh;overflow-y:auto;}
+    .sj-modal h3{margin:0 0 10px;display:flex;align-items:center;gap:8px;}
+    .sj-close{float:right;background:#fee2e2;color:#dc2626;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;font-weight:800;}
+    .sj-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    @media(max-width:640px){.sj-grid{grid-template-columns:1fr;}}
+    .sj-field{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;}
+    .sj-field label{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;}
+    .sj-field input,.sj-field select,.sj-field textarea{border:1px solid #e2e8f0;border-radius:8px;padding:8px;font:inherit;}
+    .sj-status-btns{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+    .sj-status-btns button{padding:6px 10px;border-radius:999px;border:1px solid #e2e8f0;background:#fff;font-weight:700;cursor:pointer;font-size:12px;}
+    .sj-status-btns button.is-active{background:#2563eb;color:#fff;border-color:#2563eb;}
+    .sj-item-edit{display:grid;grid-template-columns:1fr 60px 100px auto;gap:6px;margin-bottom:6px;}
+    .sj-hist{background:#f1f5f9;padding:8px;border-radius:8px;font-size:12px;margin-bottom:6px;}
+    .sj-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;}
+    .sj-actions button{flex:1;min-width:120px;padding:12px;border-radius:10px;border:none;font-weight:800;cursor:pointer;}
+    .btn-save{background:#10b981;color:#fff;}
+    .btn-del{background:#fee2e2;color:#dc2626;}
+    .btn-print{background:#dbeafe;color:#2563eb;}
+    .btn-wa{background:#dcfce7;color:#16a34a;}
+    .rms-printer-bar{position:fixed;bottom:16px;right:16px;z-index:500;}
+    .pos-printer{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;font-weight:800;font-size:11px;cursor:pointer;color:#64748b;box-shadow:0 2px 6px rgba(0,0,0,.06);}
+    .pos-printer:hover{border-color:#2563eb;color:#2563eb;}
+    .pos-printer.is-on{background:#dbeafe;color:#2563eb;border-color:#2563eb;}
+    .pos-printer.is-disabled{opacity:.5;cursor:not-allowed;}
+  </style>
+</head>
+<body class="settings-page senaraijob-page">
+  <div class="rms-printer-bar">
+    <button type="button" id="posPrinterBtn" class="pos-printer" title="Printer">
+      <i class="fas fa-print"></i><span id="posPrinterLbl">PRINTER</span>
+    </button>
+  </div>
+  <main class="settings-container">
+
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-screwdriver-wrench"></i></span>
+        <h2 class="settings-section__title">Senarai Job</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="sj-pills" id="sjPills">
+          <button type="button" class="sj-pill is-active" data-s="ALL"><i class="fas fa-layer-group"></i> Semua</button>
+          <button type="button" class="sj-pill" data-s="IN PROGRESS"><i class="fas fa-wrench"></i> In Progress</button>
+          <button type="button" class="sj-pill" data-s="WAITING PART"><i class="fas fa-hourglass-half"></i> Waiting Part</button>
+          <button type="button" class="sj-pill" data-s="READY TO PICKUP"><i class="fas fa-check-circle"></i> Ready</button>
+          <button type="button" class="sj-pill" data-s="COMPLETED"><i class="fas fa-flag-checkered"></i> Completed</button>
+          <button type="button" class="sj-pill" data-s="CANCEL"><i class="fas fa-times-circle"></i> Cancel</button>
+          <button type="button" class="sj-pill" data-s="REJECT"><i class="fas fa-ban"></i> Reject</button>
+          <button type="button" class="sj-pill" data-s="OVERDUE"><i class="fas fa-exclamation-triangle"></i> Overdue</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-chart-pie"></i></span>
+        <h2 class="settings-section__title">Ringkasan</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="sj-stats">
+          <div class="sj-stat"><div class="sj-stat__label"><i class="fas fa-list-ol"></i> Jumlah Job</div><div class="sj-stat__val" id="stCount">0</div></div>
+          <div class="sj-stat"><div class="sj-stat__label"><i class="fas fa-wrench"></i> In Progress</div><div class="sj-stat__val" id="stProg">0</div></div>
+          <div class="sj-stat"><div class="sj-stat__label"><i class="fas fa-check-circle"></i> Ready</div><div class="sj-stat__val" id="stReady">0</div></div>
+          <div class="sj-stat"><div class="sj-stat__label"><i class="fas fa-flag-checkered"></i> Completed</div><div class="sj-stat__val" id="stDone">0</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section" id="secFilter">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-filter"></i></span>
+        <h2 class="settings-section__title">Tapisan</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="set-row">
+          <label class="set-label"><i class="fas fa-clock"></i> Tempoh</label>
+          <select class="set-select" id="fTime">
+            <option value="ALL">Semua</option><option value="TODAY">Hari Ini</option><option value="WEEK">Minggu Ini</option><option value="MONTH">Bulan Ini</option><option value="CUSTOM">Julat Tersuai</option>
+          </select>
+        </div>
+        <div class="set-row">
+          <label class="set-label"><i class="fas fa-calendar-day"></i> Dari</label>
+          <input class="set-select" type="date" id="fFrom">
+        </div>
+        <div class="set-row">
+          <label class="set-label"><i class="fas fa-calendar-day"></i> Hingga</label>
+          <input class="set-select" type="date" id="fTo">
+        </div>
+        <div class="set-row">
+          <button type="button" id="btnClearRange" style="padding:8px 12px;border:1px dashed #e2e8f0;background:#fff;border-radius:8px;cursor:pointer;font-weight:700;"><i class="fas fa-eraser"></i> Clear Julat</button>
+        </div>
+        <div class="set-row">
+          <label class="set-label"><i class="fas fa-sort"></i> Susun</label>
+          <select class="set-select" id="fSort">
+            <option value="TARIKH_DESC">Terbaru dahulu</option><option value="TARIKH_ASC">Terlama dahulu</option>
+            <option value="NAMA_ASC">Nama (A-Z)</option><option value="NAMA_DESC">Nama (Z-A)</option>
+          </select>
+        </div>
+        <div class="set-row">
+          <label class="set-label"><i class="fas fa-search"></i> Cari</label>
+          <input class="input" type="search" id="fSearch" placeholder="Cari siri / nama / telefon…">
+        </div>
+        <div class="set-row">
+          <button type="button" class="cj-add-item" id="btnExport" style="padding:10px;border:1px dashed #e2e8f0;background:#fff;border-radius:8px;cursor:pointer;font-weight:700;"><i class="fas fa-file-csv"></i> Eksport CSV</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-list"></i></span>
+        <h2 class="settings-section__title">Senarai Rekod</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="sj-list" id="sjList"></div>
+        <div class="sj-empty" id="sjEmpty" hidden>
+          <i class="fas fa-inbox"></i>
+          <p>Tiada job dijumpai.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- DETAIL/EDIT MODAL -->
+  <div class="sj-modal-bg" id="jobModalBg">
+    <div class="sj-modal" id="jobModal"></div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/printer.js"></script>
+  <script src="js/senarai_job.js"></script>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Kewangan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/kewangan.css">
+</head>
+<body class="settings-page kewangan-page">
+  <main class="settings-container">
+
+    <!-- SEGMENT -->
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-wallet"></i></span>
+        <h2 class="settings-section__title">Kewangan</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="kw-segment" id="kwSegment">
+          <button type="button" class="kw-seg-btn is-active" data-seg="0"><i class="fas fa-money-bill-wave"></i> Kewangan</button>
+          <button type="button" class="kw-seg-btn" data-seg="1"><i class="fas fa-mobile-screen"></i> Jualan Telefon</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUMMARY -->
+    <section class="settings-section" id="secSummary">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-chart-pie"></i></span>
+        <h2 class="settings-section__title">Ringkasan</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="kw-stats" id="kwStats">
+          <div class="kw-stat" data-k="sales">
+            <div class="kw-stat__label">Jumlah Jualan</div>
+            <div class="kw-stat__val" id="stSales">RM 0.00</div>
+          </div>
+          <div class="kw-stat" data-k="expense">
+            <div class="kw-stat__label">Duit Keluar</div>
+            <div class="kw-stat__val" id="stExpense">RM 0.00</div>
+          </div>
+          <div class="kw-stat" data-k="net">
+            <div class="kw-stat__label">Untung Bersih</div>
+            <div class="kw-stat__val" id="stNet">RM 0.00</div>
+          </div>
+          <div class="kw-stat" data-k="count">
+            <div class="kw-stat__label">Jumlah Rekod</div>
+            <div class="kw-stat__val" id="stCount">0</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FILTER -->
+    <section class="settings-section" id="secFilter">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-filter"></i></span>
+        <h2 class="settings-section__title">Tapisan</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="set-row">
+          <label class="set-label">Tempoh</label>
+          <select class="set-select" id="fTime">
+            <option value="TODAY">Hari Ini</option>
+            <option value="WEEK">Minggu Ini</option>
+            <option value="MONTH">Bulan Ini</option>
+            <option value="YEAR">Tahun Ini</option>
+            <option value="ALL">Semua</option>
+          </select>
+        </div>
+        <div class="set-row">
+          <label class="set-label">Susun</label>
+          <select class="set-select" id="fSort">
+            <option value="DESC">Terbaru dahulu</option>
+            <option value="ASC">Terlama dahulu</option>
+          </select>
+        </div>
+        <div class="set-row">
+          <label class="set-label">Cari</label>
+          <input class="input" type="search" id="fSearch" placeholder="Cari nama / siri / item…">
+        </div>
+        <div class="set-row kw-phone-only" hidden>
+          <label class="set-label">Jenis Jualan</label>
+          <select class="set-select" id="fPhoneType">
+            <option value="CUSTOMER">Customer</option>
+            <option value="DEALER">Dealer</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <!-- LIST -->
+    <section class="settings-section" id="secList">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-list"></i></span>
+        <h2 class="settings-section__title" id="listTitle">Senarai Rekod</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="kw-list" id="kwList"></div>
+        <div class="kw-empty" id="kwEmpty" hidden>
+          <i class="fas fa-inbox"></i>
+          <p>Tiada rekod dijumpai.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/kewangan.js"></script>
+</body>
+</html>

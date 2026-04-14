@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Link</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/link.css">
+</head>
+<body class="link-page settings-page">
+  <main class="settings-container">
+    <div class="link-banner">
+      <div class="link-banner__icon"><i class="fas fa-link"></i></div>
+      <div>
+        <h2>Link Awam</h2>
+        <p>Kongsi pautan booking, borang, katalog & bio kepada pelanggan.</p>
+      </div>
+    </div>
+
+    <div class="domain-card" id="domainCard" hidden>
+      <div class="domain-card__icon"><i class="fas fa-globe"></i></div>
+      <div class="domain-card__info">
+        <div class="domain-card__url" id="domainUrl">—</div>
+        <div class="domain-card__status" id="domainStatus">—</div>
+      </div>
+    </div>
+
+    <div class="link-list" id="linkList"></div>
+  </main>
+
+  <!-- Custom theme modal -->
+  <div class="link-modal-backdrop" id="themeModal">
+    <div class="link-modal">
+      <h3 id="themeModalTitle">Custom Theme</h3>
+      <div class="link-modal__row">
+        <span class="set-label">Warna Latar</span>
+        <div class="theme-swatch-grid" id="bgSwatches"></div>
+      </div>
+      <div class="link-modal__row">
+        <span class="set-label">Warna Teks</span>
+        <div class="theme-swatch-grid" id="textSwatches"></div>
+      </div>
+      <div class="link-modal__row">
+        <span class="set-label">Warna Aksen</span>
+        <div class="theme-swatch-grid" id="accentSwatches"></div>
+      </div>
+      <div class="link-modal__row">
+        <span class="set-label">Saiz Font (<span id="fsLabel">14</span>px)</span>
+        <input type="range" min="10" max="22" step="1" value="14" id="fsSlider" style="width:100%">
+      </div>
+      <div class="preview-box" id="themePreview">Preview Teks</div>
+      <div class="link-modal__actions">
+        <button class="btn btn-ghost" type="button" id="themeCancel">Batal</button>
+        <button class="btn btn-primary" type="button" id="themeSave"><i class="fas fa-floppy-disk"></i> Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/link.js"></script>
+</body>
+</html>

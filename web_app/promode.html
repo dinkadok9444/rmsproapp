@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Pro Mode</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/promode.css">
+</head>
+<body class="settings-page promode-page">
+  <main class="settings-container">
+
+    <!-- STATUS -->
+    <section class="settings-section" id="secStatus">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-crown"></i></span>
+        <h2 class="settings-section__title">Pro Mode</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="pm-status" id="pmStatus">
+          <div class="pm-status__badge" id="pmBadge"><i class="fas fa-circle-notch fa-spin"></i></div>
+          <div class="pm-status__info">
+            <div class="pm-status__title" id="pmTitle">Memuatkan…</div>
+            <div class="pm-status__sub" id="pmSub">—</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TABS -->
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-list-check"></i></span>
+        <h2 class="settings-section__title">Tugasan</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="pm-tabs" id="pmTabs">
+          <button type="button" class="pm-tab is-active" data-tab="online"><i class="fas fa-globe"></i> Online (Auto)</button>
+          <button type="button" class="pm-tab" data-tab="offline"><i class="fas fa-person-walking"></i> Offline (Manual)</button>
+        </div>
+        <div class="set-row" style="margin-top: var(--sp-3);">
+          <label class="set-label">Cari</label>
+          <input class="input" type="search" id="pmSearch" placeholder="Cari siri / nama / model / sender…">
+        </div>
+        <div class="set-row">
+          <label class="set-label">Papar Arkib</label>
+          <label class="pm-switch">
+            <input type="checkbox" id="pmArchived">
+            <span></span>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- LIST -->
+    <section class="settings-section" id="secTasks">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-briefcase"></i></span>
+        <h2 class="settings-section__title" id="listTitle">Senarai</h2>
+        <span class="pm-count" id="pmCount">0</span>
+      </div>
+      <div class="settings-section__body">
+        <div class="pm-list" id="pmList"></div>
+        <div class="pm-empty" id="pmEmpty" hidden>
+          <i class="fas fa-inbox"></i>
+          <p>Tiada tugasan.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- DEALER BOOK -->
+    <section class="settings-section" id="secDealers">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-address-book"></i></span>
+        <h2 class="settings-section__title">Buku Dealer</h2>
+        <span class="pm-count" id="pmDealerCount">0</span>
+      </div>
+      <div class="settings-section__body">
+        <div class="pm-dealers" id="pmDealers"></div>
+        <div class="pm-empty" id="pmDealerEmpty" hidden>
+          <i class="fas fa-user-slash"></i>
+          <p>Belum ada dealer disimpan.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/promode.js"></script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+# ─── Flutter / Dart ───
+**/.dart_tool/
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/build/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/pubspec.lock
+**/.metadata
+
+# Flutter platform generated
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+**/android/.gradle/
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/android/key.properties
+**/android/app/release/
+**/android/app/build/
+**/android/app/debug/
+**/android/app/profile/
+
+# ─── Node ───
+**/node_modules/
+**/.firebase/
+**/.firebaserc.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ─── Secrets (JANGAN commit) ───
+**/play-store-key.json
+**/google-services.json
+**/GoogleService-Info.plist
+**/service-account*.json
+**/*.keystore
+**/*.jks
+**/firebase-adminsdk-*.json
+.env
+.env.*
+!.env.example
+
+# ─── IDE / OS ───
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ─── Logs / temp ───
+*.log
+tmp/
+temp/

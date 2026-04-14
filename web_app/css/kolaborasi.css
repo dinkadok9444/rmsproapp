@@ -1,0 +1,96 @@
+/* ===== KOLABORASI (extends kerugian.css) ===== */
+.collab-page { padding: 0 0 40px; }
+.collab-header { border-top-color: var(--blue); }
+
+.collab-count {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-left: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border-med);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 900;
+}
+.btn-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 10px;
+  background: var(--yellow-light);
+  color: var(--yellow);
+  border: 1px solid color-mix(in srgb, var(--yellow) 40%, transparent);
+  border-radius: 10px; font-weight: 900; font-size: 10px;
+}
+
+.collab-card.c-blue   { border-left-color: var(--blue); }
+.collab-card.c-green  { border-left-color: var(--green); }
+.collab-card.c-yellow { border-left-color: var(--yellow); }
+.collab-card.c-red    { border-left-color: var(--red); }
+
+.collab-rx {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px;
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--blue) 35%, transparent);
+  color: var(--blue);
+  border-radius: 6px;
+  font-weight: 900; font-size: 10px;
+}
+.collab-cust { color: var(--text-primary); font-weight: 900; font-size: var(--fs-xs); margin-top: 4px; }
+.collab-row { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin-top: 2px; color: var(--text-sub); font-size: var(--fs-xs); }
+.collab-meta { color: var(--text-sub); font-size: 10px; font-weight: 700; }
+.collab-update { color: var(--text-muted); font-size: 9px; font-weight: 700; }
+
+.collab-actions { display: flex; gap: 6px; margin-top: 8px; }
+.btn-view {
+  flex: 1;
+  padding: 7px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  border-radius: 8px;
+  font-weight: 900; font-size: 10px;
+}
+
+.cl-found {
+  padding: var(--sp-3);
+  background: var(--bg);
+  border: 1px solid var(--border-med);
+  border-radius: var(--radius);
+  margin-top: 4px;
+}
+.cl-dealer-status {
+  font-size: 10px; font-weight: 900;
+  padding: 2px 0;
+  min-height: 14px;
+}
+.cl-saved { padding: var(--sp-2); background: var(--side); border-radius: 10px; }
+.cl-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cl-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  background: color-mix(in srgb, var(--blue) 10%, transparent);
+  color: var(--blue);
+  border: 1px solid color-mix(in srgb, var(--blue) 30%, transparent);
+  border-radius: 8px;
+  font-size: 10px; font-weight: 900;
+}
+
+.cl-info-row { display: grid; gap: 2px; }
+.cl-info-status {
+  font-size: var(--fs-lg); font-weight: 900;
+  padding: 10px; background: var(--bg); border-radius: 10px; text-align: center;
+}
+.cl-info-status.c-green  { color: var(--green); }
+.cl-info-status.c-blue   { color: var(--blue); }
+.cl-info-status.c-yellow { color: var(--yellow); }
+.cl-info-status.c-red    { color: var(--red); }
+.cl-info-val {
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border-med);
+  border-radius: 8px;
+  font-weight: 700; font-size: 11px;
+  color: var(--text-primary);
+}

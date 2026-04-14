@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Inventory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/inventory.css">
+</head>
+<body class="settings-page inventory-page">
+  <main class="settings-container">
+
+    <!-- SEGMENT -->
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-boxes-stacked"></i></span>
+        <h2 class="settings-section__title">Inventory</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="inv-segment" id="invSegment">
+          <button type="button" class="inv-seg-btn is-active" data-seg="SPAREPART" style="--seg-color:#F59E0B;">
+            <i class="fas fa-screwdriver-wrench"></i> SPAREPART
+          </button>
+          <button type="button" class="inv-seg-btn" data-seg="ACCESSORIES" style="--seg-color:#8B5CF6;">
+            <i class="fas fa-headphones"></i> ACCESSORIES
+          </button>
+          <button type="button" class="inv-seg-btn" data-seg="TELEFON" style="--seg-color:#0EA5E9;">
+            <i class="fas fa-mobile-screen-button"></i> TELEFON
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUMMARY -->
+    <section class="settings-section" id="secSummary">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-chart-pie"></i></span>
+        <h2 class="settings-section__title">Ringkasan</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="inv-stats" id="invStats">
+          <div class="inv-stat" data-k="items">
+            <div class="inv-stat__label">Jumlah Item</div>
+            <div class="inv-stat__val" id="stItems">0</div>
+          </div>
+          <div class="inv-stat" data-k="qty">
+            <div class="inv-stat__label">Jumlah QTY</div>
+            <div class="inv-stat__val" id="stQty">0</div>
+          </div>
+          <div class="inv-stat" data-k="value">
+            <div class="inv-stat__label">Nilai Jualan</div>
+            <div class="inv-stat__val" id="stValue">RM 0.00</div>
+          </div>
+          <div class="inv-stat" data-k="low">
+            <div class="inv-stat__label">Stok Rendah</div>
+            <div class="inv-stat__val" id="stLow">0</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FILTER -->
+    <section class="settings-section" id="secFilter">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-filter"></i></span>
+        <h2 class="settings-section__title">Tapisan</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="set-row">
+          <label class="set-label">Status</label>
+          <select class="set-select" id="fStatus">
+            <option value="ALL">Semua</option>
+            <option value="AVAILABLE">Available</option>
+            <option value="TERJUAL">Terjual</option>
+            <option value="RETURNED">Returned</option>
+            <option value="USED">Used</option>
+          </select>
+        </div>
+        <div class="set-row inv-cat-row">
+          <label class="set-label">Kategori</label>
+          <select class="set-select" id="fCategory">
+            <option value="ALL">Semua</option>
+          </select>
+        </div>
+        <div class="set-row inv-phone-only" hidden>
+          <label class="set-label">Model</label>
+          <select class="set-select" id="fModel">
+            <option value="ALL">Semua</option>
+          </select>
+        </div>
+        <div class="set-row">
+          <label class="set-label">Susun</label>
+          <select class="set-select" id="fSort">
+            <option value="DESC">Terbaru dahulu</option>
+            <option value="ASC">Terlama dahulu</option>
+          </select>
+        </div>
+        <div class="set-row">
+          <label class="set-label">Cari</label>
+          <input class="input" type="search" id="fSearch" placeholder="Cari kod / nama / IMEI / siri…">
+        </div>
+      </div>
+    </section>
+
+    <!-- LIST -->
+    <section class="settings-section" id="secList">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-list"></i></span>
+        <h2 class="settings-section__title" id="listTitle">Senarai Stok</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="inv-list" id="invList"></div>
+        <div class="inv-empty" id="invEmpty" hidden>
+          <i class="fas fa-inbox"></i>
+          <p>Tiada item dijumpai.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/inventory.js"></script>
+</body>
+</html>

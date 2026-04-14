@@ -1,0 +1,167 @@
+/* Pro Mode page */
+.pm-status {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: var(--sp-3);
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  border-radius: var(--radius, 10px);
+  border: 1px solid #c4b5fd;
+}
+.pm-status.is-inactive {
+  background: var(--bg-subtle, #f1f5f9);
+  border-color: var(--border, #e2e8f0);
+}
+.pm-status__badge {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: #7c3aed;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+.pm-status.is-inactive .pm-status__badge { background: #94a3b8; }
+.pm-status__title {
+  font-weight: 800;
+  font-size: var(--fs-md, 15px);
+  color: var(--text, #0f172a);
+}
+.pm-status__sub {
+  font-size: var(--fs-xs);
+  color: var(--text-muted, #64748b);
+  margin-top: 2px;
+}
+
+.pm-tabs {
+  display: flex;
+  gap: var(--sp-2);
+  background: var(--bg-subtle, #f1f5f9);
+  padding: 4px;
+  border-radius: var(--radius, 10px);
+}
+.pm-tab {
+  flex: 1; border: 0; background: transparent;
+  padding: 10px 12px;
+  font: inherit; font-weight: 600; font-size: var(--fs-sm);
+  color: var(--text-muted, #64748b);
+  border-radius: calc(var(--radius, 10px) - 2px);
+  cursor: pointer;
+  display: inline-flex; gap: 8px; align-items: center; justify-content: center;
+}
+.pm-tab.is-active {
+  background: var(--card-bg, #fff);
+  color: #7c3aed;
+  box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+
+.pm-switch { position: relative; display: inline-block; width: 42px; height: 24px; }
+.pm-switch input { opacity: 0; width: 0; height: 0; }
+.pm-switch span {
+  position: absolute; inset: 0; cursor: pointer;
+  background: #cbd5e1; border-radius: 24px; transition: .2s;
+}
+.pm-switch span::before {
+  content: ""; position: absolute; width: 18px; height: 18px;
+  left: 3px; top: 3px; background: #fff; border-radius: 50%;
+  transition: .2s;
+}
+.pm-switch input:checked + span { background: #7c3aed; }
+.pm-switch input:checked + span::before { transform: translateX(18px); }
+
+.pm-count {
+  margin-left: auto;
+  background: var(--bg-subtle, #f1f5f9);
+  color: var(--text-muted, #64748b);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.pm-list, .pm-dealers { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.pm-card {
+  padding: var(--sp-3);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius, 10px);
+  background: var(--card-bg, #fff);
+}
+.pm-card.is-archived { opacity: .6; }
+.pm-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+.pm-card__siri {
+  font-weight: 800;
+  color: #7c3aed;
+  font-size: var(--fs-sm);
+}
+.pm-card__status {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.status-paid { background: #d1fae5; color: #059669; }
+.status-pending { background: #fef3c7; color: #d97706; }
+.status-archived { background: #e2e8f0; color: #64748b; }
+
+.pm-card__title {
+  margin-top: 4px;
+  font-weight: 700;
+  color: var(--text, #0f172a);
+}
+.pm-card__sub {
+  font-size: var(--fs-xs);
+  color: var(--text-muted, #64748b);
+  margin-top: 2px;
+}
+.pm-card__meta {
+  margin-top: 8px;
+  display: flex; flex-wrap: wrap; gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+.pm-card__meta span {
+  background: var(--bg-subtle, #f1f5f9);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.pm-card__amount {
+  font-weight: 800; color: #059669;
+  margin-left: auto;
+}
+
+.pm-dealer {
+  padding: var(--sp-3);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius, 10px);
+  background: var(--card-bg, #fff);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--sp-3);
+  align-items: center;
+}
+.pm-dealer__avatar {
+  width: 42px; height: 42px; border-radius: 50%;
+  background: #ede9fe; color: #7c3aed;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 800;
+}
+.pm-dealer__name { font-weight: 700; color: var(--text, #0f172a); }
+.pm-dealer__shop { font-size: var(--fs-xs); color: var(--text-muted, #64748b); margin-top: 2px; }
+.pm-dealer__tel { font-size: var(--fs-xs); color: var(--text-muted, #64748b); }
+
+.pm-empty {
+  text-align: center;
+  padding: var(--sp-4) var(--sp-3);
+  color: var(--text-muted, #64748b);
+}
+.pm-empty i { font-size: 32px; margin-bottom: 8px; opacity: .6; }

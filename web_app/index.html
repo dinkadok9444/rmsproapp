@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#00C47D">
+  <title>RMS Pro — Log Masuk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/login.css">
+</head>
+<body>
+  <main class="login-page">
+    <div class="login-card">
+      <div class="login-logo">
+        <i class="fas fa-shield-halved"></i>
+        <h1>RMS PRO</h1>
+      </div>
+
+      <div class="segment" id="loginSegment">
+        <button type="button" class="segment__item is-active" data-mode="owner">PEMILIK</button>
+        <button type="button" class="segment__item" data-mode="staff">STAF</button>
+      </div>
+
+      <div class="alert alert-error hidden" id="loginError"></div>
+
+      <!-- Owner form -->
+      <form id="ownerForm" class="dashboard-section" autocomplete="on">
+        <div class="field">
+          <label class="field__label" for="ownerId">ID Sistem / Pengguna</label>
+          <input class="input" type="text" id="ownerId" name="ownerId" autocomplete="username">
+        </div>
+        <div class="field">
+          <div class="field__row">
+            <label class="field__label" for="ownerPass">Kata Laluan</label>
+            <a href="#" class="field__link" id="forgotPass">Lupa Kata Laluan?</a>
+          </div>
+          <input class="input" type="password" id="ownerPass" name="ownerPass" autocomplete="current-password">
+        </div>
+        <label class="checkbox">
+          <input type="checkbox" id="rememberMe">
+          Kekal Log Masuk (Ingat ID)
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">LOG MASUK SEKARANG</button>
+      </form>
+
+      <!-- Staff form -->
+      <form id="staffForm" class="dashboard-section hidden" autocomplete="on">
+        <div class="field">
+          <label class="field__label" for="staffPhone">No Telefon</label>
+          <input class="input" type="tel" id="staffPhone" name="staffPhone" placeholder="011..." autocomplete="tel">
+        </div>
+        <div class="field">
+          <label class="field__label" for="staffPin">PIN / Kata Laluan</label>
+          <input class="input" type="password" id="staffPin" name="staffPin" inputmode="numeric" autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">LOG MASUK STAF</button>
+      </form>
+
+      <div class="login-footer">
+        <p>Belum ada akaun RMS Pro?</p>
+        <a href="#" class="btn btn-outline btn-block" id="registerBtn">DAFTAR SEKARANG</a>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/auth.js"></script>
+</body>
+</html>

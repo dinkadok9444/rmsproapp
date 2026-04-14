@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Booking</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/booking.css">
+</head>
+<body class="bk-page">
+  <!-- Header -->
+  <div class="bk-header">
+    <div class="bk-header__top">
+      <div class="bk-tabs" id="bkTabs">
+        <button type="button" class="bk-tab c-primary is-active" data-mode="ACTIVE"><i class="fas fa-list"></i> AKTIF</button>
+        <button type="button" class="bk-tab c-yellow" data-mode="ARCHIVED"><i class="fas fa-box-archive"></i> ARKIB</button>
+        <button type="button" class="bk-tab c-red" data-mode="DELETED"><i class="fas fa-trash-can"></i> SAMPAH</button>
+      </div>
+      <div class="bk-header__btns">
+        <button type="button" class="bk-hbtn c-cyan" id="bkGearBtn" title="Tetapan Pembayaran"><i class="fas fa-gear"></i></button>
+        <button type="button" class="bk-hbtn c-yellow" id="bkCourierBtn" title="Kurier"><i class="fas fa-truck"></i></button>
+        <button type="button" class="btn-new" id="bkNewBtn"><i class="fas fa-plus"></i> BOOKING BARU</button>
+      </div>
+    </div>
+    <div class="bk-searchrow">
+      <div class="bk-search">
+        <i class="fas fa-search"></i>
+        <input type="text" id="bkSearch" placeholder="Cari nama / tel / no booking…">
+      </div>
+      <select id="bkSort" class="bk-select">
+        <option value="desc">Terbaru</option>
+        <option value="asc">Terlama</option>
+        <option value="az">A-Z</option>
+        <option value="za">Z-A</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="bk-list" id="bkList"></div>
+  <div class="bk-empty hidden" id="bkEmpty">
+    <i class="fas fa-calendar-xmark"></i>
+    <div class="lbl">Tiada rekod booking.</div>
+    <div class="sub">Tekan BOOKING BARU untuk mula.</div>
+  </div>
+
+  <!-- Add Booking modal -->
+  <div class="bk-modal-backdrop" id="bkAddModal">
+    <div class="bk-modal">
+      <div class="bk-modal__head c-primary">
+        <span><i class="fas fa-calendar-plus"></i> DAFTAR BOOKING</span>
+        <button type="button" class="bk-modal__close" data-close="bkAddModal"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="bk-modal__body">
+        <div class="bk-field" id="bkStaffWrap" hidden>
+          <label>PILIH STAFF BERTUGAS</label>
+          <select id="bkStaff" class="bk-input"></select>
+        </div>
+        <div class="bk-field">
+          <label>NAMA PELANGGAN</label>
+          <input type="text" id="bkNama" class="bk-input" placeholder="Nama Penuh">
+        </div>
+        <div class="bk-field">
+          <label>NO TELEFON (WHATSAPP)</label>
+          <input type="tel" id="bkTel" class="bk-input" placeholder="011...">
+        </div>
+        <div class="bk-row">
+          <div class="bk-field bk-flex-2">
+            <label>ITEM / MODEL & SERVIS</label>
+            <input type="text" id="bkItem" class="bk-input bk-caps" placeholder="Cth: iPhone 11 - Tukar Bateri">
+          </div>
+          <div class="bk-field">
+            <label>HARGA (RM)</label>
+            <input type="number" step="0.01" id="bkHarga" class="bk-input" value="0">
+          </div>
+        </div>
+        <div class="bk-field">
+          <label>TARIKH JANGKA CUST DATANG</label>
+          <input type="date" id="bkTarikhCust" class="bk-input">
+        </div>
+        <div class="bk-row">
+          <div class="bk-field">
+            <label>DEPOSIT (RM)</label>
+            <input type="number" step="0.01" id="bkDeposit" class="bk-input" value="0">
+          </div>
+          <div class="bk-field">
+            <label>BAKI (RM)</label>
+            <input type="number" id="bkBaki" class="bk-input" value="0" readonly>
+          </div>
+        </div>
+
+        <div class="bk-paybox">
+          <div class="bk-paybox__title"><i class="fas fa-qrcode"></i> MAKLUMAT PEMBAYARAN</div>
+          <div class="bk-paybox__body" id="bkAddPayInfo">
+            <div class="bk-paybox__empty">Belum ditetapkan — Sila set di ikon gear (⚙)</div>
+          </div>
+        </div>
+
+        <div class="bk-field">
+          <label>RESIT PEMBAYARAN (PILIHAN)</label>
+          <label class="bk-upload" id="bkAddResitBox">
+            <input type="file" id="bkAddResit" accept="image/*" hidden>
+            <div class="bk-upload__empty">
+              <i class="fas fa-cloud-arrow-up"></i>
+              <span>Tekan untuk upload resit</span>
+            </div>
+            <div class="bk-upload__preview hidden">
+              <img alt="resit">
+              <div class="bk-upload__ok"><i class="fas fa-circle-check"></i> Resit sedia dimuat naik</div>
+            </div>
+          </label>
+        </div>
+
+        <button type="button" class="btn-submit bk-btn-save" id="bkAddSave"><i class="fas fa-floppy-disk"></i> SIMPAN REKOD</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detail modal -->
+  <div class="bk-modal-backdrop" id="bkDetailModal">
+    <div class="bk-modal">
+      <div class="bk-modal__head">
+        <span id="bkDetailTitle"><i class="fas fa-user-astronaut"></i> <span></span></span>
+        <button type="button" class="bk-modal__close" data-close="bkDetailModal"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="bk-modal__body" id="bkDetailBody"></div>
+    </div>
+  </div>
+
+  <!-- Payment Settings modal -->
+  <div class="bk-modal-backdrop" id="bkGearModal">
+    <div class="bk-modal">
+      <div class="bk-modal__head c-cyan">
+        <span><i class="fas fa-building-columns"></i> TETAPAN PEMBAYARAN BOOKING</span>
+        <button type="button" class="bk-modal__close" data-close="bkGearModal"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="bk-modal__body">
+        <p class="bk-note">Maklumat ini akan dipaparkan dalam borang booking untuk pelanggan.</p>
+        <div class="bk-field">
+          <label>GAMBAR QR PAYMENT</label>
+          <label class="bk-upload" id="bkQrBox">
+            <input type="file" id="bkQrFile" accept="image/*" hidden>
+            <div class="bk-upload__empty">
+              <i class="fas fa-cloud-arrow-up"></i>
+              <span>Upload Gambar QR</span>
+            </div>
+            <div class="bk-upload__preview hidden">
+              <img alt="qr">
+              <div class="bk-upload__ok c-cyan"><i class="fas fa-pen-to-square"></i> Tekan untuk tukar</div>
+            </div>
+          </label>
+          <button type="button" class="bk-qr-del hidden" id="bkQrDel">Padam QR</button>
+        </div>
+        <div class="bk-field">
+          <label>JENIS BANK</label>
+          <input type="text" id="bkBankType" class="bk-input bk-caps" placeholder="Cth: MAYBANK / CIMB / BANK ISLAM">
+        </div>
+        <div class="bk-field">
+          <label>NAMA PEMEGANG AKAUN</label>
+          <input type="text" id="bkBankName" class="bk-input bk-caps" placeholder="Cth: ALI BIN ABU">
+        </div>
+        <div class="bk-field">
+          <label>NO AKAUN</label>
+          <input type="text" id="bkBankAcc" class="bk-input" inputmode="numeric" placeholder="Cth: 1234567890">
+        </div>
+        <button type="button" class="btn-submit bk-btn-save c-cyan" id="bkGearSave"><i class="fas fa-floppy-disk"></i> SIMPAN TETAPAN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Courier modal -->
+  <div class="bk-modal-backdrop" id="bkCourierModal">
+    <div class="bk-modal bk-modal--sm">
+      <div class="bk-modal__head c-yellow">
+        <span><i class="fas fa-truck"></i> KURIER</span>
+        <button type="button" class="bk-modal__close" data-close="bkCourierModal"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="bk-modal__body">
+        <div class="bk-row">
+          <input type="text" id="bkNewCourier" class="bk-input bk-caps" placeholder="Nama Kurier">
+          <button type="button" class="bk-hbtn c-yellow" id="bkAddCourier"><i class="fas fa-plus"></i></button>
+        </div>
+        <div class="bk-courier-list" id="bkCourierList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Print modal -->
+  <div class="bk-modal-backdrop" id="bkPrintModal">
+    <div class="bk-modal bk-modal--sm">
+      <div class="bk-modal__head c-primary">
+        <span><i class="fas fa-print"></i> CETAK <span id="bkPrintSiri"></span></span>
+        <button type="button" class="bk-modal__close" data-close="bkPrintModal"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="bk-modal__body" id="bkPrintBody"></div>
+    </div>
+  </div>
+
+  <!-- Phone modal -->
+  <div class="bk-modal-backdrop" id="bkPhoneModal">
+    <div class="bk-modal bk-modal--sm">
+      <div class="bk-modal__head">
+        <span id="bkPhoneText"></span>
+        <button type="button" class="bk-modal__close" data-close="bkPhoneModal"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="bk-modal__body">
+        <div class="bk-row">
+          <button type="button" class="bk-btn c-blue" id="bkPhoneCall"><i class="fas fa-phone"></i> CALL</button>
+          <button type="button" class="bk-btn c-whatsapp" id="bkPhoneWa"><i class="fab fa-whatsapp"></i> WHATSAPP</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Action popup (archive/restore/delete) -->
+  <div class="bk-modal-backdrop" id="bkActionModal">
+    <div class="bk-modal bk-modal--sm">
+      <div class="bk-modal__head">
+        <span id="bkActionTitle"></span>
+        <button type="button" class="bk-modal__close" data-close="bkActionModal"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="bk-modal__body" id="bkActionBody"></div>
+    </div>
+  </div>
+
+  <!-- Full image viewer -->
+  <div class="bk-image-viewer hidden" id="bkImgViewer">
+    <img alt="full">
+  </div>
+
+  <!-- Confirm dialog -->
+  <div class="bk-modal-backdrop" id="bkConfirmModal">
+    <div class="bk-modal bk-modal--sm">
+      <div class="bk-modal__head"><span id="bkConfirmTitle">Padam?</span></div>
+      <div class="bk-modal__body">
+        <p class="bk-note" id="bkConfirmMsg">Padam rekod ini?</p>
+        <div class="bk-modal__actions">
+          <button type="button" class="btn-ghost" data-close="bkConfirmModal">Batal</button>
+          <button type="button" class="btn-danger" id="bkConfirmOk">PADAM</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bk-toast" id="bkToast" hidden></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-storage-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/booking.js"></script>
+</body>
+</html>

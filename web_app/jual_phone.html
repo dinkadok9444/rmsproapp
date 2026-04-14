@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Jualan Telefon</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/branch.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/jual_phone.css">
+</head>
+<body class="settings-page jualphone-page">
+  <main class="settings-container">
+
+    <!-- SEGMENT -->
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-mobile-screen"></i></span>
+        <h2 class="settings-section__title">Jualan Telefon</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="jp-segment" id="jpSegment">
+          <button type="button" class="jp-seg-btn is-active" data-seg="CUSTOMER"><i class="fas fa-user"></i> Customer</button>
+          <button type="button" class="jp-seg-btn" data-seg="DEALER"><i class="fas fa-handshake"></i> Dealer</button>
+        </div>
+        <div class="jp-tabs" id="jpTabs">
+          <button type="button" class="jp-tab-btn is-active" data-tab="ACTIVE"><i class="fas fa-receipt"></i> Aktif</button>
+          <button type="button" class="jp-tab-btn" data-tab="ARCHIVED"><i class="fas fa-box-archive"></i> Arkib</button>
+          <button type="button" class="jp-tab-btn" data-tab="DELETED"><i class="fas fa-trash"></i> Padam</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- FILTER -->
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-filter"></i></span>
+        <h2 class="settings-section__title">Tapisan</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="set-row">
+          <label class="set-label">Tempoh</label>
+          <select class="set-select" id="fTime">
+            <option value="SEMUA">Semua</option>
+            <option value="HARI INI">Hari Ini</option>
+            <option value="MINGGU INI">Minggu Ini</option>
+            <option value="BULAN INI">Bulan Ini</option>
+            <option value="TAHUN INI">Tahun Ini</option>
+          </select>
+        </div>
+        <div class="set-row">
+          <label class="set-label">Cari</label>
+          <input class="input" type="search" id="fSearch" placeholder="Cari nama / siri / IMEI / telefon…">
+        </div>
+      </div>
+    </section>
+
+    <!-- LIST -->
+    <section class="settings-section">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-list"></i></span>
+        <h2 class="settings-section__title" id="listTitle">Senarai Bil Aktif</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="jp-list" id="jpList"></div>
+        <div class="jp-empty" id="jpEmpty" hidden>
+          <i class="fas fa-inbox"></i>
+          <p>Tiada bil dijumpai.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/jual_phone.js"></script>
+</body>
+</html>
