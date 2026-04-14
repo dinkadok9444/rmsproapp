@@ -15,6 +15,60 @@ Tujuan: Claude (assistant) atau agent lain boleh rujuk balik pada future convers
 - **Created**: 2026-04-15
 - **Owner**: Abe Din (dinkadok9444)
 
+## 🏢 Multi-Tenant SaaS Architecture
+
+**Projek ni SaaS multi-tenant** — tiap customer (kedai) boleh bawa **custom domain sendiri** (e.g. `profixmobile.my`, `repairshop.com`).
+
+### Current (Firebase)
+- Firebase Functions: `getDomains`, `getDealers` endpoints
+- Firestore collection `domains` / `dealers` store mapping
+- Firebase Hosting multi-site handle tenant
+
+### Target (Post-Migration)
+- **Cloudflare for SaaS** — Custom Hostname feature, unlimited tenants
+- SSL auto-provisioned per tenant domain
+- Cost: **FREE ≤ 1000 hostname**, $0.10/hostname lepas tu
+- Tenant data: Supabase table `tenants`
+
+### Flow
+```
+profixmobile.my (tenant custom domain)
+  ↓ CNAME → rmspro.pages.dev (atau Cloudflare SaaS hostname)
+Cloudflare for SaaS resolve → Pages project `rmspro-web`
+  ↓
+Frontend baca window.location.hostname
+  ↓
+Query Supabase: SELECT * FROM tenants WHERE domain = ?
+  ↓
+Inject tenant branding/config/data
+```
+
+### Schema (Fasa 2)
+```sql
+CREATE TABLE tenants (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  domain text UNIQUE NOT NULL,        -- profixmobile.my
+  subdomain text UNIQUE,              -- profixmobile (for rmspro.net/profixmobile fallback)
+  nama_kedai text NOT NULL,
+  config jsonb DEFAULT '{}',          -- branding, settings
+  cloudflare_hostname_id text,        -- from CF API
+  ssl_status text DEFAULT 'pending',
+  active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+CREATE INDEX tenants_domain_idx ON tenants(domain);
+CREATE INDEX tenants_subdomain_idx ON tenants(subdomain);
+```
+
+### Code Changes
+- Migrate `rmsproapp/lib/screens/admin_modules/domain_management_screen.dart` → Supabase query table `tenants`
+- Migrate Firebase Functions `getDomains`/`getDealers` → Supabase RPC atau direct query
+- Tenant domain add/remove → call Cloudflare Custom Hostname API (dari admin panel)
+- Tiap query data app → filter by `tenant_id` (foreign key dalam semua table)
+
+---
+
 ## 🌐 Domain & Hosting
 
 - **Domain**: `rmspro.net`
@@ -144,6 +198,7 @@ Plan ni disusun ikut **dependency order**. Jangan skip fasa.
 ### 🔹 FASA 2 — Schema Design & RLS *(~2-3 jam, paling kritikal)*
 - [ ] `2.1` Reverse-engineer Firestore structure dari code Flutter
 - [ ] `2.2` Tulis SQL schema tables core:
+  - `tenants` *(multi-tenant root — WAJIB DULU, semua table lain foreign key ke ni)*
   - `users`, `branches`, `roles`
   - `jobs` (repair), `job_items`, `job_timeline`
   - `bookings`
@@ -152,8 +207,8 @@ Plan ni disusun ikut **dependency order**. Jangan skip fasa.
   - `customers` (db_cust), `referrals`
   - `expenses`, `finance` (kewangan), `promotions`
   - `notifications`, `feedback`, `settings`
-- [ ] `2.3` Tambah indexes + foreign keys
-- [ ] `2.4` Tulis RLS policies (ganti `rmsproapp/firestore.rules`)
+- [ ] `2.3` Tambah indexes + foreign keys (semua table ada `tenant_id` FK)
+- [ ] `2.4` Tulis RLS policies (ganti `rmsproapp/firestore.rules`) — **MESTI filter by `tenant_id`** supaya tenant tak boleh baca data tenant lain
 - [ ] `2.5` Run migration SQL di Supabase dashboard
 - [ ] `2.6` Save ke `api supabase/schema.sql` + `api supabase/rls.sql`
 
@@ -358,6 +413,25 @@ Order ikut Flutter untuk pattern consistency:
   - Copy `rmsproapp/public/link.html` → `web_app/link.html`
 - [ ] `12.5.5` Update Vite config untuk handle multi-page (MPA) kalau perlu
 - [ ] `12.5.6` Custom domain: `rmspro.net` → `rmspro-web` project
+
+### 🔹 FASA 12.6 — Cloudflare for SaaS Setup *(~1-2 jam, NEW — Multi-Tenant)*
+
+- [ ] `12.6.1` Cloudflare Dashboard → SSL/TLS → Custom Hostnames → enable Cloudflare for SaaS
+- [ ] `12.6.2` Set **fallback origin**: `rmspro.pages.dev` (atau production Pages URL)
+- [ ] `12.6.3` Dapat Cloudflare API Token (untuk Custom Hostname API — guna masa admin add tenant)
+- [ ] `12.6.4` Simpan API token dalam Supabase Vault atau env var (JANGAN commit)
+- [ ] `12.6.5` Migrate data tenant existing: Firestore `domains` / `dealers` → Supabase `tenants` table
+- [ ] `12.6.6` For each existing tenant domain, call CF Custom Hostname API untuk register
+- [ ] `12.6.7` Refactor `domain_management_screen.dart`:
+  - Add tenant → Supabase insert + call CF API
+  - Remove tenant → Supabase delete + call CF API remove hostname
+  - List tenants → Supabase query + show SSL status dari CF
+- [ ] `12.6.8` Update frontend (`web_app/`) — tambah tenant resolver:
+  - Read `window.location.hostname`
+  - Query Supabase `tenants` WHERE `domain = hostname`
+  - Inject tenant config (branding, settings) ke page
+- [ ] `12.6.9` Update Flutter app — tenant selection via login (user pilih kedai atau auto-detect dari credentials)
+- [ ] `12.6.10` Instruct existing tenants: update CNAME record dari Firebase IP → Cloudflare SaaS hostname
 - [ ] `12.5.7` Update DNS di Cloudflare:
   - Remove A record `199.36.158.100`
   - Add CNAME records untuk Pages custom domains
