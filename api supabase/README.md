@@ -15,6 +15,17 @@ Tujuan: Claude (assistant) atau agent lain boleh rujuk balik pada future convers
 - **Created**: 2026-04-15
 - **Owner**: Abe Din (dinkadok9444)
 
+## 🌐 Domain & Hosting
+
+- **Domain**: `rmspro.net`
+- **Registrar + DNS**: **Cloudflare**
+- **Current hosting**: Firebase Hosting (project `rmspro-2f454`, IP `199.36.158.100`)
+- **Target hosting**: **Cloudflare Pages** (post-migration)
+- **Subdomain plan (cadangan)**:
+  - `rmspro.net` → `web_app` (dashboard)
+  - `app.rmspro.net` → Flutter web build
+  - `form.rmspro.net` atau path → static pages (tracking, booking, catalog)
+
 ## 🔑 Credentials
 
 ### Anon (public) key
@@ -53,7 +64,7 @@ Keputusan Abe Din (2026-04-15): **cut Google habis**, tinggal PDF je.
 | Firebase Auth | → **Supabase Auth** (Path A — full migrate users) |
 | Firebase Storage | → **Supabase Storage** |
 | Firebase Functions | → Cleanup (logic perlu pindah ke Cloud Run / Supabase Edge) |
-| Firebase Hosting (`rmsproapp/public/*`) | → Supabase Hosting / Vercel / Netlify |
+| Firebase Hosting (`web_app/` + `rmsproapp/public/*`) | → **Cloudflare Pages** (domain `rmspro.net` dah kat Cloudflare) |
 | ~~FCM (push notification)~~ | ✅ **KEKAL Firebase** (exception — lihat bawah) |
 
 - **Flutter (`rmsproapp`) DULU** → Web (`web_app`) mirror pattern Flutter kemudian.
@@ -90,7 +101,7 @@ Plan ni disusun ikut **dependency order**. Jangan skip fasa.
 - [ ] `0.3` **Credentials**: `.env + flutter_dotenv` / `--dart-define` / hardcode config file?
 - [ ] `0.4` **Realtime audit**: screen mana guna `.snapshots()` → perlu Supabase Realtime?
 - [x] `0.5` **Push notification (FCM)**: ✅ **Kekal Firebase FCM** (mandatory untuk Android push)
-- [ ] `0.6` **Firebase Hosting**: pindah ke mana — Supabase / Vercel / Netlify?
+- [x] `0.6` **Firebase Hosting**: ✅ **Cloudflare Pages** (domain `rmspro.net` dah di Cloudflare, DNS + hosting satu vendor)
 - [ ] `0.7` **Firebase Functions**: audit `rmsproapp/functions/index.js` — logic apa, pindah mana (PDF logic kekal Cloud Run)?
 - [ ] `0.8` **Data split mitigation**: Opsyen 1 (dual-write) / Opsyen 2 (back-to-back) / Opsyen 3 (Web freeze)? **(WAJIB pilih sebelum Fasa 4)**
 
@@ -303,6 +314,32 @@ Order ikut Flutter untuk pattern consistency:
 - [ ] `12.2` Buang `firebase-init.js` *(kekal kalau Firebase Auth Path B)*
 - [ ] `12.3` Verify build Vite
 - [ ] `12.4` Full click-through test
+
+### 🔹 FASA 12.5 — Hosting Migration ke Cloudflare Pages *(~1-2 jam, NEW)*
+
+**Context:**
+- Domain `rmspro.net` daftar + DNS di **Cloudflare** (register dah sedia)
+- Current: A record `rmspro.net` → `199.36.158.100` (Firebase Hosting)
+- Target: Cloudflare Pages serve `web_app/` + Flutter web build
+- Firebase project: `rmspro-2f454` (hosting disable, FCM kekal)
+
+**Langkah:**
+- [ ] `12.5.1` Cloudflare Dashboard → Workers & Pages → Create `rmspro-web` project, connect GitHub repo
+- [ ] `12.5.2` Build config: root `web_app/`, framework Vite, build command `npm run build`, output `dist/`
+- [ ] `12.5.3` First deploy → verify `rmspro-web.pages.dev` jalan
+- [ ] `12.5.4` Create second Pages project `rmspro-app` untuk Flutter web build (`rmsproapp/build/web`)
+- [ ] `12.5.5` Setup GitHub Actions (atau Cloudflare build) — auto deploy Flutter web bila push
+- [ ] `12.5.6` Tambah custom domain:
+  - `rmspro.net` → `rmspro-web` (main dashboard)
+  - `app.rmspro.net` → `rmspro-app` (Flutter web)
+  - `form.rmspro.net` atau `rmspro.net/form/*` → static pages (tracking, booking, catalog)
+- [ ] `12.5.7` Update DNS di Cloudflare:
+  - Remove A record `199.36.158.100`
+  - Add CNAME records untuk Pages custom domains
+- [ ] `12.5.8` Tunggu SSL provision (auto, ~1-5 min CF)
+- [ ] `12.5.9` Verify live semua domain — guna `curl` atau browser
+- [ ] `12.5.10` Firebase Hosting → disable (tapi JANGAN delete project — FCM masih kat sini)
+- [ ] `12.5.11` Update `.firebaserc` / `firebase.json` — buang hosting config, biar functions+FCM je
 
 ---
 
