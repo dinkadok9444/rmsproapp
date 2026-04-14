@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Baikpulih</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/kerugian.css">
+  <link rel="stylesheet" href="css/baikpulih.css">
+</head>
+<body class="bp-page">
+  <div class="bp-app">
+
+    <!-- ── AppBar (Dart: back + title + envelope + X) ── -->
+    <header class="bp-appbar">
+      <button type="button" class="bp-iconbtn" id="bpBack" title="Kembali">
+        <i class="fas fa-arrow-left"></i>
+      </button>
+      <div class="bp-appbar__title">
+        <i class="fas fa-file-invoice"></i>
+        <span>BUKA TIKET BARU</span>
+      </div>
+      <div class="bp-appbar__right">
+        <button type="button" class="bp-iconbtn bp-iconbtn--green" id="bpPrinterBtn" title="Printer">
+          <i class="fas fa-print"></i><span id="bpPrinterLbl" hidden></span>
+        </button>
+        <button type="button" class="bp-iconbtn bp-iconbtn--red" id="bpClose" title="Tutup">
+          <i class="fas fa-xmark"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── Step indicator ── -->
+    <div class="bp-steps">
+      <div class="bp-steps__label">
+        Langkah <span id="bpStepNow">1</span> dari <span id="bpStepTotal">3</span> — <strong id="bpStepName">PELANGGAN</strong>
+      </div>
+      <div class="bp-steps__bar">
+        <div class="bp-steps__fill" id="bpStepFill" style="width:33%"></div>
+      </div>
+    </div>
+
+    <!-- ═════════ STEP 1 — PELANGGAN ═════════ -->
+    <section class="bp-step is-active" data-step="1">
+
+      <!-- Toggle NEW CUST / REGULAR -->
+      <div class="bp-toggle" id="bpCustTypeToggle">
+        <button type="button" class="is-on" data-v="NEW CUST">NEW CUST</button>
+        <button type="button" data-v="REGULAR">REGULAR</button>
+      </div>
+      <select id="bpCustType" hidden>
+        <option value="NEW CUST">NEW CUST</option>
+        <option value="REGULAR">REGULAR</option>
+      </select>
+
+      <!-- Carian pelanggan sedia ada -->
+      <div class="bp-field" id="bpCustSearchRow" hidden>
+        <label>CARI PELANGGAN SEDIA ADA</label>
+        <input type="text" id="bpCustSearch" class="bp-input" placeholder="Cari nama / tel / voucher / referral...">
+        <div id="bpCustHits" class="bp-cust-hits" hidden></div>
+      </div>
+
+      <!-- Nama -->
+      <div class="bp-field">
+        <label>NAMA PELANGGAN</label>
+        <input type="text" id="bpNama" class="bp-input" list="bpCustList" placeholder="Masukkan nama penuh...">
+        <datalist id="bpCustList"></datalist>
+      </div>
+
+      <!-- Tel + Backup -->
+      <div class="bp-field">
+        <div class="bp-label-row">
+          <label>NO TELEFON</label>
+          <button type="button" class="bp-chip-btn" id="bpBackupBtn">
+            <i class="fas fa-plus"></i> BACKUP
+          </button>
+        </div>
+        <input type="tel" id="bpTel" class="bp-input" placeholder="011...">
+      </div>
+
+      <!-- Model -->
+      <div class="bp-field">
+        <label>MODEL PERANTI</label>
+        <input type="text" id="bpModel" class="bp-input" placeholder="Cth: iPhone 15 Pro Max" style="text-transform:uppercase">
+      </div>
+
+      <!-- Tarikh (opsyenal, auto) -->
+      <div class="bp-field bp-field--sm">
+        <label>TARIKH MASUK</label>
+        <input type="datetime-local" id="bpTarikh" class="bp-input">
+      </div>
+    </section>
+
+    <!-- ═════════ STEP 2 — KEROSAKAN & HARGA ═════════ -->
+    <section class="bp-step" data-step="2" hidden>
+
+      <!-- Items -->
+      <div class="bp-field">
+        <div class="bp-label-row">
+          <label>SENARAI KEROSAKAN / ITEM</label>
+          <button type="button" class="bp-chip-btn bp-chip-btn--blue" id="bpAddItem">
+            <i class="fas fa-plus"></i> TAMBAH
+          </button>
+        </div>
+        <div class="bp-items" id="bpItems"></div>
+        <div class="bp-total-row">
+          <span>JUMLAH</span>
+          <strong id="bpItemTotal">RM 0.00</strong>
+        </div>
+      </div>
+
+      <!-- Staff -->
+      <div class="bp-field">
+        <label>STAFF MENERIMA</label>
+        <select id="bpStaff" class="bp-input"></select>
+      </div>
+
+      <!-- Password / Pattern / Voucher -->
+      <div class="bp-field">
+        <label>PASSWORD / PATTERN / VOUCHER</label>
+        <div class="bp-pass-row">
+          <input type="text" id="bpPass" class="bp-input" placeholder="Pass / PIN / Tiada">
+          <button type="button" class="bp-sq-btn" id="bpPatternBtn" title="Lukis pattern">
+            <i class="fas fa-grip-vertical"></i>
+          </button>
+          <button type="button" class="bp-sq-btn" id="bpVoucherBtn" title="Voucher / Referral">
+            <i class="fas fa-plus"></i>
+          </button>
+        </div>
+        <div class="bp-chips">
+          <div id="bpPatternChip" class="bp-pill bp-pill--primary" hidden>
+            <i class="fas fa-circle-check"></i>
+            <span>Pattern: <strong id="bpPatternTxt">-</strong></span>
+            <button type="button" id="bpPatternReset" class="bp-pill__x"><i class="fas fa-xmark"></i></button>
+          </div>
+          <div id="bpVoucherChip" class="bp-pill bp-pill--yellow" hidden>
+            <i class="fas fa-ticket"></i>
+            <span id="bpVoucherChipTxt">-</span>
+            <button type="button" id="bpVoucherReset" class="bp-pill__x"><i class="fas fa-xmark"></i></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════ STEP 3 — GAMBAR (ADDON) ═════════ -->
+    <section class="bp-step" data-step="gallery" id="bpGallerySect" hidden>
+      <div class="bp-field">
+        <label>GAMBAR SEBELUM (ADDON GALLERY)</label>
+        <div class="bp-gallery">
+          <div class="bp-gallery-card" data-k="depan">
+            <i class="fas fa-camera fa-2x"></i><div>DEPAN</div>
+          </div>
+          <div class="bp-gallery-card" data-k="belakang">
+            <i class="fas fa-camera fa-2x"></i><div>BELAKANG</div>
+          </div>
+        </div>
+        <div class="bp-note">
+          <i class="fas fa-circle-info"></i> Gambar dimuatnaik ke Firebase Storage selepas simpan.
+        </div>
+      </div>
+      <input type="file" id="bpFileDepan" accept="image/*" hidden>
+      <input type="file" id="bpFileBelakang" accept="image/*" hidden>
+    </section>
+
+    <!-- ═════════ STEP 4 — BAYARAN ═════════ -->
+    <section class="bp-step" data-step="3" hidden>
+
+      <!-- Ringkasan -->
+      <div class="bp-summary-card">
+        <div class="bp-summary-card__head">
+          <i class="fas fa-receipt"></i> RINGKASAN BAYARAN
+        </div>
+        <div class="bp-summary">
+          <div><span>Subtotal</span><strong id="bpSubTotal">RM 0.00</strong></div>
+          <div><span>Voucher / Referral</span><strong id="bpVoucherShow">- RM 0.00</strong></div>
+          <div><span>Diskaun</span><strong id="bpDiskaunShow">- RM 0.00</strong></div>
+          <div><span>Deposit</span><strong id="bpDepositShow">- RM 0.00</strong></div>
+          <div class="bp-summary__final"><span>BAKI AKHIR</span><strong id="bpBaki">RM 0.00</strong></div>
+        </div>
+      </div>
+
+      <!-- Deposit + Diskaun -->
+      <div class="bp-grid2">
+        <div class="bp-field">
+          <label>DEPOSIT (RM)</label>
+          <input type="number" step="0.01" min="0" id="bpDeposit" class="bp-input" value="0">
+        </div>
+        <div class="bp-field">
+          <label>DISKAUN (RM)</label>
+          <input type="number" step="0.01" min="0" id="bpDiskaun" class="bp-input" value="0">
+        </div>
+      </div>
+
+      <!-- Voucher apply -->
+      <div class="bp-field">
+        <label>KOD VOUCHER / REFERRAL</label>
+        <div class="bp-promo-row">
+          <input type="text" id="bpPromo" class="bp-input" placeholder="V-XXXXXX / REF-XXXX" style="text-transform:uppercase">
+          <button type="button" class="bp-chip-btn bp-chip-btn--yellow" id="bpPromoApply">
+            <i class="fas fa-check"></i> SEMAK
+          </button>
+        </div>
+        <div id="bpPromoMsg" class="bp-note"></div>
+      </div>
+
+      <!-- Status + Method -->
+      <div class="bp-grid2">
+        <div class="bp-field">
+          <label>STATUS BAYARAN</label>
+          <select id="bpPayStatus" class="bp-input">
+            <option>UNPAID</option>
+            <option>PAID</option>
+          </select>
+        </div>
+        <div class="bp-field">
+          <label>CARA BAYARAN</label>
+          <select id="bpPayMethod" class="bp-input">
+            <option>CASH</option>
+            <option>ONLINE</option>
+            <option>QR</option>
+            <option selected>TAK PASTI</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Jenis servis -->
+      <div class="bp-field">
+        <label>JENIS SERVIS</label>
+        <select id="bpJenis" class="bp-input">
+          <option>TAK PASTI</option>
+          <option>SIAP SEGERA</option>
+          <option>TINGGAL</option>
+        </select>
+      </div>
+
+      <!-- Catatan -->
+      <div class="bp-field">
+        <label>CATATAN</label>
+        <textarea id="bpCatatan" class="bp-input" rows="2" placeholder="Nota tambahan..."></textarea>
+      </div>
+    </section>
+
+    <!-- ── Nav buttons ── -->
+    <div class="bp-nav">
+      <button type="button" class="bp-navbtn bp-navbtn--ghost" id="bpPrev" hidden>
+        <i class="fas fa-chevron-left"></i> SEBELUM
+      </button>
+      <button type="button" class="bp-navbtn bp-navbtn--primary" id="bpNext">
+        SETERUSNYA <i class="fas fa-chevron-right"></i>
+      </button>
+      <button type="button" class="bp-navbtn bp-navbtn--save" id="bpSave" hidden>
+        <i class="fas fa-floppy-disk"></i> SIMPAN TIKET
+      </button>
+    </div>
+    <button type="button" id="bpReset" hidden></button>
+
+  </div>
+
+  <!-- ── Backup phone modal ── -->
+  <div class="lost-modal-backdrop" id="bpBackupModal">
+    <div class="lost-modal lost-modal--sm" style="border-top-color:var(--green)">
+      <div class="lost-modal__head">
+        <span style="color:var(--green)"><i class="fab fa-whatsapp"></i> NO BACKUP (WHATSAPP)</span>
+        <button type="button" class="lost-modal__close" id="bpBackupClose"><i class="fas fa-xmark"></i></button>
+      </div>
+      <input type="tel" id="bpWasap" class="bp-input" placeholder="No telefon backup...">
+      <button type="button" class="btn-submit" id="bpBackupSave" style="background:var(--green); margin-top:10px">
+        <i class="fas fa-check"></i> SIMPAN
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Voucher modal ── -->
+  <div class="lost-modal-backdrop" id="bpVoucherModal">
+    <div class="lost-modal lost-modal--sm" style="border-top-color:var(--yellow)">
+      <div class="lost-modal__head">
+        <span style="color:var(--yellow)"><i class="fas fa-ticket"></i> KOD VOUCHER / REFERRAL</span>
+        <button type="button" class="lost-modal__close" id="bpVoucherClose"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="bp-promo-row">
+        <input type="text" id="bpVoucherInput" class="bp-input" placeholder="Cth: V-ABC123 / REF-XXXX" style="text-transform:uppercase">
+        <button type="button" class="bp-chip-btn bp-chip-btn--yellow" id="bpVoucherApply">
+          <i class="fas fa-check"></i> SEMAK
+        </button>
+      </div>
+      <div id="bpVoucherMsg" class="bp-note" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- ── Pattern modal ── -->
+  <div class="lost-modal-backdrop" id="bpPatternModal">
+    <div class="lost-modal lost-modal--sm" style="border-top-color:var(--primary)">
+      <div class="lost-modal__head">
+        <span style="color:var(--primary)"><i class="fas fa-grip-vertical"></i> LUKIS PATTERN</span>
+        <button type="button" class="lost-modal__close" id="bpPatternClose"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="bp-pattern-wrap">
+        <div class="bp-pattern-hint">Tekan bulatan mengikut urutan.</div>
+        <div class="bp-pattern" id="bpPatternBox"></div>
+        <div class="bp-pattern-meta">Pattern: <strong id="bpPatternTxtModal">-</strong></div>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:10px">
+        <button type="button" class="btn-ghost" id="bpPatternClear" style="flex:1"><i class="fas fa-eraser"></i> CLEAR</button>
+        <button type="button" class="btn-submit" id="bpPatternSave" style="background:var(--primary); margin:0; flex:1"><i class="fas fa-check"></i> SIMPAN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Done modal ── -->
+  <div class="lost-modal-backdrop" id="bpDoneModal">
+    <div class="lost-modal lost-modal--sm" style="border-top-color:var(--green)">
+      <div class="lost-modal__head">
+        <span style="color:var(--green)"><i class="fas fa-circle-check"></i> TIKET DISIMPAN</span>
+      </div>
+      <div class="pos-done">
+        <div class="pos-done__siri" id="bpDoneSiri">#—</div>
+        <div class="pos-done__amt" id="bpDoneAmt">RM 0.00</div>
+        <div class="pos-done__method" id="bpDoneStatus">IN PROGRESS</div>
+      </div>
+      <div class="pos-done__status" id="bpDonePrint"></div>
+      <div style="display:flex; gap:8px">
+        <button type="button" class="btn-ghost" id="bpDonePrintBtn" style="flex:1"><i class="fas fa-print"></i> CETAK</button>
+        <button type="button" class="btn-submit" id="bpDoneOk" style="background:var(--primary); margin:0; flex:1">TUTUP</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="lost-toast" id="bpToast" hidden></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-storage-compat.js"></script>
+  <script src="js/firebase-init.js"></script>
+  <script src="js/printer.js"></script>
+  <script src="js/baikpulih.js"></script>
+</body>
+</html>
