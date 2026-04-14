@@ -120,14 +120,14 @@ Plan ni disusun ikut **dependency order**. Jangan skip fasa.
 ### 🔹 FASA 0 — Pre-flight Decisions
 - [x] `0.1` **Auth strategy**: ✅ **Path A — Supabase Auth full migrate**
 - [x] `0.2` **Firebase Storage**: ✅ **Pindah ke Supabase Storage**
-- [ ] `0.3` **Credentials**: `.env + flutter_dotenv` / `--dart-define` / hardcode config file?
-- [ ] `0.4` **Realtime audit**: screen mana guna `.snapshots()` → perlu Supabase Realtime?
+- [x] `0.3` **Credentials**: ✅ **`.env + flutter_dotenv`** (tak commit ke git, senang update)
+- [ ] `0.4` **Realtime audit**: screen mana guna `.snapshots()` → perlu Supabase Realtime? *(agent buat sendiri masa Fasa 2)*
 - [x] `0.5` **Push notification (FCM)**: ✅ **Kekal Firebase FCM** (mandatory untuk Android push)
 - [x] `0.6` **Firebase Hosting**: ✅ **Cloudflare Pages** (domain `rmspro.net` dah di Cloudflare, DNS + hosting satu vendor)
-- [ ] `0.7` **Firebase Functions**: audit `rmsproapp/functions/index.js` — logic apa, pindah mana (PDF logic kekal Cloud Run)?
-- [ ] `0.8` **Data split mitigation**: Opsyen 1 (dual-write) / Opsyen 2 (back-to-back) / Opsyen 3 (Web freeze)? **(WAJIB pilih sebelum Fasa 4)**
+- [ ] `0.7` **Firebase Functions**: audit `rmsproapp/functions/index.js` — logic apa, pindah mana? *(agent buat sendiri masa Fasa 2/4)*
+- [x] `0.8` **Data split mitigation**: ✅ **Opsyen 2 — back-to-back** (Web migrate terus lepas Flutter siap, window split-brain dipendekkan)
 
-> ⚠️ 0.3, 0.4, 0.6, 0.7, 0.8 belum dijawab — clear dulu sebelum Fasa 1.
+> ✅ **Fasa 0 COMPLETE** — ready start Fasa 1 bila abe din bagi go-ahead.
 
 ---
 
@@ -403,6 +403,7 @@ Order ikut Flutter untuk pattern consistency:
 *(Agent/Claude — update section ni bila selesai fasa)*
 
 - `2026-04-15` — Folder created, plan drafted, belum start execution.
+- `2026-04-15` — **Fasa 0 complete**. Semua pre-flight decisions locked. Ready Fasa 1.
 
 ---
 
