@@ -92,8 +92,9 @@ Plan ni disusun ikut **dependency order**. Jangan skip fasa.
 - [x] `0.5` **Push notification (FCM)**: ✅ **Kekal Firebase FCM** (mandatory untuk Android push)
 - [ ] `0.6` **Firebase Hosting**: pindah ke mana — Supabase / Vercel / Netlify?
 - [ ] `0.7` **Firebase Functions**: audit `rmsproapp/functions/index.js` — logic apa, pindah mana (PDF logic kekal Cloud Run)?
+- [ ] `0.8` **Data split mitigation**: Opsyen 1 (dual-write) / Opsyen 2 (back-to-back) / Opsyen 3 (Web freeze)? **(WAJIB pilih sebelum Fasa 4)**
 
-> ⚠️ 0.3, 0.4, 0.6, 0.7 belum dijawab — clear dulu sebelum Fasa 1.
+> ⚠️ 0.3, 0.4, 0.6, 0.7, 0.8 belum dijawab — clear dulu sebelum Fasa 1.
 
 ---
 
@@ -140,6 +141,10 @@ Plan ni disusun ikut **dependency order**. Jangan skip fasa.
 ---
 
 ### 🔹 FASA 4 — Migrate Core Services *(~4-6 jam)*
+
+> 🚨 **STOP** — pastikan Fasa `0.8` (data split mitigation) dah dijawab.
+> Kalau pilih Opsyen 1 (dual-write), service kena tulis ke **dua tempat** (Firestore + Supabase) sehingga Web siap migrate.
+
 Order ikut dependency (paling independent dulu):
 - [ ] `4.1` `rmsproapp/lib/services/branch_service.dart` *(foundation semua)*
 - [ ] `4.2` `rmsproapp/lib/services/saas_flags_service.dart` *(feature flags)*
@@ -214,6 +219,46 @@ Order ikut dependency (paling independent dulu):
 ## 🟧 PART B — WEB APP (web_app)
 
 > ⚠️ Bermula **hanya lepas Flutter 100% siap & stable**.
+
+### 🚨 CRITICAL — Data Split Risk
+
+Antara waktu Flutter dah migrate **TAPI** Web belum migrate, ada risiko **split-brain data**:
+- Flutter user write → **Supabase**
+- Web user write → **Firestore**
+- Result: dua database tak sync, data hilang, conflict.
+
+**Mitigation strategy WAJIB ikut salah satu:**
+
+**Opsyen 1 — Dual-write window (RECOMMENDED)**
+- Selepas Flutter migrate (Fasa 8), Flutter write ke **Firestore + Supabase serentak** (dual-write)
+- Read tetap dari Supabase
+- Web masih guna Firestore macam biasa
+- Bila Web siap migrate (Fasa 12), buang dual-write Flutter
+- Jalankan final delta sync Firestore → Supabase, Firestore freeze.
+
+**Opsyen 2 — Web migrate close-to-back-to-back**
+- Lepas Flutter siap, terus mula Web (jangan tunggu lama)
+- Window split-brain dipendekkan (jam, bukan hari/minggu)
+- Komunikasi user: "downtime maintenance" 1-2 jam, freeze write semasa cutover
+
+**Opsyen 3 — Freeze Web write semasa migration**
+- Web jadi read-only (boleh login & view, tak boleh create/edit)
+- Flutter migrate + Web migrate ikut, baru Web write semula
+- Paling selamat tapi paling impact UX
+
+> ⚠️ **Wajib pilih satu sebelum start Fasa 4 Flutter (write logic)**.
+
+### 📐 Pattern Consistency — WAJIB Mirror Flutter
+
+Web `web_app` MESTI guna **structure & naming PERSIS sama** dengan Flutter `rmsproapp`:
+- Table name & columns sama (table `jobs` Flutter = table `jobs` Web, field `created_at` sama)
+- RLS policy sama (jangan buat dua set policy berbeza)
+- Auth flow sama (Supabase Auth, role mapping sama)
+- File naming convention dalam Storage sama (e.g. `users/{uid}/profile.jpg`)
+
+Tujuan: data yang dihantar Web mesti **boleh dibaca tanpa transformation** oleh Flutter, dan vice versa.
+
+> Agent yg buat Web — **WAJIB rujuk code Flutter sebagai source of truth**, jangan reka pattern baru.
 
 ### 🔹 FASA 9 — Web Foundation *(~30 min)*
 - [ ] `9.1` Tambah `@supabase/supabase-js` dalam `web_app/package.json`
@@ -307,7 +352,17 @@ Kalau sy agent baru baca file ni untuk sambung kerja:
 4. **Next fasa** — ikut urutan, jangan skip.
 5. **Update Progress Log** bila habis satu fasa, commit + push.
 
-User prefer:
-- Panggil **Abe Din**
-- Reply dalam **BM santai** (singkatan `sy`, `nk`, `tuka` dll ok)
-- Flutter dulu, web ikut pattern Flutter lepas tu
+### 🚨 Rules WAJIB ikut
+
+1. **Pattern consistency Flutter ↔ Web** — table name, column name, RLS policy, file naming Storage MESTI sama 100% antara `rmsproapp` dan `web_app`. Kalau buat Web, rujuk Flutter sebagai source of truth, jangan reka.
+2. **Data split risk** — kalau Web masih Firestore tapi Flutter dah Supabase, WAJIB ikut strategy Fasa 0.8 (dual-write / back-to-back / freeze). Jangan biar dua database hidup sendiri-sendiri tanpa sync.
+3. **Marketplace SKIP** — jangan touch `lib/services/marketplace_service.dart`, `billplz_service.dart`, `courier_service.dart`, `lib/screens/marketplace/*`, `lib/models/marketplace_models.dart`.
+4. **PDF kekal Cloud Run, FCM kekal Firebase** — jangan cuba pindah ke Supabase Edge Functions atau OneSignal.
+5. **Jangan delete Firebase project** sehingga abe din confirm 100% migration berjaya (Fasa 14.5).
+
+### 👤 User Profile
+
+- Panggil **Abe Din** (bukan "user" atau "Din" sahaja).
+- Reply dalam **BM santai** (singkatan `sy`, `nk`, `tuka`, `kcuali`, `mcm` dll ok).
+- Flutter dulu siap → Web mirror pattern Flutter lepas tu.
+- Verbose tak suka — ringkas, padat, point-by-point bila boleh.
