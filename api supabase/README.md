@@ -44,14 +44,22 @@ Tempat simpan bila dapat: Cloud Run env var, atau file berasingan yang di-`.giti
 
 ## 🎯 Scope Migration
 
-### ✅ Include
-- **Flutter (`rmsproapp`) DULU** → Web (`web_app`) mirror pattern Flutter kemudian.
-- Data layer: Firestore reads/writes → Supabase client.
-- Auth: (belum putus — lihat Fasa 0).
-- Storage: (audit dulu — lihat Fasa 0).
+### ✅ Include — MIGRATE SEMUA GOOGLE SERVICE KE SUPABASE
+Keputusan Abe Din (2026-04-15): **cut Google habis**, tinggal PDF je.
 
-### ❌ Exclude
-- **PDF generation KEKAL di Cloud Run** (`rmsproapp/functions/index.js` + `lib/utils/pdf_url_helper.dart`) — jangan pindah.
+| Service Google | Destination |
+|---|---|
+| Firestore | → **Supabase Database** |
+| Firebase Auth | → **Supabase Auth** (Path A — full migrate users) |
+| Firebase Storage | → **Supabase Storage** |
+| Firebase Functions | → Cleanup (logic perlu pindah ke Cloud Run / Supabase Edge) |
+| Firebase Hosting (`rmsproapp/public/*`) | → Supabase Hosting / Vercel / Netlify |
+| FCM (push notification) | → **(BELUM DECIDE)** — OneSignal / Expo / kekal FCM / drop push |
+
+- **Flutter (`rmsproapp`) DULU** → Web (`web_app`) mirror pattern Flutter kemudian.
+
+### ❌ Exclude — Kekal Google
+- **PDF generation KEKAL di Cloud Run** (`rmsproapp/functions/index.js` + `lib/utils/pdf_url_helper.dart`) — reason: Puppeteer/Chromium, pixel-perfect HTML→PDF, Supabase Edge Function tak mampu.
 - **Marketplace feature POSPONE** — skip file berikut:
   - `rmsproapp/lib/services/marketplace_service.dart`
   - `rmsproapp/lib/services/billplz_service.dart`
@@ -73,13 +81,16 @@ Plan ni disusun ikut **dependency order**. Jangan skip fasa.
 
 ## 🟦 PART A — FLUTTER (rmsproapp)
 
-### 🔹 FASA 0 — Pre-flight Decisions *(tiada coding)*
-- [ ] `0.1` **Auth strategy**: Supabase Auth full, atau kekal Firebase Auth (sync je)?
-- [ ] `0.2` **Firebase Storage**: audit ada upload gambar ke tak → pindah atau kekal?
+### 🔹 FASA 0 — Pre-flight Decisions
+- [x] `0.1` **Auth strategy**: ✅ **Path A — Supabase Auth full migrate**
+- [x] `0.2` **Firebase Storage**: ✅ **Pindah ke Supabase Storage**
 - [ ] `0.3` **Credentials**: `.env + flutter_dotenv` / `--dart-define` / hardcode config file?
-- [ ] `0.4` **Realtime audit**: screen mana guna `.snapshots()` (live listener) → perlu Supabase Realtime?
+- [ ] `0.4` **Realtime audit**: screen mana guna `.snapshots()` → perlu Supabase Realtime?
+- [ ] `0.5` **Push notification (FCM)**: OneSignal / Expo / kekal FCM / drop push?
+- [ ] `0.6` **Firebase Hosting**: pindah ke mana — Supabase / Vercel / Netlify?
+- [ ] `0.7` **Firebase Functions**: audit `rmsproapp/functions/index.js` — logic apa, pindah mana?
 
-> ⚠️ Tanpa jawapan ni, Fasa 1 tak boleh mula.
+> ⚠️ 0.3–0.7 belum dijawab, jangan mula Fasa 1 sebelum clear.
 
 ---
 
@@ -179,10 +190,18 @@ Order ikut dependency (paling independent dulu):
 
 ---
 
+### 🔹 FASA 7.5 — Storage Migration *(~2-3 jam, NEW)*
+- [ ] `7.5.1` Audit: listing semua upload/download Firebase Storage dalam code
+- [ ] `7.5.2` Create Supabase Storage buckets (public/private, ikut folder FB Storage)
+- [ ] `7.5.3` Tulis RLS policies untuk buckets
+- [ ] `7.5.4` Script migration: download semua file dari Firebase Storage → upload ke Supabase Storage
+- [ ] `7.5.5` Update code — ganti Firebase Storage SDK → Supabase Storage SDK
+- [ ] `7.5.6` Update URL references dalam DB (kalau ada store URL Firebase)
+
 ### 🔹 FASA 8 — Flutter Cleanup *(~30-45 min)*
-- [ ] `8.1` Buang `cloud_firestore` dari `rmsproapp/pubspec.yaml`
-- [ ] `8.2` Buang `firebase_core` **HANYA kalau** PDF Cloud Run tak perlu client-side Firebase (verify dulu)
-- [ ] `8.3` Kekal `firebase_auth` kalau Path B dipilih
+- [ ] `8.1` Buang `cloud_firestore`, `firebase_auth`, `firebase_storage` dari `rmsproapp/pubspec.yaml`
+- [ ] `8.2` Buang `firebase_core` — kecuali kalau kekal FCM (Fasa 0.5)
+- [ ] `8.3` Kekal `firebase_messaging` kalau FCM dipilih
 - [ ] `8.4` `flutter pub get` + build verify
 - [ ] `8.5` Full regression click-through
 - [ ] `8.6` Commit + tag `flutter-supabase-migrated`
