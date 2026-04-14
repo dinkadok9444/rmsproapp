@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Katalog Telefon</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="manifest" href="../manifest.json">
+    <meta name="theme-color" content="#6F4E37">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/theme.css">
+    <link rel="stylesheet" href="../assets/theme-override.css">
+    <style>
+        :root {
+            --primary: #F0D5B3;
+            --bg-dark: #2A1A12;
+            --card-bg: rgba(255, 255, 255, 0.04);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --text: #f1f5f9;
+            --text-dim: #64748b;
+            --text-muted: #94a3b8;
+            --base-font: 12px;
+            --green: #10b981;
+            --blue: #D4B896;
+            --yellow: #f59e0b;
+            --red: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 0;
+        }
+
+        .blob-container {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            z-index: -1;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.4;
+        }
+
+        .blob-1 {
+            width: 300px; height: 300px;
+            background: var(--primary);
+            top: -80px; left: -100px;
+            animation: float 12s infinite alternate ease-in-out;
+        }
+
+        .blob-2 {
+            width: 350px; height: 350px;
+            background: var(--blue);
+            bottom: -100px; right: -100px;
+            animation: float 10s infinite alternate-reverse ease-in-out;
+        }
+
+        @keyframes float {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(40px, 40px) scale(1.1); }
+        }
+
+        /* ── HEADER ── */
+        .shop-header {
+            background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(0,255,163,0.03));
+            border-bottom: 1px solid var(--card-border);
+            padding: 24px 20px;
+            text-align: center;
+        }
+
+        .shop-logo {
+            width: 72px; height: 72px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--primary);
+            margin-bottom: 12px;
+            background: var(--bg-dark);
+        }
+
+        .shop-logo-placeholder {
+            width: 72px; height: 72px;
+            border-radius: 50%;
+            border: 2px solid var(--card-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 12px;
+            background: var(--card-bg);
+        }
+
+        .shop-name {
+            font-size: 18px;
+            font-weight: 900;
+            letter-spacing: 0.5px;
+            color: var(--primary);
+        }
+
+        .shop-address {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .shop-phone {
+            font-size: 12px;
+            color: var(--green);
+            margin-top: 4px;
+            font-weight: 700;
+        }
+
+        .shop-phone a {
+            color: var(--green);
+            text-decoration: none;
+        }
+
+        /* ── CONTENT ── */
+        .content {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 16px;
+        }
+
+        .phone-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        @media (max-width: 400px) {
+            .phone-grid {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+        }
+
+        .count-badge {
+            display: inline-block;
+            background: rgba(0,255,163,0.1);
+            border: 1px solid rgba(0,255,163,0.2);
+            color: var(--primary);
+            font-size: 11px;
+            font-weight: 900;
+            padding: 4px 10px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }
+
+        /* ── PHONE CARD ── */
+        .phone-card {
+            background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+            border: 1px solid var(--card-border);
+            border-radius: 14px;
+            overflow: hidden;
+            transition: transform 0.15s;
+        }
+
+        .phone-card:active {
+            transform: scale(0.98);
+        }
+
+        .phone-img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            background: rgba(0,0,0,0.3);
+        }
+
+        .phone-img-placeholder {
+            width: 100%;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.2);
+            color: var(--text-dim);
+        }
+
+        .phone-body {
+            padding: 10px;
+        }
+
+        .phone-name {
+            font-size: var(--base-font);
+            font-weight: 800;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+
+        .phone-specs {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+
+        .spec-badge {
+            font-size: 10px;
+            font-weight: 800;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: rgba(59,130,246,0.1);
+            border: 1px solid rgba(59,130,246,0.2);
+            color: var(--blue);
+        }
+
+        .spec-badge.warna {
+            background: rgba(6,182,212,0.1);
+            border-color: rgba(6,182,212,0.2);
+            color: #06b6d4;
+        }
+
+        .spec-badge.storage {
+            background: rgba(245,158,11,0.1);
+            border-color: rgba(245,158,11,0.2);
+            color: var(--yellow);
+        }
+
+        .phone-price {
+            font-size: 14px;
+            font-weight: 900;
+            color: var(--green);
+        }
+
+        .phone-footer {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .btn-book {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 16px;
+            width: 100%;
+            background: linear-gradient(135deg, var(--green), #059669);
+            color: white;
+            font-size: 11px;
+            font-weight: 900;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            transition: transform 0.1s;
+        }
+
+        .btn-book:active {
+            transform: scale(0.95);
+        }
+
+        /* ── LOADING / ERROR ── */
+        .loading {
+            text-align: center;
+            padding: 80px 20px;
+        }
+
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid var(--card-border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .error-msg {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+            padding: 80px 20px;
+        }
+
+        .watermark {
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 10px;
+            padding: 30px 0;
+            opacity: 0.5;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+            grid-column: 1 / -1;
+        }
+
+        .empty-state i {
+            font-size: 40px;
+            margin-bottom: 12px;
+            color: var(--text-dim);
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        .filter-select {
+            flex: 1;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--card-border);
+            color: var(--text);
+            font-size: 12px;
+            font-weight: 700;
+            padding: 8px 12px;
+            border-radius: 8px;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2364748b' viewBox='0 0 16 16'%3E%3Cpath d='M1.5 5.5l6.5 6.5 6.5-6.5'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            cursor: pointer;
+        }
+
+        .filter-select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .filter-label {
+            font-size: 10px;
+            font-weight: 900;
+            color: var(--text-dim);
+            white-space: nowrap;
+        }
+
+        /* ── LANGUAGE TOGGLE ── */
+        .lang-toggle {
+            position: fixed; top: 12px; right: 12px; z-index: 100;
+            display: flex; border-radius: 8px; overflow: hidden;
+            border: 1px solid var(--card-border);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        }
+        .lang-btn {
+            padding: 6px 14px; font-size: 11px; font-weight: 800;
+            cursor: pointer; border: none; font-family: inherit; transition: .2s;
+        }
+        .lang-btn.active { background: var(--primary); color: #000; }
+        .lang-btn:not(.active) { background: rgba(255,255,255,.06); color: var(--text-dim); }
+
+        /* ── REVIEW BUTTON ── */
+        .btn-review {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 8px 16px; background: rgba(245,158,11,0.15);
+            border: 1px solid rgba(245,158,11,0.3); border-radius: 8px;
+            color: var(--yellow); font-size: 11px; font-weight: 800;
+            cursor: pointer; margin-top: 12px; transition: .2s; font-family: inherit;
+        }
+        .btn-review:hover { background: rgba(245,158,11,0.25); }
+
+        /* ── REVIEW MODAL ── */
+        .review-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); z-index: 200;
+            justify-content: center; align-items: flex-start;
+            padding: 20px; overflow-y: auto;
+        }
+        .review-overlay.active { display: flex; }
+        .review-box {
+            background: #3A2419; border: 1px solid var(--card-border);
+            border-radius: 16px; padding: 20px; width: 100%; max-width: 420px; margin-top: 40px;
+        }
+        .review-close { float: right; color: var(--red); font-size: 18px; cursor: pointer; }
+        .review-title { font-size: 14px; font-weight: 900; color: var(--yellow); margin-bottom: 16px; }
+        .review-input {
+            width: 100%; padding: 10px 14px; background: rgba(255,255,255,0.05);
+            border: 1px solid var(--card-border); border-radius: 8px;
+            color: var(--text); font-size: 13px; font-weight: 600;
+            outline: none; font-family: inherit; margin-bottom: 12px;
+        }
+        .review-input:focus { border-color: var(--primary); }
+        .review-search-btn {
+            width: 100%; padding: 10px; background: var(--yellow); color: #000;
+            border: none; border-radius: 8px; font-size: 12px; font-weight: 900;
+            cursor: pointer; font-family: inherit;
+        }
+        .order-list { margin-top: 16px; }
+        .order-card {
+            background: rgba(255,255,255,0.03); border: 1px solid var(--card-border);
+            border-radius: 10px; padding: 12px; margin-bottom: 10px;
+        }
+        .order-item { font-size: 12px; font-weight: 800; color: var(--text); }
+        .order-siri { font-size: 10px; color: var(--primary); font-weight: 700; margin-top: 2px; }
+        .order-date { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+        .order-status {
+            display: inline-block; font-size: 10px; font-weight: 800;
+            padding: 2px 8px; border-radius: 4px; margin-top: 6px;
+        }
+        .order-status.done { background: rgba(16,185,129,0.15); color: var(--green); }
+        .order-status.pending { background: rgba(245,158,11,0.15); color: var(--yellow); }
+        .order-status.active { background: rgba(59,130,246,0.15); color: var(--blue); }
+        .star-rating { display: flex; gap: 4px; margin: 8px 0; }
+        .star-rating i { font-size: 20px; color: var(--text-dim); cursor: pointer; transition: .1s; }
+        .star-rating i.active { color: var(--yellow); }
+        .review-textarea {
+            width: 100%; padding: 8px 12px; background: rgba(255,255,255,0.05);
+            border: 1px solid var(--card-border); border-radius: 8px;
+            color: var(--text); font-size: 12px; font-family: inherit;
+            min-height: 60px; resize: vertical; outline: none; margin-top: 6px;
+        }
+        .review-submit-btn {
+            padding: 8px 16px; background: var(--green); color: #000; border: none;
+            border-radius: 6px; font-size: 11px; font-weight: 900;
+            cursor: pointer; margin-top: 8px; font-family: inherit;
+        }
+        .review-msg { font-size: 11px; color: var(--green); margin-top: 6px; font-weight: 700; }
+        .no-orders { text-align: center; color: var(--text-dim); font-size: 12px; padding: 20px; }
+    </style>
+</head>
+<body>
+    <div class="blob-container">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <!-- Language Toggle -->
+    <div class="lang-toggle">
+        <button class="lang-btn active" id="btnBM" onclick="setLang('ms')">BM</button>
+        <button class="lang-btn" id="btnEN" onclick="setLang('en')">EN</button>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <p style="color: var(--text-muted); font-size: 12px;" data-i18n="loading">Memuatkan katalog...</p>
+    </div>
+
+    <!-- Error -->
+    <div id="error" class="error-msg" style="display:none;"></div>
+
+    <!-- Main Content -->
+    <div id="mainContent" style="display:none;">
+        <!-- Shop Header -->
+        <div class="shop-header">
+            <div id="logoContainer" class="shop-logo-placeholder">
+                <i class="fas fa-store" style="font-size:24px; color:var(--text-dim);"></i>
+            </div>
+            <div class="shop-name" id="shopName">-</div>
+            <div class="shop-address" id="shopAddress"></div>
+            <div class="shop-phone" id="shopPhone"></div>
+            <button class="btn-review" id="btnReview" onclick="openReview()">
+                <i class="fas fa-star"></i> <span data-i18n="review_btn">REVIEW</span>
+            </button>
+        </div>
+
+        <!-- Phone List -->
+        <div class="content">
+            <div id="countBadge" class="count-badge"></div>
+            <div class="filter-row">
+                <span class="filter-label"><i class="fas fa-filter"></i> MODEL:</span>
+                <select id="modelFilter" class="filter-select">
+                    <option value="SEMUA">SEMUA</option>
+                </select>
+            </div>
+            <div id="phoneList" class="phone-grid"></div>
+            <div class="watermark">Powered by Repair Management System</div>
+        </div>
+    </div>
+
+    <!-- Review Modal -->
+    <div class="review-overlay" id="reviewOverlay" onclick="if(event.target===this)closeReview()">
+        <div class="review-box">
+            <div class="review-close" onclick="closeReview()"><i class="fas fa-xmark"></i></div>
+            <div class="review-title"><i class="fas fa-star"></i>&nbsp; <span data-i18n="review_title">Semak & Review Pesanan</span></div>
+            <input class="review-input" type="tel" id="reviewPhone" data-i18n-placeholder="review_phone_placeholder" placeholder="Masukkan no. telefon anda">
+            <button class="review-search-btn" id="reviewSearchBtn" onclick="searchOrders()">
+                <i class="fas fa-search"></i>&nbsp; <span data-i18n="review_search">CARI PESANAN</span>
+            </button>
+            <div class="order-list" id="orderList"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, getDocs, doc, getDoc, query, where, limit, addDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // ══ TRANSLATION SYSTEM ══
+        const T = {
+            ms: {
+                loading: 'Memuatkan katalog...',
+                error_link: 'Pautan tidak sah. Parameter owner atau shop tiada.',
+                error_load: 'Gagal memuatkan data. Sila cuba lagi.',
+                count_badge: '{n} telefon tersedia',
+                filter_all: 'SEMUA',
+                empty: 'Tiada telefon tersedia buat masa ini.',
+                book: 'BOOK',
+                wa_msg: 'Salam, saya berminat dengan telefon:\n\n*{nama}*\nWarna: {warna}\nStorage: {storage}\nHarga: RM{harga}\nKod: {kod}\n\nAdakah masih available?',
+                review_btn: 'REVIEW',
+                review_title: 'Semak & Review Pesanan',
+                review_phone_placeholder: 'Masukkan no. telefon anda',
+                review_search: 'CARI PESANAN',
+                no_orders: 'Tiada pesanan dijumpai untuk nombor ini.',
+                searching: 'Mencari...',
+                status_done: 'SELESAI',
+                status_active: 'DALAM PROSES',
+                status_pending: 'MENUNGGU',
+                give_review: 'Beri Review',
+                review_comment: 'Komen anda (pilihan)...',
+                review_submit: 'HANTAR REVIEW',
+                review_success: 'Terima kasih! Review anda telah dihantar.',
+                review_already: 'Anda sudah memberi review untuk pesanan ini.',
+                review_select_star: 'Sila pilih rating bintang.',
+            },
+            en: {
+                loading: 'Loading catalog...',
+                error_link: 'Invalid link. Owner or shop parameter missing.',
+                error_load: 'Failed to load data. Please try again.',
+                count_badge: '{n} phones available',
+                filter_all: 'ALL',
+                empty: 'No phones available at this time.',
+                book: 'BOOK',
+                wa_msg: 'Hi, I\'m interested in this phone:\n\n*{nama}*\nColor: {warna}\nStorage: {storage}\nPrice: RM{harga}\nCode: {kod}\n\nIs it still available?',
+                review_btn: 'REVIEW',
+                review_title: 'Check & Review Orders',
+                review_phone_placeholder: 'Enter your phone number',
+                review_search: 'SEARCH ORDERS',
+                no_orders: 'No orders found for this number.',
+                searching: 'Searching...',
+                status_done: 'COMPLETED',
+                status_active: 'IN PROGRESS',
+                status_pending: 'PENDING',
+                give_review: 'Give Review',
+                review_comment: 'Your comment (optional)...',
+                review_submit: 'SUBMIT REVIEW',
+                review_success: 'Thank you! Your review has been submitted.',
+                review_already: 'You have already reviewed this order.',
+                review_select_star: 'Please select a star rating.',
+            }
+        };
+
+        let currentLang = localStorage.getItem('rms_lang') || 'ms';
+
+        function t(key, vars) {
+            let str = (T[currentLang] || T.ms)[key] || key;
+            if (vars) Object.keys(vars).forEach(k => str = str.replace(`{${k}}`, vars[k]));
+            return str;
+        }
+
+        window.setLang = function(lang) {
+            currentLang = lang;
+            localStorage.setItem('rms_lang', lang);
+            document.getElementById('btnBM').classList.toggle('active', lang === 'ms');
+            document.getElementById('btnEN').classList.toggle('active', lang === 'en');
+            // Update static i18n elements
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                el.textContent = t(el.dataset.i18n);
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+                el.placeholder = t(el.dataset.i18nPlaceholder);
+            });
+            // Re-render phones if loaded
+            if (allPhones.length > 0) renderPhones();
+            // Update count badge
+            const filterEl = document.getElementById('modelFilter');
+            if (filterEl && filterEl.options.length > 0) {
+                filterEl.options[0].textContent = t('filter_all');
+            }
+        };
+
+        // Init lang on load
+        document.getElementById('btnBM').classList.toggle('active', currentLang === 'ms');
+        document.getElementById('btnEN').classList.toggle('active', currentLang === 'en');
+        document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => el.placeholder = t(el.dataset.i18nPlaceholder));
+
+        // ══ REVIEW FUNCTIONS ══
+        window.openReview = function() {
+            document.getElementById('reviewOverlay').classList.add('active');
+        };
+        window.closeReview = function() {
+            document.getElementById('reviewOverlay').classList.remove('active');
+        };
+        window.searchOrders = async function() {
+            const phone = document.getElementById('reviewPhone').value.trim().replace(/[^0-9]/g, '');
+            if (!phone || phone.length < 9) return;
+            const listEl = document.getElementById('orderList');
+            listEl.innerHTML = `<div class="no-orders"><i class="fas fa-circle-notch fa-spin"></i> ${t('searching')}</div>`;
+
+            try {
+                // Search repairs
+                const repairSnap = await getDocs(collection(db, `repairs_${ownerID}`));
+                const orders = [];
+                repairSnap.forEach(d => {
+                    const data = d.data();
+                    const telClean = (data.tel || '').replace(/[^0-9]/g, '');
+                    if (telClean.includes(phone) || phone.includes(telClean)) {
+                        orders.push({ id: d.id, ...data, type: 'repair' });
+                    }
+                });
+
+                // Also search bookings
+                try {
+                    const bookSnap = await getDocs(collection(db, `bookings_${ownerID}`));
+                    bookSnap.forEach(d => {
+                        const data = d.data();
+                        const telClean = (data.tel || '').replace(/[^0-9]/g, '');
+                        if (telClean.includes(phone) || phone.includes(telClean)) {
+                            orders.push({ id: d.id, ...data, type: 'booking' });
+                        }
+                    });
+                } catch(_) {}
+
+                // Sort by timestamp desc
+                orders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+                if (orders.length === 0) {
+                    listEl.innerHTML = `<div class="no-orders"><i class="fas fa-inbox"></i><br>${t('no_orders')}</div>`;
+                    return;
+                }
+
+                // Load existing reviews for this phone
+                let existingReviews = {};
+                try {
+                    const fbSnap = await getDocs(collection(db, `feedback_${ownerID}`));
+                    fbSnap.forEach(d => {
+                        const data = d.data();
+                        if (data.orderDocId) existingReviews[data.orderDocId] = true;
+                    });
+                } catch(_) {}
+
+                listEl.innerHTML = orders.map(o => {
+                    const item = o.item || o.model || o.nama_item || '-';
+                    const siri = o.siri || o.siriBooking || '';
+                    const status = (o.status || '').toUpperCase();
+                    const isDone = ['SELESAI', 'COMPLETED', 'DONE', 'SIAP', 'SUDAH AMBIL'].includes(status);
+                    const isActive = ['ACTIVE', 'DALAM PROSES', 'IN PROGRESS', 'SEDANG REPAIR'].includes(status);
+                    const statusClass = isDone ? 'done' : isActive ? 'active' : 'pending';
+                    const statusText = isDone ? t('status_done') : isActive ? t('status_active') : t('status_pending');
+                    const ts = o.timestamp ? new Date(o.timestamp).toLocaleDateString('ms-MY') : '';
+                    const hasReview = existingReviews[o.id];
+
+                    let reviewHtml = '';
+                    if (isDone && !hasReview) {
+                        reviewHtml = `
+                            <div style="margin-top:10px;border-top:1px solid rgba(255,255,255,0.06);padding-top:10px;">
+                                <div style="font-size:11px;font-weight:800;color:var(--yellow);margin-bottom:6px;">${t('give_review')}</div>
+                                <div class="star-rating" id="stars_${o.id}">
+                                    ${[1,2,3,4,5].map(n => `<i class="fas fa-star" data-star="${n}" onclick="selectStar('${o.id}',${n})"></i>`).join('')}
+                                </div>
+                                <textarea class="review-textarea" id="comment_${o.id}" placeholder="${t('review_comment')}"></textarea>
+                                <button class="review-submit-btn" onclick="submitReview('${o.id}','${item.replace(/'/g, "\\'")}','${siri}','${phone}')">
+                                    <i class="fas fa-paper-plane"></i> ${t('review_submit')}
+                                </button>
+                                <div class="review-msg" id="msg_${o.id}"></div>
+                            </div>`;
+                    } else if (isDone && hasReview) {
+                        reviewHtml = `<div style="margin-top:8px;font-size:11px;color:var(--green);font-weight:700;"><i class="fas fa-check-circle"></i> ${t('review_already')}</div>`;
+                    }
+
+                    return `
+                        <div class="order-card">
+                            <div class="order-item">${item}</div>
+                            ${siri ? `<div class="order-siri">#${siri}</div>` : ''}
+                            <div class="order-date">${ts}</div>
+                            <span class="order-status ${statusClass}">${statusText}</span>
+                            ${reviewHtml}
+                        </div>`;
+                }).join('');
+            } catch(e) {
+                console.error(e);
+                listEl.innerHTML = `<div class="no-orders">${t('error_load')}</div>`;
+            }
+        };
+
+        const starSelections = {};
+        window.selectStar = function(orderId, rating) {
+            starSelections[orderId] = rating;
+            const container = document.getElementById('stars_' + orderId);
+            if (!container) return;
+            container.querySelectorAll('i').forEach(star => {
+                star.classList.toggle('active', parseInt(star.dataset.star) <= rating);
+            });
+        };
+
+        window.submitReview = async function(orderId, item, siri, phone) {
+            const rating = starSelections[orderId];
+            if (!rating) {
+                document.getElementById('msg_' + orderId).textContent = t('review_select_star');
+                document.getElementById('msg_' + orderId).style.color = 'var(--red)';
+                return;
+            }
+            const comment = (document.getElementById('comment_' + orderId)?.value || '').trim();
+            try {
+                await addDoc(collection(db, `feedback_${ownerID}`), {
+                    orderDocId: orderId,
+                    siri: siri,
+                    nama: '',
+                    tel: phone,
+                    item: item,
+                    rating: rating,
+                    komen: comment,
+                    shopID: shopID,
+                    timestamp: Date.now(),
+                    source: 'WEB_REVIEW',
+                });
+                document.getElementById('msg_' + orderId).textContent = t('review_success');
+                document.getElementById('msg_' + orderId).style.color = 'var(--green)';
+                // Hide the form after success
+                const card = document.getElementById('msg_' + orderId).closest('.order-card');
+                const formArea = card.querySelector('.star-rating')?.parentElement;
+                if (formArea) {
+                    formArea.innerHTML = `<div style="margin-top:8px;font-size:11px;color:var(--green);font-weight:700;"><i class="fas fa-check-circle"></i> ${t('review_success')}</div>`;
+                }
+            } catch(e) {
+                document.getElementById('msg_' + orderId).textContent = 'Error: ' + e.message;
+                document.getElementById('msg_' + orderId).style.color = 'var(--red)';
+            }
+        };
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAUgnpPUYe_uK2N7oBvoSnH40pADOV3JPA",
+            authDomain: "rmspro-2f454.firebaseapp.com",
+            projectId: "rmspro-2f454",
+            storageBucket: "rmspro-2f454.firebasestorage.app",
+            messagingSenderId: "94407896005",
+            appId: "1:94407896005:web:42a2ab858a0b24280379ac"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const _segments = window.location.pathname.split('/').filter(s => s.length > 0);
+        let ownerID = null, shopID = null, _dealerCode = '';
+
+        if (_segments.length >= 2 && _segments[0] === 'catalog') {
+            // Format baru: /catalog/DEALER_CODE
+            _dealerCode = _segments[1];
+        } else if (_segments.length >= 3) {
+            // Format lama: /dealerCode/shopID/catalog
+            _dealerCode = _segments[0];
+            shopID = _segments[1].toUpperCase();
+        } else if (_segments.length === 2) {
+            const first = _segments[0];
+            if (window.location.hostname !== 'rmspro.net') {
+                shopID = first.toUpperCase();
+            } else {
+                _dealerCode = first;
+            }
+        }
+        // segments.length === 1: Custom domain /catalog — resolve dari domain
+
+        // Fallback: query params
+        const _params = new URLSearchParams(window.location.search);
+        if (_params.get('owner')) ownerID = _params.get('owner');
+        if (_params.get('shop')) shopID = _params.get('shop');
+
+        // Resolve ownerID from dealerCode or domain
+        async function resolveOwner() {
+            if (!ownerID) {
+                try {
+                    let snap;
+                    if (_dealerCode) {
+                        snap = await getDocs(query(
+                            collection(db, 'saas_dealers'),
+                            where('dealerCode', '==', _dealerCode),
+                            limit(1)
+                        ));
+                    } else if (window.location.hostname !== 'rmspro.net') {
+                        snap = await getDocs(query(
+                            collection(db, 'saas_dealers'),
+                            where('domain', '==', 'https://' + window.location.hostname),
+                            limit(1)
+                        ));
+                    }
+                    if (snap && !snap.empty) {
+                        ownerID = snap.docs[0].id.toLowerCase();
+                        if (!shopID) {
+                            // Cari shopID sebenar dari global_branches
+                            try {
+                                const branchSnap = await getDocs(query(
+                                    collection(db, 'global_branches'),
+                                    where('ownerID', '==', ownerID),
+                                    limit(1)
+                                ));
+                                if (!branchSnap.empty) {
+                                    const brId = branchSnap.docs[0].id; // format: ownerID@SHOPID
+                                    shopID = brId.includes('@') ? brId.split('@')[1] : 'MAIN';
+                                } else {
+                                    shopID = 'MAIN';
+                                }
+                            } catch(_) { shopID = 'MAIN'; }
+                        }
+                    }
+                } catch (_) {}
+            }
+            init();
+        }
+        resolveOwner();
+
+        async function init() {
+            if (!ownerID || !shopID) {
+                showError(t('error_link'));
+                return;
+            }
+
+            // Load page theme
+            try {
+                const dealerSnap = await getDoc(doc(db, 'saas_dealers', ownerID.toLowerCase()));
+                if (dealerSnap.exists()) {
+                    const themes = dealerSnap.data().pageThemes || {};
+                    const t = themes.catalog || {};
+                    if (t.bgColor) {
+                        document.documentElement.style.setProperty('--bg-dark', t.bgColor);
+                        document.body.style.backgroundColor = t.bgColor;
+                    }
+                    if (t.textColor) {
+                        document.documentElement.style.setProperty('--text', t.textColor);
+                        document.body.style.color = t.textColor;
+                    }
+                    if (t.accentColor) {
+                        document.documentElement.style.setProperty('--primary', t.accentColor);
+                        document.documentElement.style.setProperty('--green', t.accentColor);
+                    }
+                    if (t.fontSize) {
+                        document.documentElement.style.setProperty('--base-font', t.fontSize + 'px');
+                    }
+                }
+            } catch(_) {}
+
+            try {
+                // Load shop info
+                await loadShopInfo();
+                // Load phone stock
+                await loadPhoneStock();
+            } catch (e) {
+                console.error(e);
+                showError(t('error_load'));
+            }
+        }
+
+        async function loadShopInfo() {
+            let shopName = '', address = '', phone = '', logo = '';
+
+            try {
+                const dealerSnap = await getDoc(doc(db, 'saas_dealers', ownerID.toLowerCase()));
+                if (dealerSnap.exists()) {
+                    const d = dealerSnap.data();
+                    shopName = d.shopName || d.namaKedai || '';
+                    address = d.address || d.alamat || '';
+                    phone = d.phone || d.ownerContact || '';
+                    logo = d.logoBase64 || '';
+                }
+            } catch(e) { console.warn('saas_dealers:', e); }
+
+            try {
+                const shopSnap = await getDoc(doc(db, `shops_${ownerID.toLowerCase()}`, shopID.toUpperCase()));
+                if (shopSnap.exists()) {
+                    const s = shopSnap.data();
+                    if (s.shopName || s.namaKedai) shopName = s.shopName || s.namaKedai;
+                    if (s.address || s.alamat) address = s.address || s.alamat;
+                    if (s.phone || s.ownerContact) phone = s.phone || s.ownerContact;
+                    if (s.logoBase64) logo = s.logoBase64;
+                }
+            } catch(e) { console.warn('shops_:', e); }
+
+            try {
+                const bioSnap = await getDoc(doc(db, `shop_bios_${ownerID.toLowerCase()}`, shopID.toUpperCase()));
+                if (bioSnap.exists()) {
+                    const b = bioSnap.data();
+                    if (b.namaKedai) shopName = b.namaKedai;
+                    if (b.alamatKedai) address = b.alamatKedai;
+                    if (b.logoBase) logo = b.logoBase;
+                }
+            } catch(e) { console.warn('shop_bios_:', e); }
+
+            try {
+                const branchSnap = await getDoc(doc(db, 'global_branches', `${ownerID.toLowerCase()}@${shopID.toUpperCase()}`));
+                if (branchSnap.exists()) {
+                    const br = branchSnap.data();
+                    if (br.shopName) shopName = br.shopName;
+                    if (br.address) address = br.address;
+                    if (br.phone) phone = br.phone;
+                }
+            } catch(e) { console.warn('global_branches:', e); }
+
+            document.getElementById('shopName').textContent = shopName || ownerID.toUpperCase();
+            if (address) document.getElementById('shopAddress').innerHTML = `<i class="fas fa-map-marker-alt" style="color:var(--primary);margin-right:4px;"></i>${address}`;
+            if (phone) {
+                const cleanPhone = phone.replace(/\D/g, '');
+                document.getElementById('shopPhone').innerHTML = `<i class="fas fa-phone" style="margin-right:4px;"></i><a href="tel:${cleanPhone}">${phone}</a>`;
+            }
+            if (logo) document.getElementById('logoContainer').innerHTML = `<img src="${logo}" class="shop-logo" alt="Logo">`;
+        }
+
+        let allPhones = [];
+
+        async function loadPhoneStock() {
+            const snap = await getDocs(collection(db, `phone_stock_${ownerID.toLowerCase()}`));
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'block';
+
+            allPhones = [];
+            snap.forEach(d => {
+                const data = { id: d.id, ...d.data() };
+                if ((data.shopID || '').toUpperCase() === shopID.toUpperCase() &&
+                    (data.status || '').toUpperCase() === 'AVAILABLE') {
+                    allPhones.push(data);
+                }
+            });
+            allPhones.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+            // Populate model filter
+            const models = [...new Set(allPhones.map(p => (p.nama || '').toUpperCase()).filter(Boolean))].sort();
+            const filterEl = document.getElementById('modelFilter');
+            filterEl.innerHTML = `<option value="SEMUA">${t('filter_all')}</option>` + models.map(m => `<option value="${m}">${m}</option>`).join('');
+            filterEl.addEventListener('change', () => renderPhones());
+
+            renderPhones();
+        }
+
+        function renderPhones() {
+            const selected = document.getElementById('modelFilter').value;
+            const phones = selected === 'SEMUA' ? allPhones : allPhones.filter(p => (p.nama || '').toUpperCase() === selected);
+
+            document.getElementById('countBadge').textContent = t('count_badge', { n: phones.length });
+
+            const container = document.getElementById('phoneList');
+
+            if (phones.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-mobile-screen-button"></i>
+                        <p>${t('empty')}</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = phones.map(p => {
+                const nama = p.nama || '-';
+                const jual = (p.jual || 0).toFixed(2);
+                const warna = p.warna || '';
+                const storage = p.storage || '';
+                const imei = p.imei || '';
+                const imageUrl = p.imageUrl || '';
+                const kod = p.kod || '';
+                const nota = p.nota || '';
+
+                // WhatsApp book message
+                const waPhone = document.getElementById('shopPhone')?.querySelector('a')?.href?.replace('tel:', '') || '';
+                const waMsg = encodeURIComponent(t('wa_msg', { nama, warna, storage, harga: jual, kod }));
+                const waLink = waPhone ? `https://wa.me/${waPhone}?text=${waMsg}` : '#';
+
+                const imgHtml = imageUrl
+                    ? `<img src="${imageUrl}" class="phone-img" alt="${nama}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="phone-img-placeholder" style="display:none"><i class="fas fa-mobile-screen-button" style="font-size:32px;"></i></div>`
+                    : `<div class="phone-img-placeholder"><i class="fas fa-mobile-screen-button" style="font-size:32px;"></i></div>`;
+
+                const specsHtml = [
+                    warna ? `<span class="spec-badge warna">${warna}</span>` : '',
+                    storage ? `<span class="spec-badge storage">${storage}</span>` : '',
+                ].filter(Boolean).join('');
+
+                return `
+                    <div class="phone-card">
+                        ${imgHtml}
+                        <div class="phone-body">
+                            <div class="phone-name">${nama}</div>
+                            ${specsHtml ? `<div class="phone-specs">${specsHtml}</div>` : ''}
+                            ${nota ? `<p style="font-size:11px;color:var(--text-muted);margin-bottom:8px;font-style:italic;">${nota}</p>` : ''}
+                            <div class="phone-footer">
+                                <div class="phone-price">RM ${jual}</div>
+                                <a href="${waLink}" target="_blank" class="btn-book">
+                                    <i class="fab fa-whatsapp"></i> ${t('book')}
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function showError(msg) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').innerHTML = `<i class="fas fa-exclamation-circle" style="font-size:32px;color:var(--red);display:block;margin-bottom:12px;"></i>${msg}`;
+        }
+
+    </script>
+</body>
+</html>
