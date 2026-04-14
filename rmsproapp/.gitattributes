@@ -1,0 +1,50 @@
+# Default: let git handle text normalization
+* text=auto
+
+# Force LF for files that MUST stay LF (iOS, shell, gradle, etc.)
+*.sh            text eol=lf
+*.rb            text eol=lf
+*.pbxproj       text eol=lf
+*.plist         text eol=lf
+*.xcconfig      text eol=lf
+*.xcworkspacedata text eol=lf
+*.xcscheme      text eol=lf
+*.entitlements  text eol=lf
+*.modulemap     text eol=lf
+Podfile         text eol=lf
+Podfile.lock    text eol=lf
+*.podspec       text eol=lf
+
+# Android / Gradle wrapper scripts must be LF
+gradlew         text eol=lf
+*.gradle        text eol=lf
+*.properties    text eol=lf
+
+# Dart / Flutter sources — LF is the Flutter convention
+*.dart          text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+*.json          text eol=lf
+*.md            text eol=lf
+
+# Windows-only files stay CRLF
+*.bat           text eol=crlf
+*.cmd           text eol=crlf
+*.ps1           text eol=crlf
+
+# Binary assets — never touch
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.webp          binary
+*.ttf           binary
+*.otf           binary
+*.woff          binary
+*.woff2         binary
+*.pdf           binary
+*.zip           binary
+*.jar           binary
+*.keystore      binary
+*.jks           binary

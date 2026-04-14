@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TEMPAHAN SERVIS | REPAIR MANAGEMENT SYSTEM</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+
+  <style>
+    :root {
+      --primary: #38bdf8;
+      --primary-dark: #0284c7;
+      --bg: #050a14;
+      --card: #0f172a;
+      --text: #f8fafc;
+      --border: #1e293b;
+    }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+
+    .form-container { background: var(--card); padding: 35px 30px; border-radius: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); width: 100%; max-width: 420px; border: 1px solid var(--border); position: relative; overflow: hidden; }
+    .form-container::before { content: ""; position: absolute; top: -50px; left: -50px; width: 100px; height: 100px; background: var(--primary); filter: blur(80px); opacity: 0.3; border-radius: 50%; z-index: 0; }
+
+    .header { text-align: center; margin-bottom: 30px; position: relative; z-index: 1; }
+    .header i { font-size: 45px; color: var(--primary); margin-bottom: 15px; text-shadow: 0 0 20px rgba(56, 189, 248, 0.5); }
+    .header h2 { margin: 0; font-size: 22px; color: white; letter-spacing: 1.5px; font-weight: 900; }
+    .header p { font-size: 13px; color: #94a3b8; margin-top: 8px; font-weight: 600; line-height: 1.5; }
+
+    .form-content { position: relative; z-index: 1; }
+    .input-group { margin-bottom: 18px; }
+    .input-group label { display: block; font-size: 11px; color: #94a3b8; font-weight: 800; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    input { width: 100%; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border); background: #020617; color: white; box-sizing: border-box; font-size: 14px; outline: none; transition: all 0.3s ease; font-weight: 600; font-family: 'Inter', sans-serif; }
+    input:focus { border-color: var(--primary); box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); }
+
+    input[type="datetime-local"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+
+    .btn-submit { width: 100%; padding: 16px; background: linear-gradient(145deg, var(--primary), var(--primary-dark)); color: #fff; border: none; border-radius: 12px; font-weight: 900; font-size: 14px; cursor: pointer; transition: 0.3s; margin-top: 15px; text-transform: uppercase; box-shadow: 0 5px 15px rgba(56, 189, 248, 0.3); font-family: 'Inter', sans-serif; }
+    .btn-submit:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 12px 25px rgba(56, 189, 248, 0.5); }
+    .btn-submit:disabled { opacity: 0.7; cursor: not-allowed; }
+
+    /* ── Butang Maklumat Bank ── */
+    .btn-bank { width: 100%; padding: 14px; background: rgba(6,182,212,0.1); border: 1.5px solid rgba(6,182,212,0.4); border-radius: 12px; color: #06b6d4; font-weight: 900; font-size: 13px; cursor: pointer; transition: 0.3s; margin-bottom: 18px; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'Inter', sans-serif; }
+    .btn-bank:hover { background: rgba(6,182,212,0.18); transform: translateY(-2px); }
+    .btn-bank:active { transform: scale(0.98); }
+    .btn-bank i { margin-right: 8px; }
+
+    /* ── Popup Overlay ── */
+    .popup-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 999; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; }
+    .popup-overlay.active { display: flex; animation: fadeIn 0.25s ease; }
+    .popup-box { background: #0f172a; border: 1px solid rgba(6,182,212,0.3); border-radius: 20px; padding: 28px 24px; width: 100%; max-width: 380px; text-align: center; position: relative; }
+    .popup-box .close-btn { position: absolute; top: 14px; right: 16px; color: #ef4444; font-size: 18px; cursor: pointer; }
+    .popup-box h3 { color: #06b6d4; font-size: 13px; letter-spacing: 1px; margin: 0 0 18px; font-weight: 900; }
+    .popup-box .qr-img { max-width: 200px; max-height: 200px; border-radius: 12px; margin-bottom: 14px; }
+    .popup-box .bank-type { color: #94a3b8; font-size: 12px; font-weight: 700; }
+    .popup-box .bank-name { color: white; font-size: 14px; font-weight: 900; margin: 4px 0; }
+    .popup-box .bank-acc { color: #06b6d4; font-size: 22px; font-weight: 900; letter-spacing: 2px; cursor: pointer; padding: 8px; background: rgba(6,182,212,0.08); border-radius: 10px; margin-top: 6px; }
+    .popup-box .bank-acc:active { opacity: 0.6; }
+    .popup-box .copy-msg { color: #64748b; font-size: 10px; margin-top: 6px; transition: 0.3s; }
+    .popup-box .no-info { color: #475569; font-size: 12px; padding: 20px 0; }
+
+    /* ── Upload Resit ── */
+    .upload-box { border: 2px dashed var(--border); border-radius: 14px; padding: 20px; text-align: center; cursor: pointer; transition: 0.3s; margin-bottom: 18px; }
+    .upload-box:hover { border-color: var(--primary); background: rgba(56,189,248,0.04); }
+    .upload-box.has-file { border-color: #22c55e; border-style: solid; background: rgba(34,197,94,0.06); }
+    .upload-box i { font-size: 24px; color: #475569; margin-bottom: 8px; }
+    .upload-box.has-file i { color: #22c55e; }
+    .upload-box p { color: #64748b; font-size: 11px; font-weight: 700; margin: 0; }
+    .upload-box.has-file p { color: #22c55e; }
+    .upload-box img { max-height: 100px; border-radius: 8px; margin-bottom: 6px; }
+    .upload-label { display: block; font-size: 11px; color: #94a3b8; font-weight: 800; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .upload-status { font-size: 10px; color: #64748b; margin-top: 6px; }
+
+    .success-msg { display: none; text-align: center; color: var(--primary); padding: 30px 0; animation: fadeIn 0.5s ease; position: relative; z-index: 1; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* ── LANGUAGE TOGGLE ── */
+    .lang-toggle { position: fixed; top: 12px; right: 12px; z-index: 1000; display: flex; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+    .lang-btn { padding: 6px 14px; font-size: 11px; font-weight: 800; cursor: pointer; border: none; font-family: 'Inter',sans-serif; transition: .2s; }
+    .lang-btn.active { background: var(--primary); color: #000; }
+    .lang-btn:not(.active) { background: rgba(255,255,255,.06); color: #64748b; }
+  </style>
+</head>
+<body>
+
+  <!-- Language Toggle -->
+  <div class="lang-toggle">
+      <button class="lang-btn active" id="btnBM" onclick="setLang('ms')">BM</button>
+      <button class="lang-btn" id="btnEN" onclick="setLang('en')">EN</button>
+  </div>
+
+  <div class="form-container">
+    <div class="header">
+      <i class="fas fa-calendar-check"></i>
+      <h2 id="shopTitle">MEMUATKAN...</h2>
+      <p data-i18n="header_desc">Sila lengkapkan maklumat di bawah untuk menempah slot (booking) anda bersama kami.</p>
+    </div>
+
+    <div class="form-content" id="mainForm" style="display:none;">
+        <form id="bookingForm">
+          <div class="input-group">
+              <label data-i18n="lbl_nama">Nama Penuh Anda</label>
+              <input type="text" id="b_nama" required data-i18n-placeholder="ph_nama" placeholder="Contoh: Ali Bin Abu" autocomplete="off">
+          </div>
+          <div class="input-group">
+              <label data-i18n="lbl_tel">Nombor Telefon (WhatsApp)</label>
+              <input type="tel" id="b_tel" required data-i18n-placeholder="ph_tel" placeholder="Contoh: 0112345678" autocomplete="off">
+          </div>
+          <div class="input-group">
+              <label data-i18n="lbl_item">Model Peranti & Servis Yang Diperlukan</label>
+              <input type="text" id="b_item" required data-i18n-placeholder="ph_item" placeholder="Contoh: iPhone 11 - Tukar Bateri" autocomplete="off">
+          </div>
+          <div class="input-group">
+              <label data-i18n="lbl_tarikh">Tarikh & Masa Kehadiran</label>
+              <input type="datetime-local" id="b_tarikh" required>
+          </div>
+
+          <!-- Butang Maklumat Bank -->
+          <button type="button" class="btn-bank" id="btnBank" style="display:none;" onclick="toggleBankPopup()">
+              <i class="fas fa-building-columns"></i> <span data-i18n="btn_bank">MAKLUMAT PEMBAYARAN</span>
+          </button>
+
+          <!-- Upload Resit -->
+          <label class="upload-label" data-i18n="lbl_resit">Resit Pembayaran (Pilihan)</label>
+          <div class="upload-box" id="uploadBox" onclick="document.getElementById('resitInput').click();">
+              <i class="fas fa-cloud-arrow-up" id="uploadIcon"></i>
+              <p id="uploadText" data-i18n="upload_text">Tekan untuk upload resit pembayaran</p>
+              <img id="resitPreview" src="" style="display:none;">
+              <div class="upload-status" id="uploadStatus"></div>
+          </div>
+          <input type="file" id="resitInput" accept="image/*" style="display:none;" onchange="handleResitUpload(this)">
+
+          <button type="submit" class="btn-submit" id="btnHantar"><i class="fas fa-paper-plane"></i> <span data-i18n="btn_submit">HANTAR TEMPAHAN</span></button>
+        </form>
+    </div>
+
+    <div class="success-msg" id="successMsg">
+        <i class="fas fa-check-circle fa-4x"></i>
+        <h3 style="margin-top: 15px;" data-i18n="success_title">TEMPAHAN DITERIMA!</h3>
+        <p data-i18n="success_desc">Maklumat temujanji anda telah berjaya dihantar ke sistem kami. Kami akan menghubungi anda untuk pengesahan. Terima kasih!</p>
+    </div>
+  </div>
+
+  <!-- ══ POPUP MAKLUMAT BANK ══ -->
+  <div class="popup-overlay" id="bankPopup" onclick="if(event.target===this)toggleBankPopup()">
+    <div class="popup-box">
+      <div class="close-btn" onclick="toggleBankPopup()"><i class="fas fa-xmark"></i></div>
+      <h3><i class="fas fa-building-columns"></i>&nbsp; MAKLUMAT PEMBAYARAN</h3>
+      <div id="popupQrWrap" style="display:none;"><img id="popupQrImg" class="qr-img" src=""></div>
+      <div id="popupBankType" class="bank-type" style="display:none;"></div>
+      <div id="popupBankName" class="bank-name" style="display:none;"></div>
+      <div id="popupBankAccWrap" style="display:none;">
+        <div class="bank-acc" id="popupBankAcc" onclick="copyAcc()"></div>
+        <div class="copy-msg" id="copyMsg">Tekan nombor akaun untuk salin</div>
+      </div>
+      <div id="popupNoInfo" class="no-info" style="display:none;">Maklumat pembayaran belum ditetapkan oleh kedai.</div>
+    </div>
+  </div>
+
+  <script>
+    // ══ TRANSLATION SYSTEM ══
+    const T = {
+        ms: {
+            header_desc: 'Sila lengkapkan maklumat di bawah untuk menempah slot (booking) anda bersama kami.',
+            lbl_nama: 'Nama Penuh Anda', ph_nama: 'Contoh: Ali Bin Abu',
+            lbl_tel: 'Nombor Telefon (WhatsApp)', ph_tel: 'Contoh: 0112345678',
+            lbl_item: 'Model Peranti & Servis Yang Diperlukan', ph_item: 'Contoh: iPhone 11 - Tukar Bateri',
+            lbl_tarikh: 'Tarikh & Masa Kehadiran',
+            btn_bank: 'MAKLUMAT PEMBAYARAN',
+            lbl_resit: 'Resit Pembayaran (Pilihan)',
+            upload_text: 'Tekan untuk upload resit pembayaran',
+            btn_submit: 'HANTAR TEMPAHAN',
+            btn_sending: 'MENGHANTAR...',
+            success_title: 'TEMPAHAN DITERIMA!',
+            success_desc: 'Maklumat temujanji anda telah berjaya dihantar ke sistem kami. Kami akan menghubungi anda untuk pengesahan. Terima kasih!',
+            error_conn: 'Ralat sambungan: ',
+            popup_title: 'MAKLUMAT PEMBAYARAN',
+            copy_msg: 'Tekan nombor akaun untuk salin',
+            copy_done: '✓ Berjaya disalin!',
+            popup_no_info: 'Maklumat pembayaran belum ditetapkan oleh kedai.',
+        },
+        en: {
+            header_desc: 'Please fill in the details below to book your appointment with us.',
+            lbl_nama: 'Full Name', ph_nama: 'Example: John Smith',
+            lbl_tel: 'Phone Number (WhatsApp)', ph_tel: 'Example: 0112345678',
+            lbl_item: 'Device Model & Service Required', ph_item: 'Example: iPhone 11 - Battery Replacement',
+            lbl_tarikh: 'Date & Time of Visit',
+            btn_bank: 'PAYMENT INFORMATION',
+            lbl_resit: 'Payment Receipt (Optional)',
+            upload_text: 'Tap to upload payment receipt',
+            btn_submit: 'SUBMIT BOOKING',
+            btn_sending: 'SUBMITTING...',
+            success_title: 'BOOKING RECEIVED!',
+            success_desc: 'Your appointment details have been sent to our system. We will contact you for confirmation. Thank you!',
+            error_conn: 'Connection error: ',
+            popup_title: 'PAYMENT INFORMATION',
+            copy_msg: 'Tap account number to copy',
+            copy_done: '✓ Copied!',
+            popup_no_info: 'Payment information has not been set up by the shop.',
+        }
+    };
+    let currentLang = localStorage.getItem('rms_lang') || 'ms';
+    function t(key) { return (T[currentLang] || T.ms)[key] || key; }
+
+    function applyLang() {
+        document.getElementById('btnBM').classList.toggle('active', currentLang === 'ms');
+        document.getElementById('btnEN').classList.toggle('active', currentLang === 'en');
+        document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+    }
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('rms_lang', lang);
+        applyLang();
+    }
+    // Apply on load
+    document.addEventListener('DOMContentLoaded', applyLang);
+
+    let ownerID = "admin";
+    let shopID = "MAIN";
+    let db;
+    let resitDownloadUrl = "";
+
+    async function bacaURL() {
+        const segments = window.location.pathname.split('/').filter(s => s.length > 0);
+        let dealerCode = '';
+
+        if (segments.length >= 2 && segments[0] === 'booking') {
+            dealerCode = segments[1];
+        } else if (segments.length >= 3) {
+            dealerCode = segments[0];
+            shopID = segments[1].toUpperCase();
+        } else if (segments.length === 2) {
+            const first = segments[0];
+            if (window.location.hostname !== 'rmspro.net') {
+                shopID = first.toUpperCase();
+            } else {
+                dealerCode = first;
+            }
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('id')) ownerID = urlParams.get('id').toLowerCase();
+        if (urlParams.has('shop')) shopID = urlParams.get('shop').toUpperCase();
+
+        hidupkanFirebase();
+        setMinDateTime();
+
+        const authPromise = firebase.auth().signInAnonymously();
+        const resolvePromise = resolveDealer(dealerCode);
+
+        try {
+            await Promise.all([authPromise, resolvePromise]);
+            document.getElementById('mainForm').style.display = 'block';
+            await setShopName();
+        } catch(e) {
+            try {
+                await authPromise;
+                document.getElementById('mainForm').style.display = 'block';
+                await setShopName();
+            } catch(_) {
+                document.getElementById('shopTitle').innerText = "RALAT SAMBUNGAN";
+                document.getElementById('shopTitle').style.color = "red";
+            }
+        }
+    }
+
+    async function resolveDealer(dealerCode) {
+        if (ownerID !== 'admin') return;
+        var host = window.location.hostname.replace(/^www\./, '');
+        try {
+            var snap = null;
+
+            // 1. Cuba cari by dealerCode
+            if (dealerCode) {
+                snap = await db.collection('saas_dealers')
+                    .where('dealerCode', '==', dealerCode)
+                    .limit(1).get();
+            }
+
+            // 2. Kalau takde, cuba match custom domain (try semua format)
+            if ((!snap || snap.empty) && host !== 'rmspro.net' && host !== 'rmspro-2f454.web.app' && host !== 'rmspro-2f454.firebaseapp.com') {
+                // Cuba https://
+                snap = await db.collection('saas_dealers')
+                    .where('domain', '==', 'https://' + host)
+                    .limit(1).get();
+
+                // Cuba tanpa https://
+                if (snap.empty) {
+                    snap = await db.collection('saas_dealers')
+                        .where('domain', '==', host)
+                        .limit(1).get();
+                }
+
+                // Cuba dengan http://
+                if (snap.empty) {
+                    snap = await db.collection('saas_dealers')
+                        .where('domain', '==', 'http://' + host)
+                        .limit(1).get();
+                }
+
+                // Cuba dengan www
+                if (snap.empty) {
+                    snap = await db.collection('saas_dealers')
+                        .where('domain', '==', 'https://www.' + host)
+                        .limit(1).get();
+                }
+            }
+
+            if (snap && !snap.empty) {
+                ownerID = snap.docs[0].id.toLowerCase();
+
+                // Sentiasa resolve shopID dari global_branches
+                try {
+                    var brSnap = await db.collection('global_branches')
+                        .where('ownerID', '==', ownerID)
+                        .limit(1).get();
+                    if (!brSnap.empty) {
+                        var brId = brSnap.docs[0].id;
+                        shopID = brId.includes('@') ? brId.split('@')[1] : shopID;
+                    }
+                } catch(_) {}
+            }
+        } catch (_) {
+            console.error('resolveDealer error:', _);
+        }
+
+        // Load theme
+        if (ownerID !== 'admin') {
+            try {
+                var dealerSnap = await db.collection('saas_dealers').doc(ownerID.toLowerCase()).get();
+                if (dealerSnap.exists) {
+                    var themes = dealerSnap.data().pageThemes || {};
+                    var t = themes.booking || {};
+                    if (t.bgColor) document.body.style.backgroundColor = t.bgColor;
+                    if (t.textColor) document.body.style.color = t.textColor;
+                    if (t.accentColor) {
+                        document.documentElement.style.setProperty('--primary', t.accentColor);
+                    }
+                    if (t.fontSize) document.body.style.fontSize = t.fontSize + 'px';
+                }
+            } catch(_) {}
+        }
+    }
+
+    function setMinDateTime() {
+        const tzoffset = (new Date()).getTimezoneOffset() * 60000;
+        const localISOTime = (new Date(Date.now() - tzoffset)).toISOString().slice(0, 16);
+        document.getElementById('b_tarikh').min = localISOTime;
+    }
+
+    function hidupkanFirebase() {
+        const firebaseConfig = {
+            apiKey: "AIzaSyAUgnpPUYe_uK2N7oBvoSnH40pADOV3JPA",
+            authDomain: "rmspro-2f454.firebaseapp.com",
+            databaseURL: "https://rmspro-2f454-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "rmspro-2f454",
+            storageBucket: "rmspro-2f454.firebasestorage.app",
+            messagingSenderId: "94407896005",
+            appId: "1:94407896005:web:42a2ab858a0b24280379ac"
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.firestore();
+    }
+
+    async function setShopName() {
+        try {
+            const branchDoc = await db.collection(`shops_${ownerID}`).doc(shopID).get();
+            if(branchDoc.exists) {
+                const d = branchDoc.data();
+                if(d.shopName) {
+                    document.getElementById('shopTitle').innerText = d.shopName.toUpperCase();
+                }
+                loadPaymentInfo(d);
+            } else {
+                const hqDoc = await db.collection('saas_dealers').doc(ownerID).get();
+                if(hqDoc.exists && hqDoc.data().namaKedai) {
+                    document.getElementById('shopTitle').innerText = hqDoc.data().namaKedai.toUpperCase();
+                } else {
+                    document.getElementById('shopTitle').innerText = "PORTAL TEMPAHAN";
+                }
+            }
+        } catch(e) {
+            document.getElementById('shopTitle').innerText = "PORTAL TEMPAHAN";
+        }
+    }
+
+    function loadPaymentInfo(d) {
+        const qrUrl = d.bookingQrImageUrl || '';
+        const bankType = d.bookingBankType || '';
+        const bankAccName = d.bookingBankAccName || '';
+        const bankAccount = d.bookingBankAccount || '';
+
+        const hasInfo = qrUrl || bankType || bankAccName || bankAccount;
+
+        // Sentiasa tunjuk butang
+        document.getElementById('btnBank').style.display = 'block';
+
+        if (!hasInfo) {
+            document.getElementById('popupNoInfo').style.display = 'block';
+            return;
+        }
+
+        if (qrUrl) {
+            document.getElementById('popupQrImg').src = qrUrl;
+            document.getElementById('popupQrWrap').style.display = 'block';
+        }
+        if (bankType) {
+            document.getElementById('popupBankType').innerText = bankType;
+            document.getElementById('popupBankType').style.display = 'block';
+        }
+        if (bankAccName) {
+            document.getElementById('popupBankName').innerText = bankAccName;
+            document.getElementById('popupBankName').style.display = 'block';
+        }
+        if (bankAccount) {
+            document.getElementById('popupBankAcc').innerText = bankAccount;
+            document.getElementById('popupBankAccWrap').style.display = 'block';
+        }
+    }
+
+    function toggleBankPopup() {
+        const popup = document.getElementById('bankPopup');
+        popup.classList.toggle('active');
+    }
+
+    function copyAcc() {
+        const acc = document.getElementById('popupBankAcc').innerText;
+        navigator.clipboard.writeText(acc).then(() => {
+            const msg = document.getElementById('copyMsg');
+            msg.innerText = '✓ Berjaya disalin!';
+            msg.style.color = '#22c55e';
+            setTimeout(() => { msg.innerText = 'Tekan nombor akaun untuk salin'; msg.style.color = '#64748b'; }, 2000);
+        });
+    }
+
+    async function handleResitUpload(input) {
+        var file = input.files[0];
+        if (!file) return;
+
+        var box = document.getElementById('uploadBox');
+        var status = document.getElementById('uploadStatus');
+        var preview = document.getElementById('resitPreview');
+        var icon = document.getElementById('uploadIcon');
+        var text = document.getElementById('uploadText');
+
+        status.style.color = '#64748b';
+        status.innerText = 'Menyediakan gambar...';
+
+        try {
+            // Pastikan auth dah siap
+            if (!firebase.auth().currentUser) {
+                status.innerText = 'Mengesahkan pengguna...';
+                await firebase.auth().signInAnonymously();
+            }
+
+            var compressed = await compressImage(file, 400, 0.3);
+            var sizeKB = (compressed.size / 1024).toFixed(0);
+            status.innerText = 'Memuat naik (' + sizeKB + 'KB)...';
+
+            // Preview dulu sebelum upload
+            preview.src = URL.createObjectURL(compressed);
+            preview.style.display = 'block';
+
+            var storageRef = firebase.storage().ref();
+            var fileRef = storageRef.child('booking_resit/' + ownerID + '/' + Date.now() + '.jpg');
+
+            var uploadTask = fileRef.put(compressed, { contentType: 'image/jpeg' });
+
+            uploadTask.on('state_changed',
+                function(snapshot) {
+                    var pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                    status.innerText = 'Memuat naik... ' + pct + '%';
+                },
+                function(error) {
+                    status.innerText = 'GAGAL: ' + error.code + ' — ' + error.message;
+                    status.style.color = '#ef4444';
+                    icon.className = 'fas fa-triangle-exclamation';
+                    text.innerText = 'Gagal! Tekan untuk cuba lagi';
+                    box.classList.remove('has-file');
+                    // Reset supaya boleh try lagi
+                    input.value = '';
+                }
+            );
+
+            await uploadTask;
+            resitDownloadUrl = await fileRef.getDownloadURL();
+
+            icon.className = 'fas fa-circle-check';
+            text.innerText = 'Resit berjaya dimuat naik';
+            box.classList.add('has-file');
+            status.style.color = '#22c55e';
+            status.innerText = sizeKB + 'KB — Tekan untuk tukar';
+        } catch(e) {
+            status.innerText = 'GAGAL: ' + (e.code || '') + ' ' + e.message;
+            status.style.color = '#ef4444';
+            icon.className = 'fas fa-triangle-exclamation';
+            text.innerText = 'Gagal! Tekan untuk cuba lagi';
+            box.classList.remove('has-file');
+            input.value = '';
+        }
+    }
+
+    function compressImage(file, maxWidth, quality) {
+        return new Promise(function(resolve) {
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var img = new Image();
+                img.onload = function() {
+                    var canvas = document.createElement('canvas');
+                    var w = img.width, h = img.height;
+                    if (w > maxWidth) { h = (maxWidth / w) * h; w = maxWidth; }
+                    canvas.width = w; canvas.height = h;
+                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                    canvas.toBlob(resolve, 'image/jpeg', quality);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    document.getElementById('bookingForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var btn = document.getElementById('btnHantar');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> MENGHANTAR...';
+
+        var telClean = document.getElementById('b_tel').value.trim().replace(/[^0-9]/g, '');
+        var siriGenerate = "BKG-" + Date.now().toString().slice(-6);
+        var custName = document.getElementById('b_nama').value.toUpperCase().trim();
+        var itemName = document.getElementById('b_item').value.toUpperCase().trim();
+
+        var data = {
+            shopID: shopID,
+            siriBooking: siriGenerate,
+            nama: custName,
+            tel: telClean,
+            item: itemName,
+            tarikhBooking: document.getElementById('b_tarikh').value,
+            tarikhCustDatang: document.getElementById('b_tarikh').value,
+            staff: '',
+            harga: 0,
+            deposit: 0,
+            baki: 0,
+            status: 'ACTIVE',
+            tag: 'ONLINE',
+            kurier: 'TIADA',
+            tracking_no: '',
+            tracking_status: 'MENUNGGU PROSES',
+            resitUrl: resitDownloadUrl,
+            pdfUrl_INVOICE: '',
+            pdfUrl_QUOTATION: '',
+            timestamp: Date.now()
+        };
+
+        try {
+            await db.collection('bookings_' + ownerID).add(data);
+
+            try {
+                fetch('https://us-central1-rmspro-2f454.cloudfunctions.net/sendBookingNotification', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ownerID: ownerID, shopID: shopID, customerName: custName, item: itemName, siriBooking: siriGenerate })
+                });
+            } catch(_) {}
+
+            document.getElementById('mainForm').style.display = 'none';
+            document.getElementById('successMsg').style.display = 'block';
+        } catch (error) {
+            alert("Ralat sambungan: " + error.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane"></i> HANTAR TEMPAHAN';
+        }
+    });
+
+    window.onload = bacaURL;
+  </script>
+</body>
+</html>

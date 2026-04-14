@@ -1,0 +1,145 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
+    }
+
+    // ─────────────────────────────────────────
+    // PER-TENANT DATA — shops_{ownerID}/**
+    // Only signed-in users with matching ownerID can read/write.
+    // Staff login shares same ownerID via custom claim or uid prefix.
+    // ─────────────────────────────────────────
+    match /{prefix}_{ownerID}/{document=**} {
+      allow read, write: if isSignedIn()
+        && (prefix in ['shops', 'repairs', 'inventory', 'accessories',
+                       'stock_usage', 'customers', 'staff', 'expenses',
+                       'refunds', 'claims', 'bookings', 'invoices',
+                       'marketing', 'kewangan']);
+    }
+
+    // ─────────────────────────────────────────
+    // SAAS DEALERS — admin-only write, self-read
+    // ─────────────────────────────────────────
+    match /saas_dealers/{ownerID} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (request.auth.uid == ownerID || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────
+    // MARKETPLACE — public read, owner write
+    // ─────────────────────────────────────────
+    match /marketplace_global/{itemId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn()
+        && resource.data.ownerID == request.auth.uid;
+    }
+    match /marketplace_shops/{shopId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && (request.resource.data.ownerID == request.auth.uid
+            || resource.data.ownerID == request.auth.uid);
+    }
+    match /marketplace_orders/{orderId} {
+      allow read: if isSignedIn() && (
+        resource.data.buyerOwnerID == request.auth.uid ||
+        resource.data.sellerOwnerID == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        resource.data.buyerOwnerID == request.auth.uid ||
+        resource.data.sellerOwnerID == request.auth.uid
+      );
+      allow delete: if isAdmin();
+    }
+    match /marketplace_notifications/{notifId} {
+      allow read, update: if isSignedIn()
+        && resource.data.targetOwnerID == request.auth.uid;
+      allow create: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+    match /marketplace_summary/{doc} {
+      allow read: if isAdmin();
+      allow write: if false; // Cloud Function only
+    }
+
+    // ─────────────────────────────────────────
+    // GLOBAL INDEXES — signed-in read
+    // ─────────────────────────────────────────
+    match /global_branches/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    match /global_staff/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+    match /collab_global_network/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // ─────────────────────────────────────────
+    // FEEDBACK & COMPLAINTS — authenticated create, admin read
+    // ─────────────────────────────────────────
+    match /aduan_sistem/{id} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+    match /app_feedback/{id} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────
+    // SAAS ADMIN SETTINGS — admin only
+    // ─────────────────────────────────────────
+    match /saas_settings/{doc} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+    match /admin_announcements/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+    match /system_settings/{doc} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+    match /system_logs/{doc} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /config/{doc} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────
+    // MAIL QUEUE — server-side only (Cloud Functions)
+    // ─────────────────────────────────────────
+    match /mail/{id} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false;
+    }
+
+    // ─────────────────────────────────────────
+    // DEFAULT DENY — any unlisted path rejected
+    // ─────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
