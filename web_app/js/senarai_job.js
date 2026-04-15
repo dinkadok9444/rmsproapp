@@ -143,8 +143,10 @@
         <button class="btn-save" id="mSave"><i class="fas fa-save"></i> SIMPAN</button>
         <button class="btn-wa" id="mWa"><i class="fab fa-whatsapp"></i> WHATSAPP</button>
         <button class="btn-print" id="mPrint"><i class="fas fa-print"></i> CETAK</button>
+        <button class="btn-print" id="mHist"><i class="fas fa-clock-rotate-left"></i> SEJARAH</button>
         <button class="btn-del" id="mDel"><i class="fas fa-trash"></i> PADAM</button>
-      </div>`;
+      </div>
+      <div id="mHistBox" hidden style="margin-top:10px;padding:10px;background:#f1f5f9;border-radius:8px;font-size:12px;"></div>`;
     bg.classList.add('is-open');
 
     let newStatus = job.status;
@@ -160,6 +162,9 @@
     bg.addEventListener('click', (e) => { if (e.target === bg) bg.classList.remove('is-open'); });
 
     $('mSave').addEventListener('click', async () => {
+      const originalStatus = (job.status || '').toUpperCase();
+      const upStatus = (newStatus || '').toUpperCase();
+      const nowIso = new Date().toISOString();
       const patch = {
         status: newStatus,
         payment_status: $('fPay').value,
@@ -173,8 +178,56 @@
         baki: Number($('fBaki').value) || 0,
         catatan: $('fCat').value,
       };
+      // Auto-stamp lifecycle timestamps (mirror Flutter)
+      if (upStatus === 'READY TO PICKUP' && !job.tarikh_siap) patch.tarikh_siap = nowIso;
+      if (upStatus === 'COMPLETED') {
+        if (!job.tarikh_siap) patch.tarikh_siap = nowIso;
+        patch.tarikh_pickup = nowIso;
+      }
+
       const { error } = await window.sb.from('jobs').update(patch).eq('id', job.id);
       if (error) return alert('Gagal simpan: ' + error.message);
+
+      // Timeline log on status change
+      if (upStatus !== originalStatus) {
+        try {
+          await window.sb.from('job_timeline').insert({
+            tenant_id: ctx.tenant_id, job_id: job.id, status: newStatus,
+            note: nowIso, by_user: ctx.nama || ctx.id,
+          });
+        } catch (_) {}
+      }
+
+      // Inventory side-effects on lifecycle transition (mirror Flutter line 2770)
+      const becameDone = (upStatus === 'READY TO PICKUP' || upStatus === 'COMPLETED') &&
+                        originalStatus !== 'READY TO PICKUP' && originalStatus !== 'COMPLETED';
+      const becameCancel = upStatus === 'CANCEL' &&
+                          (originalStatus === 'READY TO PICKUP' || originalStatus === 'COMPLETED');
+      if (becameDone || becameCancel) {
+        try {
+          const { data: items } = await window.sb.from('job_items').select('nama,qty').eq('job_id', job.id);
+          for (const it of (items || [])) {
+            const qty = Number(it.qty) || 0;
+            if (!qty || !it.nama) continue;
+            let parts = null;
+            const byName = await window.sb.from('stock_parts')
+              .select('id,qty').eq('tenant_id', ctx.tenant_id)
+              .eq('part_name', it.nama).limit(1);
+            if (byName.data && byName.data.length) parts = byName.data;
+            else {
+              const bySku = await window.sb.from('stock_parts')
+                .select('id,qty').eq('tenant_id', ctx.tenant_id)
+                .eq('sku', it.nama).limit(1);
+              parts = (bySku.data && bySku.data.length) ? bySku.data : null;
+            }
+            if (!parts) continue;
+            const cur = Number(parts[0].qty) || 0;
+            const newQty = becameCancel ? cur + qty : Math.max(0, cur - qty);
+            await window.sb.from('stock_parts').update({ qty: newQty }).eq('id', parts[0].id);
+          }
+        } catch (_) {}
+      }
+
       bg.classList.remove('is-open');
       ALL = await fetchJobs();
       refresh();
@@ -196,6 +249,23 @@
       try {
         await P.printReceipt(Object.assign({}, job, { items_array: items || [] }), br || {});
       } catch (e) { alert('Gagal cetak: ' + e.message); }
+    });
+
+    $('mHist').addEventListener('click', async () => {
+      const box = $('mHistBox');
+      box.hidden = false;
+      box.innerHTML = '<i>Memuatkan...</i>';
+      try {
+        const { data } = await window.sb.from('job_timeline')
+          .select('status,note,by_user,created_at')
+          .eq('job_id', job.id).order('created_at', { ascending: true });
+        if (!data || !data.length) { box.innerHTML = '<i>Tiada sejarah.</i>'; return; }
+        box.innerHTML = '<b>SEJARAH STATUS:</b><br>' + data.map((t) =>
+          `<div style="padding:4px 0;border-bottom:1px solid #e2e8f0;">
+            <b>${t.status}</b> · ${fmtDate(t.created_at)} · ${t.by_user || '—'}
+          </div>`
+        ).join('');
+      } catch (e) { box.innerHTML = 'Gagal: ' + e.message; }
     });
 
     $('mDel').addEventListener('click', async () => {
