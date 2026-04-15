@@ -6,10 +6,6 @@ import 'package:http/http.dart' as http;
 import '../../theme/app_theme.dart';
 import '../../services/supabase_client.dart';
 
-// Cloudflare-backed via Supabase Edge Function (cf-custom-hostname).
-// Legacy Firebase Functions endpoint kekal untuk getDomains/getDealers list je
-// (read-only, panggil Firestore — perlu migrate ke Supabase query langsung suatu hari).
-const _functionsBase = 'https://us-central1-rmspro-2f454.cloudfunctions.net';
 const _edgeBase = 'https://lpurtgmqecabgwwenikb.supabase.co/functions/v1/cf-custom-hostname';
 
 class DomainManagementScreen extends StatefulWidget {
@@ -32,22 +28,24 @@ class _DomainManagementScreenState extends State<DomainManagementScreen> {
   Future<void> _loadDomains() async {
     setState(() => _isLoading = true);
     try {
-      final resp = await http.get(Uri.parse('$_functionsBase/getDomains'));
-      final data = jsonDecode(resp.body) as Map?;
-      final rawDomains = data?['domains'] as List? ?? [];
-      
-      _domainList = rawDomains
+      final rows = await _sb
+          .from('tenants')
+          .select('owner_id,nama_kedai,domain,domain_status,dns_records')
+          .not('domain', 'is', null)
+          .order('nama_kedai');
+
+      _domainList = (rows as List)
           .whereType<Map>()
-          .map((d) => Map<String, dynamic>.from(d))
+          .map((r) => <String, dynamic>{
+                'id': (r['owner_id'] ?? '').toString(),
+                'namaKedai': (r['nama_kedai'] ?? '').toString(),
+                'domain': (r['domain'] ?? '').toString(),
+                'domainStatus': (r['domain_status'] ?? '').toString(),
+                'dnsRecords': r['dns_records'] ?? [],
+              })
           .toList();
-          
-      _domainList.sort((a, b) {
-        final nameA = (a['namaKedai'] ?? '').toString().toLowerCase();
-        final nameB = (b['namaKedai'] ?? '').toString().toLowerCase();
-        return nameA.compareTo(nameB);
-      });
     } catch (e) {
-      debugPrint('getDomains error: $e');
+      debugPrint('loadDomains error: $e');
     }
     if (mounted) setState(() => _isLoading = false);
   }
@@ -61,21 +59,19 @@ class _DomainManagementScreenState extends State<DomainManagementScreen> {
     bool loading = true;
 
     try {
-      final resp = await http.get(Uri.parse('$_functionsBase/getDealers'));
-      final data = jsonDecode(resp.body) as Map?;
-      final rawDealers = data?['dealers'] as List? ?? [];
-      
-      allDealers = rawDealers
+      final rows = await _sb
+          .from('tenants')
+          .select('owner_id,nama_kedai')
+          .order('nama_kedai');
+
+      allDealers = (rows as List)
           .whereType<Map>()
-          .map((d) => Map<String, dynamic>.from(d))
+          .map((r) => <String, dynamic>{
+                'id': (r['owner_id'] ?? '').toString(),
+                'namaKedai': (r['nama_kedai'] ?? '').toString(),
+              })
           .toList();
-          
-      allDealers.sort((a, b) {
-        final nameA = (a['namaKedai'] ?? '').toString().toLowerCase();
-        final nameB = (b['namaKedai'] ?? '').toString().toLowerCase();
-        return nameA.compareTo(nameB);
-      });
-      
+
       filtered = List.from(allDealers);
       loading = false;
     } catch (e) {

@@ -42,7 +42,7 @@ Baca DULU: `api supabase/README.md` Progress Log + `api supabase/RUNBOOK.md`.
 - [ ] Firebase Hosting disable via console (cosmetic, FCM kekal)
 
 ### 🟠 Agent-completable (low priority)
-- [ ] Refactor `getDomains` + `getDealers` dari Firebase Functions → Supabase query langsung dalam `domain_management_screen.dart` (line 31, 60). Currently read-only jadi tak breaking.
+- [x] Refactor `getDomains` + `getDealers` dari Firebase Functions → Supabase query langsung dalam `domain_management_screen.dart`. ✅ 2026-04-15
 - [ ] Fasa 12.6 end-to-end test bila Edge Function deployed: add test tenant domain → verify SSL active → tenant dashboard load via custom hostname.
 
 ### 🚫 Decided — JANGAN sentuh
