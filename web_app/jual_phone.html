@@ -76,11 +76,23 @@
       </div>
     </section>
 
-  </main>
+    <button id="jpFab" style="position:fixed;right:20px;bottom:20px;background:#2563eb;color:#fff;border:none;border-radius:30px;padding:14px 22px;font-weight:900;font-size:14px;cursor:pointer;box-shadow:0 6px 20px rgba(37,99,235,.4);z-index:90;">
+      <i class="fas fa-plus"></i> JUAL BARU
+    </button>
 
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js"></script>
+    <div id="jpCreateBg" hidden style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;">
+      <div id="jpCreate" style="background:#fff;border-radius:14px;width:100%;max-width:520px;max-height:90vh;overflow:auto;padding:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <h3 style="margin:0;"><i class="fas fa-receipt"></i> Buka Bil Jualan</h3>
+          <button id="jpCreateClose" style="background:#fee2e2;color:#dc2626;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;">✕</button>
+        </div>
+        <div id="jpCreateBody"></div>
+      </div>
+    </div>
+
+  </main>  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/storage-helper.js"></script>
   <script src="js/jual_phone.js"></script>
 </body>
 </html>
