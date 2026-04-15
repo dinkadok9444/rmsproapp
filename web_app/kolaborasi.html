@@ -91,6 +91,12 @@
       <label>CATATAN / ARAHAN KERJA</label>
       <textarea id="clCatatan" class="lost-input" rows="2" placeholder="Cth: Tolong repair board..."></textarea>
 
+      <label style="margin-top:10px">GAMBAR KEROSAKAN <span style="font-weight:600;font-size:9px;color:var(--text-dim)">(optional, multi)</span></label>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+        <button type="button" class="btn-submit" id="clPhotoBtn" style="margin:0; padding:10px 14px; background:var(--blue)"><i class="fas fa-camera"></i> TAMBAH GAMBAR</button>
+        <div id="clPhotoThumbs" style="display:flex; gap:6px; flex-wrap:wrap"></div>
+      </div>
+
       <button type="button" class="btn-submit" id="clSubmit" style="background:var(--primary)"><i class="fas fa-paper-plane"></i> HANTAR TUGASAN</button>
     </div>
   </div>
@@ -102,6 +108,7 @@
         <button type="button" class="lost-modal__close" id="clInfoClose"><i class="fas fa-xmark"></i></button></div>
       <div class="cl-info-row"><div class="rd-lbl">STATUS TERKINI</div><div class="cl-info-status" id="clInfoStatus">-</div></div>
       <div class="cl-info-row"><div class="rd-lbl">NOTA DEALER</div><div class="cl-info-val" id="clInfoNota">-</div></div>
+      <div class="cl-info-row"><div class="rd-lbl">GAMBAR</div><div id="clInfoPhotos" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">-</div></div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px">
         <div class="cl-info-row"><div class="rd-lbl">KURIER RETURN</div><div class="cl-info-val" id="clInfoKurier">-</div></div>
         <div class="cl-info-row"><div class="rd-lbl">TRACKING RETURN</div><div class="cl-info-val" id="clInfoTrack">-</div></div>
@@ -109,11 +116,9 @@
     </div>
   </div>
 
-  <div class="lost-toast" id="clToast" hidden></div>
-
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js"></script>
+  <div class="lost-toast" id="clToast" hidden></div>  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/storage-helper.js"></script>
   <script src="js/kolaborasi.js"></script>
 </body>
 </html>

@@ -1,317 +1,358 @@
-/* Port dari lib/screens/modules/collab_screen.dart */
-(function () {
+/* kolaborasi.js — Cross-tenant collab tasks. Mirror collab_screen.dart.
+   Outbox = tasks saya post (owner_tenant_id=tenantId).
+   Arkib = tasks saya ambil (taken_by_tenant_id=tenantId) atau archived. */
+(async function () {
   'use strict';
-  if (!document.getElementById('clList')) return;
+  const ctx = await window.requireAuth();
+  if (!ctx) return;
+  const tenantId = ctx.tenant_id;
+  const branchId = ctx.current_branch_id;
 
-  let ownerID = 'admin', shopID = 'MAIN';
-  let sentArr = [];
-  let repairs = [];
-  let savedDealers = [];
-  let filterStatus = 'SEMUA';
-  let showArchive = false;
-  let foundTicket = null, foundDealer = null;
-  let canSend = false;
-
-  const branch = localStorage.getItem('rms_current_branch') || '';
-  if (branch.includes('@')) {
-    const p = branch.split('@');
-    ownerID = p[0]; shopID = (p[1] || '').toUpperCase();
+  const $ = (id) => document.getElementById(id);
+  function toast(msg) {
+    const t = $('clToast'); if (!t) return;
+    t.textContent = msg; t.hidden = false;
+    setTimeout(() => { t.hidden = true; }, 1800);
   }
 
-  const $ = id => document.getElementById(id);
-  const list = $('clList'), empty = $('clEmpty');
-  const sendModal = $('clSendModal'), infoModal = $('clInfoModal');
+  let VIEW = 'OUTBOX'; // OUTBOX | INBOX | ARCHIVE
+  let statusFilter = 'SEMUA';
+  let ROWS = [];
+  let TICKET = null; // clicked repair ticket
+  let DEALER = null; // selected dealer tenant
+  let SAVED_DEALERS = []; // from localStorage cache
+  let PHOTOS = []; // photo URLs for current send modal
+  const PHOTO_BUCKET = 'repairs';
+  const storageHelper = window.storageHelper || window.SupabaseStorage;
 
-  // Load saved dealers from shops_<owner>/<shop>.savedDealers
-  db.collection('shops_' + ownerID).doc(shopID).get().then(doc => {
-    if (!doc.exists) return;
-    const raw = (doc.data() || {}).savedDealers;
-    if (Array.isArray(raw)) savedDealers = raw.slice();
-  }).catch(() => {});
+  try { SAVED_DEALERS = JSON.parse(localStorage.getItem('cl-saved-dealers') || '[]'); } catch (_) {}
 
-  // Listeners
-  db.collection('collab_global_network').onSnapshot(snap => {
-    const arr = [];
-    snap.forEach(d => {
-      const v = d.data(); v.key = d.id;
-      if (v.sender === shopID) arr.push(v);
-    });
-    arr.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
-    sentArr = arr;
-    render();
-  }, err => console.warn('collab:', err));
-
-  db.collection('repairs_' + ownerID).onSnapshot(snap => {
-    const arr = [];
-    snap.forEach(d => arr.push(Object.assign({ id: d.id }, d.data())));
-    repairs = arr;
-  }, err => console.warn('repairs:', err));
-
-  function statusColor(s) {
-    const u = String(s).toUpperCase();
-    if (u === 'COMPLETE' || u === 'COMPLETED' || u === 'DELIVERED') return 'green';
-    if (u === 'REJECT' || u === 'RETURN REJECT') return 'red';
-    if (u === 'TERIMA' || u === 'IN PROGRESS') return 'blue';
-    return 'yellow';
+  async function fetchList() {
+    let q = window.sb.from('collab_tasks').select('*').order('created_at', { ascending: false }).limit(500);
+    if (VIEW === 'OUTBOX') {
+      q = q.eq('owner_tenant_id', tenantId).eq('archived', false);
+    } else if (VIEW === 'INBOX') {
+      // OPEN tasks dari other tenants — boleh accept
+      q = q.eq('status', 'OPEN').neq('owner_tenant_id', tenantId).eq('archived', false);
+    } else {
+      q = q.or(`taken_by_tenant_id.eq.${tenantId},archived.eq.true`);
+    }
+    const { data, error } = await q;
+    if (error) { console.error(error); return []; }
+    return data || [];
   }
 
-  function filtered() {
-    if (showArchive) return sentArr.filter(d => d.archived === true);
-    const active = sentArr.filter(d => d.archived !== true);
-    if (filterStatus === 'SEMUA') return active;
-    return active.filter(d => String(d.status || 'PENDING') === filterStatus);
+  function filterRows(rows) {
+    if (statusFilter === 'SEMUA') return rows;
+    return rows.filter((r) => (r.status || '').toUpperCase() === statusFilter);
+  }
+
+  function statusColor(st) {
+    switch ((st || '').toUpperCase()) {
+      case 'OPEN': case 'PENDING': return '#2563eb';
+      case 'TERIMA': case 'TAKEN': return '#10b981';
+      case 'IN PROGRESS': return '#f59e0b';
+      case 'COMPLETED': case 'DONE': return '#059669';
+      case 'REJECT': case 'RETURN REJECT': return '#dc2626';
+      case 'DELIVERED': return '#8b5cf6';
+      default: return '#64748b';
+    }
   }
 
   function render() {
-    $('clTitle').innerHTML = showArchive
-      ? '<i class="fas fa-box-archive"></i> ARKIB <span class="collab-count" id="clCount"></span>'
-      : '<i class="fas fa-paper-plane"></i> OUTBOX <span class="collab-count" id="clCount"></span>';
-    $('clArchiveBtn').innerHTML = showArchive
-      ? '<i class="fas fa-arrow-left"></i> OUTBOX'
-      : '<i class="fas fa-box-archive"></i> ARKIB';
-    $('clFilterRow').classList.toggle('hidden', showArchive);
+    const rows = filterRows(ROWS);
+    $('clCount').textContent = String(rows.length);
+    const titles = {
+      OUTBOX: '<i class="fas fa-paper-plane"></i> OUTBOX',
+      INBOX: '<i class="fas fa-inbox"></i> INBOX',
+      ARCHIVE: '<i class="fas fa-box-archive"></i> ARKIB',
+    };
+    const nextLabels = { OUTBOX: '<i class="fas fa-inbox"></i> INBOX', INBOX: '<i class="fas fa-box-archive"></i> ARKIB', ARCHIVE: '<i class="fas fa-paper-plane"></i> OUTBOX' };
+    $('clTitle').innerHTML = `${titles[VIEW]} <span class="collab-count" id="clCount">${rows.length}</span>`;
+    $('clArchiveBtn').innerHTML = nextLabels[VIEW];
 
-    const arr = filtered();
-    const countEl = document.querySelector('.collab-count');
-    if (countEl) countEl.textContent = arr.length;
+    $('clEmpty').classList.toggle('hidden', rows.length > 0);
+    $('clList').innerHTML = rows.map((r) => {
+      const p = (r.payload && typeof r.payload === 'object') ? r.payload : {};
+      const st = (r.status || 'OPEN').toUpperCase();
+      const col = statusColor(st);
+      return `<div class="lost-card" data-id="${r.id}" style="border-left:4px solid ${col};">
+        <div class="lost-card__head">
+          <div><b>${r.nama || '—'}</b> <span style="color:#94a3b8;font-size:10px;">· ${r.tel || ''}</span></div>
+          <span style="padding:3px 8px;border-radius:6px;background:${col}15;color:${col};font-weight:900;font-size:10px;">${st}</span>
+        </div>
+        <div class="lost-card__body">
+          <div><i class="fas fa-mobile"></i> ${r.model || '—'}</div>
+          <div><i class="fas fa-wrench"></i> ${r.kerosakan || '—'}</div>
+          ${r.harga ? `<div><i class="fas fa-money-bill"></i> RM ${Number(r.harga).toFixed(2)}</div>` : ''}
+          ${p.kurier ? `<div><i class="fas fa-truck"></i> ${p.kurier} ${p.tracking ? '· ' + p.tracking : ''}</div>` : ''}
+          ${r.poster_name ? `<div><i class="fas fa-store"></i> ${r.poster_name}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
 
-    if (!arr.length) {
-      list.innerHTML = '';
-      empty.querySelector('.lbl').textContent = showArchive ? 'Tiada arkib.' : 'Tiada rekod dihantar.';
-      empty.querySelector('.sub').textContent = showArchive ? '' : 'Tekan "Hantar Tugasan" untuk mula.';
-      empty.classList.remove('hidden');
-      return;
-    }
-    empty.classList.add('hidden');
-    list.innerHTML = arr.map(d => card(d)).join('');
+    $('clList').querySelectorAll('.lost-card').forEach((el) => {
+      el.addEventListener('click', () => openInfo(ROWS.find((r) => r.id === el.dataset.id)));
+    });
   }
 
-  function card(d) {
-    const col = statusColor(d.status || 'PENDING');
-    const status = d.status || 'PENDING';
-    const rx = d.receiver || '-';
-    const arch = d.archived === true;
-    const actionBtn = arch
-      ? `<button type="button" class="icon-btn" data-restore="${escAttr(d.key)}" title="Pulih"><i class="fas fa-rotate-left"></i></button>`
-      : `<button type="button" class="icon-btn" data-archive="${escAttr(d.key)}" title="Arkib"><i class="fas fa-box-archive"></i></button>`;
-    return `
-      <article class="lost-card collab-card c-${col}">
-        <div class="lost-card__top">
-          <span class="collab-rx"><i class="fas fa-store"></i> ${escHtml(rx)}</span>
-          <span class="rd-status c-${col}">${escHtml(status)}</span>
-        </div>
-        <div class="collab-cust">${escHtml((d.namaCust || 'TIADA NAMA').toUpperCase())}</div>
-        <div class="collab-row">
-          <strong>#${escHtml(d.siri || '-')}</strong>
-          <span class="collab-meta">${fmtDate(d.timestamp)} | ${escHtml(d.model || '-')}</span>
-        </div>
-        <div class="collab-update">Kemaskini: ${fmtDate(d.timestamp_update)}</div>
-        <div class="collab-actions">
-          <button type="button" class="btn-view" data-info="${escAttr(d.key)}"><i class="fas fa-eye"></i> LIHAT STATUS</button>
-          ${actionBtn}
-        </div>
-      </article>
-    `;
+  function openInfo(row) {
+    if (!row) return;
+    const p = (row.payload && typeof row.payload === 'object') ? row.payload : {};
+    $('clInfoStatus').textContent = row.status || '—';
+    $('clInfoStatus').style.color = statusColor(row.status);
+    $('clInfoNota').textContent = p.nota_dealer || p.catatan || '—';
+    $('clInfoKurier').textContent = p.return_kurier || p.kurier || '—';
+    $('clInfoTrack').textContent = p.return_tracking || p.tracking || '—';
+
+    // Photo viewer
+    const photoWrap = $('clInfoPhotos');
+    if (photoWrap) {
+      const photos = Array.isArray(p.photos) ? p.photos : [];
+      if (!photos.length) {
+        photoWrap.textContent = '—';
+      } else {
+        photoWrap.innerHTML = photos.map((u) => `<img src="${u}" data-full="${u}" style="width:60px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;cursor:pointer;">`).join('');
+        photoWrap.querySelectorAll('img').forEach((im) => im.addEventListener('click', () => window.open(im.dataset.full, '_blank')));
+      }
+    }
+
+    // INBOX dynamic actions: TERIMA / REJECT
+    let actionBar = document.getElementById('clInfoActions');
+    if (!actionBar) {
+      actionBar = document.createElement('div');
+      actionBar.id = 'clInfoActions';
+      actionBar.style.cssText = 'display:flex;gap:8px;margin-top:14px;';
+      $('clInfoModal').querySelector('.lost-modal').appendChild(actionBar);
+    }
+    actionBar.innerHTML = '';
+
+    const isInbox = row.status === 'OPEN' && row.owner_tenant_id !== tenantId;
+    const isMyTaken = row.taken_by_tenant_id === tenantId && row.status !== 'COMPLETED';
+
+    if (isInbox) {
+      const btnAccept = document.createElement('button');
+      btnAccept.className = 'btn-submit';
+      btnAccept.style.cssText = 'flex:1;background:#10b981;';
+      btnAccept.innerHTML = '<i class="fas fa-check"></i> TERIMA';
+      btnAccept.onclick = async () => {
+        const { error } = await window.sb.from('collab_tasks').update({
+          status: 'TERIMA', taken_by_tenant_id: tenantId,
+        }).eq('id', row.id);
+        if (error) return toast('Gagal: ' + error.message);
+        toast('Tugasan diterima');
+        $('clInfoModal').classList.remove('is-open');
+        ROWS = await fetchList(); render();
+      };
+      const btnReject = document.createElement('button');
+      btnReject.className = 'btn-submit';
+      btnReject.style.cssText = 'flex:1;background:#dc2626;';
+      btnReject.innerHTML = '<i class="fas fa-xmark"></i> REJECT';
+      btnReject.onclick = async () => {
+        const reason = prompt('Sebab reject?') || '';
+        const { error } = await window.sb.from('collab_tasks').update({
+          status: 'REJECT', payload: { ...p, reject_reason: reason, rejected_by_tenant: tenantId },
+        }).eq('id', row.id);
+        if (error) return toast('Gagal: ' + error.message);
+        toast('Reject');
+        $('clInfoModal').classList.remove('is-open');
+        ROWS = await fetchList(); render();
+      };
+      actionBar.append(btnAccept, btnReject);
+    } else if (isMyTaken) {
+      const STATES = ['IN PROGRESS', 'COMPLETED', 'DELIVERED'];
+      STATES.forEach((s) => {
+        const b = document.createElement('button');
+        b.className = 'btn-submit';
+        b.style.cssText = `flex:1;background:${statusColor(s)};font-size:11px;`;
+        b.textContent = s;
+        b.onclick = async () => {
+          const patch = { status: s };
+          if (s === 'DELIVERED') {
+            const k = prompt('Kurier?') || '';
+            const t = prompt('Tracking?') || '';
+            patch.payload = { ...p, return_kurier: k, return_tracking: t };
+          }
+          const { error } = await window.sb.from('collab_tasks').update(patch).eq('id', row.id);
+          if (error) return toast('Gagal: ' + error.message);
+          toast('Status updated');
+          $('clInfoModal').classList.remove('is-open');
+          ROWS = await fetchList(); render();
+        };
+        actionBar.appendChild(b);
+      });
+    }
+
+    $('clInfoModal').classList.add('is-open');
   }
 
-  // Events
-  $('clStatus').addEventListener('change', e => { filterStatus = e.target.value; render(); });
-  $('clArchiveBtn').addEventListener('click', () => { showArchive = !showArchive; render(); });
-  $('clNewBtn').addEventListener('click', openSend);
-  $('clSendClose').addEventListener('click', () => sendModal.classList.remove('is-open'));
-  sendModal.addEventListener('click', e => { if (e.target === sendModal) sendModal.classList.remove('is-open'); });
-  $('clSiriBtn').addEventListener('click', searchTicket);
-  $('clDealerBtn').addEventListener('click', () => checkDealer($('clDealer').value.trim().toUpperCase()));
-  $('clSubmit').addEventListener('click', submitTask);
-  $('clInfoClose').addEventListener('click', () => infoModal.classList.remove('is-open'));
-  infoModal.addEventListener('click', e => { if (e.target === infoModal) infoModal.classList.remove('is-open'); });
+  // Filter / status
+  $('clStatus').addEventListener('change', (e) => { statusFilter = e.target.value; render(); });
 
-  list.addEventListener('click', async e => {
-    const info = e.target.closest('[data-info]');
-    const arch = e.target.closest('[data-archive]');
-    const rest = e.target.closest('[data-restore]');
-    if (info) {
-      const d = sentArr.find(x => x.key === info.dataset.info);
-      if (d) openInfo(d);
-    } else if (arch) {
-      try {
-        await db.collection('collab_global_network').doc(arch.dataset.archive).update({ archived: true });
-        toast('Diarkib');
-      } catch (e) { toast('Ralat: ' + e.message, true); }
-    } else if (rest) {
-      try {
-        await db.collection('collab_global_network').doc(rest.dataset.restore).update({ archived: false });
-        toast('Dipulihkan');
-      } catch (e) { toast('Ralat: ' + e.message, true); }
-    }
+  // Cycle view: OUTBOX → INBOX → ARCHIVE → OUTBOX
+  $('clArchiveBtn').addEventListener('click', async () => {
+    VIEW = VIEW === 'OUTBOX' ? 'INBOX' : VIEW === 'INBOX' ? 'ARCHIVE' : 'OUTBOX';
+    ROWS = await fetchList();
+    render();
   });
 
-  // Saved chips clicks
-  $('clSavedChips').addEventListener('click', async e => {
-    const chip = e.target.closest('[data-code]');
-    if (!chip) return;
-    const code = chip.dataset.code;
-    if (e.shiftKey) {
-      savedDealers = savedDealers.filter(d => d.code !== code);
-      try {
-        await db.collection('shops_' + ownerID).doc(shopID).set({ savedDealers }, { merge: true });
-        renderSaved();
-        toast('Dibuang dari senarai');
-      } catch (err) { toast('Ralat: ' + err.message, true); }
-    } else {
-      $('clDealer').value = code;
-      checkDealer(code);
-    }
-  });
-
-  function openSend() {
-    foundTicket = null; foundDealer = null; canSend = false;
-    ['clSiri', 'clDealer', 'clKurier', 'clTrack', 'clCatatan'].forEach(id => $(id).value = '');
+  // ── Send task modal ───────────────────────────────────────
+  $('clNewBtn').addEventListener('click', () => {
+    TICKET = null; DEALER = null; PHOTOS = [];
+    ['clSiri', 'clDealer', 'clKurier', 'clTrack', 'clCatatan'].forEach((k) => { $(k).value = ''; });
     $('clTicket').classList.add('hidden');
     $('clDealerInfo').classList.add('hidden');
     $('clDealerStatus').textContent = '';
+    renderPhotoThumbs();
     renderSaved();
-    sendModal.classList.add('is-open');
+    $('clSendModal').classList.add('is-open');
+  });
+
+  function renderPhotoThumbs() {
+    const wrap = $('clPhotoThumbs');
+    if (!wrap) return;
+    wrap.innerHTML = PHOTOS.map((u, i) => `
+      <div style="position:relative;width:54px;height:54px;">
+        <img src="${u}" style="width:54px;height:54px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;cursor:pointer;" data-full="${u}">
+        <button type="button" data-i="${i}" class="cl-photo-x" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#dc2626;color:#fff;font-size:10px;cursor:pointer;line-height:1;">×</button>
+      </div>`).join('');
+    wrap.querySelectorAll('.cl-photo-x').forEach((b) => b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      PHOTOS.splice(Number(b.dataset.i), 1);
+      renderPhotoThumbs();
+    }));
+    wrap.querySelectorAll('img').forEach((im) => im.addEventListener('click', () => window.open(im.dataset.full, '_blank')));
   }
+
+  const clPhotoBtn = $('clPhotoBtn');
+  if (clPhotoBtn) clPhotoBtn.addEventListener('click', async () => {
+    try {
+      if (!storageHelper || !storageHelper.pickAndUpload) { toast('Storage helper tiada'); return; }
+      toast('Memuat naik...');
+      const url = await storageHelper.pickAndUpload({
+        bucket: PHOTO_BUCKET,
+        pathFn: (f) => `${tenantId}/collab/${Date.now()}_${(f.name||'photo').replace(/[^a-zA-Z0-9._-]/g,'_')}`,
+      });
+      if (!url) return;
+      PHOTOS.push(url);
+      renderPhotoThumbs();
+      toast('Gambar ditambah');
+    } catch (err) {
+      toast('Gagal upload: ' + (err.message || err));
+    }
+  });
 
   function renderSaved() {
-    const box = $('clSaved'), chips = $('clSavedChips');
-    if (!savedDealers.length) { box.classList.add('hidden'); return; }
-    box.classList.remove('hidden');
-    chips.innerHTML = savedDealers.map(d => {
-      const nm = d.name ? ` (${escHtml(d.name)})` : '';
-      return `<button type="button" class="cl-chip" data-code="${escAttr(d.code || '')}"><i class="fas fa-store"></i> ${escHtml(d.code || '-')}${nm}</button>`;
-    }).join('');
-  }
-
-  function searchTicket() {
-    const v = $('clSiri').value.trim().toUpperCase();
-    if (!v) return;
-    const found = repairs.find(r => String(r.siri || '').toUpperCase() === v);
-    if (!found) {
-      foundTicket = null;
-      $('clTicket').classList.add('hidden');
-      return toast(`[${v}] tidak dijumpai`, true);
-    }
-    foundTicket = found;
-    $('clTkNama').textContent = found.nama || '-';
-    $('clTkModel').textContent = found.model || '-';
-    $('clTkTel').textContent = found.tel || '-';
-    $('clTkKero').textContent = found.kerosakan || '-';
-    $('clTkPass').textContent = found.password || 'TIADA';
-    $('clTicket').classList.remove('hidden');
-  }
-
-  async function checkDealer(code) {
-    if (!code) return;
-    foundDealer = null; canSend = false;
-    $('clDealerInfo').classList.add('hidden');
-    $('clDealerStatus').textContent = 'Sedang semak...';
-    $('clDealerStatus').style.color = 'var(--text-muted)';
-    try {
-      const snap = await db.collection('saas_dealers').get();
-      let dealer = null;
-      snap.forEach(doc => {
-        if (dealer) return;
-        const d = doc.data();
-        if (String(d.shopID || '').toUpperCase() === code) dealer = d;
+    const wrap = $('clSaved');
+    if (!SAVED_DEALERS.length) { wrap.classList.add('hidden'); return; }
+    wrap.classList.remove('hidden');
+    $('clSavedChips').innerHTML = SAVED_DEALERS.map((d, i) => `
+      <span class="cl-chip" data-i="${i}" style="padding:5px 10px;border-radius:16px;background:#e2e8f0;cursor:pointer;font-size:11px;margin:3px;display:inline-block;">${d.nama || d.id}</span>
+    `).join('');
+    $('clSavedChips').querySelectorAll('.cl-chip').forEach((el) => {
+      el.addEventListener('click', (ev) => {
+        const i = Number(el.dataset.i);
+        if (ev.shiftKey) {
+          SAVED_DEALERS.splice(i, 1);
+          localStorage.setItem('cl-saved-dealers', JSON.stringify(SAVED_DEALERS));
+          renderSaved();
+        } else {
+          DEALER = SAVED_DEALERS[i];
+          $('clDealer').value = DEALER.code || DEALER.id || '';
+          $('clDlKedai').textContent = DEALER.nama || '—';
+          $('clDlTel').textContent = DEALER.tel || '—';
+          $('clDealerInfo').classList.remove('hidden');
+          $('clDealerStatus').textContent = '';
+        }
       });
-      if (!dealer) {
-        $('clDealerStatus').textContent = 'Kod dealer tidak dijumpai';
-        $('clDealerStatus').style.color = 'var(--red)';
-        return;
-      }
-      const now = Date.now();
-      const isPro = dealer.proMode === true && Number(dealer.proModeExpire || 0) > now;
-      foundDealer = dealer;
-      canSend = isPro;
-      $('clDealerStatus').textContent = isPro ? '✓ Pro Mode aktif — boleh hantar' : '✗ Dealer tiada Pro Mode aktif';
-      $('clDealerStatus').style.color = isPro ? 'var(--green)' : 'var(--red)';
-      $('clDlKedai').textContent = dealer.namaKedai || '-';
-      $('clDlTel').textContent = dealer.phone || '-';
-      $('clDealerInfo').classList.remove('hidden');
-    } catch (e) {
-      $('clDealerStatus').textContent = 'Ralat semak: ' + e.message;
-      $('clDealerStatus').style.color = 'var(--red)';
+    });
+  }
+
+  $('clSendClose').addEventListener('click', () => $('clSendModal').classList.remove('is-open'));
+  $('clInfoClose').addEventListener('click', () => $('clInfoModal').classList.remove('is-open'));
+
+  // Search siri → jobs
+  $('clSiriBtn').addEventListener('click', async () => {
+    const siri = $('clSiri').value.trim().toUpperCase();
+    if (!siri) return;
+    const { data } = await window.sb.from('jobs').select('*')
+      .eq('branch_id', branchId).ilike('siri', `%${siri}%`).limit(1);
+    const r = data && data[0];
+    if (!r) { toast('Tiket tidak jumpa'); $('clTicket').classList.add('hidden'); return; }
+    TICKET = r;
+    $('clTkNama').textContent = r.nama || '—';
+    $('clTkModel').textContent = r.model || '—';
+    $('clTkTel').textContent = r.tel || '—';
+    $('clTkKero').textContent = r.kerosakan || '—';
+    $('clTkPass').textContent = r.device_password || '—';
+    $('clTicket').classList.remove('hidden');
+  });
+
+  // Dealer search — by tenant domain/shop code
+  $('clDealerBtn').addEventListener('click', async () => {
+    const code = $('clDealer').value.trim();
+    if (!code) return;
+    $('clDealerStatus').textContent = 'Mencari...';
+    const { data } = await window.sb.from('tenants')
+      .select('id, nama_kedai, domain, bot_whatsapp').or(`domain.eq.${code},id.eq.${code}`).limit(1);
+    const t = data && data[0];
+    if (!t) {
+      $('clDealerInfo').classList.add('hidden');
+      $('clDealerStatus').textContent = 'Dealer tidak jumpa';
+      DEALER = null; return;
     }
-  }
+    const tel = (t.bot_whatsapp && t.bot_whatsapp.phone) || '—';
+    DEALER = { id: t.id, nama: t.nama_kedai, tel, code };
+    $('clDlKedai').textContent = t.nama_kedai || '—';
+    $('clDlTel').textContent = tel;
+    $('clDealerInfo').classList.remove('hidden');
+    $('clDealerStatus').textContent = '';
+    // Save to localStorage
+    if (!SAVED_DEALERS.find((x) => x.id === DEALER.id)) {
+      SAVED_DEALERS.push(DEALER);
+      if (SAVED_DEALERS.length > 10) SAVED_DEALERS = SAVED_DEALERS.slice(-10);
+      localStorage.setItem('cl-saved-dealers', JSON.stringify(SAVED_DEALERS));
+    }
+  });
 
-  async function submitTask() {
-    if (!foundTicket) return toast('Sila cari siri dahulu', true);
-    if (!canSend || !foundDealer) return toast('Sila semak kod dealer', true);
-    const siri = String(foundTicket.siri || '');
-    if (!siri) return toast('Tiket tiada siri', true);
-    const rx = $('clDealer').value.trim().toUpperCase();
-    if (rx === shopID) return toast('Tak boleh hantar ke kedai sendiri', true);
-
-    let shopName = shopID;
-    try {
-      const sDoc = await db.collection('shops_' + ownerID).doc(shopID).get();
-      if (sDoc.exists) shopName = (sDoc.data() || {}).shopName || shopID;
-    } catch (_) {}
-
-    const now = Date.now();
+  $('clSubmit').addEventListener('click', async () => {
+    if (!TICKET) { toast('Cari tiket dulu'); return; }
+    if (!DEALER) { toast('Cari dealer dulu'); return; }
     const payload = {
-      siri,
-      sender: shopID, sender_name: shopName, receiver: rx,
       kurier: $('clKurier').value.trim(),
-      hantar: $('clTrack').value.trim(),
-      terima: '',
+      tracking: $('clTrack').value.trim().toUpperCase(),
       catatan: $('clCatatan').value.trim(),
-      namaCust: foundTicket.nama || '',
-      model: foundTicket.model || '',
-      kerosakan: foundTicket.kerosakan || '',
-      password: foundTicket.password || '',
-      catatan_pro: '',
-      kurier_return: '',
-      harga: 0, kos: 0,
-      payment_status: 'UNPAID',
-      cara_bayaran: 'CASH',
-      status: 'PENDING',
-      timestamp: now,
-      timestamp_update: now,
+      siri: TICKET.siri,
+      source_job_id: TICKET.id,
+      photos: PHOTOS.slice(),
     };
+    const row = {
+      owner_tenant_id: tenantId,
+      poster_shop_id: branchId,
+      poster_name: ctx.nama || '',
+      nama: TICKET.nama,
+      tel: TICKET.tel,
+      model: TICKET.model,
+      kerosakan: TICKET.kerosakan,
+      harga: TICKET.harga || 0,
+      status: 'OPEN',
+      archived: false,
+      taken_by_tenant_id: DEALER.id,
+      payload,
+    };
+    const { error } = await window.sb.from('collab_tasks').insert(row);
+    if (error) { toast('Gagal: ' + error.message); return; }
+    toast('Tugasan dihantar');
+    $('clSendModal').classList.remove('is-open');
+    ROWS = await fetchList(); render();
+  });
 
-    try {
-      await db.collection('collab_global_network').doc(siri).set(payload);
-      // Auto-save dealer to book if new
-      if (!savedDealers.some(d => d.code === rx)) {
-        savedDealers.push({ code: rx, name: foundDealer.namaKedai || '', phone: foundDealer.phone || '', timestamp: now });
-        await db.collection('shops_' + ownerID).doc(shopID).set({ savedDealers }, { merge: true });
-      }
-      toast(`Tugasan [${siri}] dihantar ke [${rx}]`);
-      sendModal.classList.remove('is-open');
-    } catch (e) { toast('Gagal hantar: ' + e.message, true); }
-  }
+  window.sb.channel('collab-' + tenantId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'collab_tasks' }, async () => {
+      ROWS = await fetchList(); render();
+    })
+    .subscribe();
 
-  function openInfo(d) {
-    const status = d.status || 'PENDING';
-    const col = statusColor(status);
-    const el = $('clInfoStatus');
-    el.textContent = status;
-    el.className = 'cl-info-status c-' + col;
-    $('clInfoNota').textContent = d.catatan_pro || 'Tiada nota';
-    $('clInfoKurier').textContent = d.kurier_return || 'Tiada';
-    $('clInfoTrack').textContent = d.terima || 'Tiada';
-    infoModal.classList.add('is-open');
-  }
-
-  function fmtDate(ts) {
-    if (typeof ts !== 'number') return '-';
-    const d = new Date(ts);
-    const p = n => String(n).padStart(2, '0');
-    return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(-2)}`;
-  }
-  function toast(msg, isErr) {
-    const t = $('clToast');
-    t.textContent = msg;
-    t.style.background = isErr ? '#DC2626' : '#0F172A';
-    t.hidden = false;
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => t.hidden = true, 2500);
-  }
-  function escHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  function escAttr(s) { return escHtml(s); }
-
+  ROWS = await fetchList();
   render();
 })();

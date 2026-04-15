@@ -1,239 +1,203 @@
-/* Referral — port lib/screens/modules/referral_screen.dart */
-(function () {
+/* referral.js — Supabase. Mirror referral_screen.dart. */
+(async function () {
   'use strict';
-  const branch = localStorage.getItem('rms_current_branch') || '';
-  if (!branch.includes('@')) { window.location.replace('index.html'); return; }
-  const ownerID = branch.split('@')[0].toLowerCase();
-  const shopID = branch.split('@')[1].toUpperCase();
+  const ctx = await window.requireAuth();
+  if (!ctx) return;
+  const tenantId = ctx.tenant_id;
+  const branchId = ctx.current_branch_id;
 
-  const $ = id => document.getElementById(id);
-  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const fmtTs = ms => { if (!ms) return '-'; const d = new Date(+ms); const p = n => String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(-2)} ${p(d.getHours())}:${p(d.getMinutes())}`; };
-  function snack(msg, err=false){ const el=document.createElement('div'); el.className='rf-snack'+(err?' err':''); el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),2500); }
-  function closeAll(){ document.querySelectorAll('.rf-modal-bg').forEach(m => m.classList.remove('is-open')); }
-  document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => $(b.getAttribute('data-close')).classList.remove('is-open')));
+  const $ = (id) => document.getElementById(id);
+  const fmtRM = (n) => 'RM ' + (Number(n) || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function snack(msg, err) {
+    const el = document.createElement('div');
+    el.className = 'rf-snack' + (err ? ' err' : '');
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2200);
+  }
+  function parseCB(r) { try { return typeof r.created_by === 'string' ? JSON.parse(r.created_by) : (r.created_by || {}); } catch (e) { return {}; } }
 
-  let svPass = '';
-  let referrals = [], filtered = [], rawDataArr = [], currentRef = null, currentClaims = [];
+  let ALL = [];
+  let CLAIMS = [];
+  let searchQ = '';
+  let editing = null;
+  let delId = null;
 
-  db.collection('shops_'+ownerID).doc(shopID).get().then(s => {
-    if (s.exists) { const d = s.data() || {}; svPass = (d.svPass || d.branchAdminPass || '').toString(); }
-  });
-
-  db.collection('referrals_'+ownerID).orderBy('timestamp','desc').onSnapshot(snap => {
-    referrals = [];
-    snap.forEach(doc => {
-      const d = doc.data(); d.id = doc.id;
-      if ((d.shopID || '').toString().toUpperCase() === shopID) referrals.push(d);
-    });
-    filterAndRender();
-  });
-  db.collection('repairs_'+ownerID).onSnapshot(snap => {
-    rawDataArr = [];
-    snap.forEach(doc => {
-      const d = doc.data(); d.id = doc.id;
-      if ((d.shopID || '').toString().toUpperCase() === shopID) rawDataArr.push(d);
-    });
-  });
-
-  $('rfSearch').addEventListener('input', filterAndRender);
-
-  function filterAndRender(){
-    const q = ($('rfSearch').value || '').toLowerCase().trim();
-    filtered = !q ? referrals.slice() : referrals.filter(d =>
-      (d.nama||'').toString().toLowerCase().includes(q) ||
-      (d.tel||'').toString().toLowerCase().includes(q) ||
-      (d.refCode||'').toString().toLowerCase().includes(q));
-    $('rfCount').textContent = filtered.length + ' rekod';
-    renderList();
+  async function fetchAll() {
+    const { data } = await window.sb.from('referrals').select('*').eq('tenant_id', tenantId).order('created_at', { ascending: false }).limit(2000);
+    return data || [];
+  }
+  async function fetchClaims() {
+    const { data } = await window.sb.from('referral_claims').select('*').order('created_at', { ascending: false }).limit(5000);
+    return data || [];
   }
 
-  function renderList(){
-    const host = $('rfList');
-    if (!referrals.length) {
-      host.innerHTML = `<div class="rf-empty"><i class="fas fa-user-group"></i><div class="rf-empty-t">Tiada rekod referral</div><div class="rf-empty-s">Tekan "JANA KOD" untuk menambah<br>referral baru dari rekod pembaikan</div></div>`;
-      return;
-    }
-    if (!filtered.length) { host.innerHTML = `<div class="rf-empty"><div class="rf-empty-t">Tiada padanan</div></div>`; return; }
-    host.innerHTML = filtered.map((r, i) => {
-      const isActive = (r.status||'').toString().toUpperCase() === 'ACTIVE';
-      const comm = Number(r.commission || 0);
-      const bank = (r.bank || '').toString();
-      return `<div class="rf-card${isActive?'':' suspended'}" data-idx="${i}">
+  function refresh() {
+    const q = searchQ.toLowerCase();
+    const rows = ALL.filter((r) => {
+      const cb = parseCB(r);
+      if (!q) return true;
+      return (cb.nama||'').toLowerCase().includes(q) || (cb.tel||'').toLowerCase().includes(q) || (r.code||'').toLowerCase().includes(q);
+    });
+    $('rfCount').textContent = ALL.length + ' rekod';
+    $('rfList').innerHTML = rows.length ? rows.map((r) => {
+      const cb = parseCB(r);
+      const suspended = r.suspended === true;
+      return `<div class="rf-card${suspended?' suspended':''}" data-id="${r.id}">
         <div class="rf-row1">
-          <div class="rf-nama">${esc(r.nama || '-')}</div>
-          <span class="rf-badge ${isActive?'active':'susp'}">${isActive?'ACTIVE':'SUSPENDED'}</span>
+          <span class="rf-nama">${cb.nama || '—'}</span>
+          <span class="rf-badge ${suspended?'susp':'active'}">${suspended?'GANTUNG':'ACTIVE'}</span>
         </div>
-        <div class="rf-tel">${esc(r.tel || '-')}</div>
+        <div class="rf-tel">${cb.tel || ''}</div>
         <div class="rf-row3">
-          <span class="rf-code">${esc(r.refCode || '-')}</span>
-          <a class="rf-wa" data-wa="${i}"><i class="fab fa-whatsapp"></i> HANTAR</a>
-          ${(bank || comm>0) ? `<div class="rf-bank">${bank ? `<div class="rf-bank-name">${esc(bank)}</div>` : ''}${comm>0 ? `<div class="rf-comm">RM${comm.toFixed(2)}</div>` : ''}</div>` : ''}
+          <span class="rf-code">${r.code || ''}</span>
+          <button type="button" class="rf-wa-btn" data-wa="1" data-tel="${cb.tel || ''}" data-code="${r.code || ''}" data-nama="${(cb.nama || '').replace(/"/g,'&quot;')}" style="background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.3);color:#25D366;border-radius:6px;padding:4px 8px;font-size:10px;font-weight:900;cursor:pointer;display:inline-flex;align-items:center;gap:4px;"><i class="fab fa-whatsapp"></i> HANTAR</button>
+          <span class="rf-bank">
+            <div class="rf-bank-name">${cb.bank || ''} ${cb.acc_no || ''}</div>
+            <div class="rf-comm">${fmtRM(cb.commission)}</div>
+          </span>
         </div>
+        <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Used: ${r.used_count || 0}x</div>
       </div>`;
-    }).join('');
-    host.querySelectorAll('.rf-card').forEach(c => c.addEventListener('click', e => {
-      if (e.target.closest('[data-wa]')) return;
-      openEdit(filtered[+c.getAttribute('data-idx')]);
+    }).join('') : '<div class="rf-empty"><i class="fas fa-user-slash"></i><div class="rf-empty-t">Tiada referral</div><div class="rf-empty-s">Tekan "JANA KOD"</div></div>';
+    $('rfList').querySelectorAll('.rf-card').forEach((el) => el.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-wa="1"]')) return;
+      openEdit(ALL.find((r) => r.id === el.dataset.id));
     }));
-    host.querySelectorAll('[data-wa]').forEach(b => b.addEventListener('click', e => {
-      e.stopPropagation();
-      const r = filtered[+b.getAttribute('data-wa')];
-      sendWa(r.tel || '', r.refCode || '', r.nama || '');
+    $('rfList').querySelectorAll('[data-wa="1"]').forEach((btn) => btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const tel = btn.dataset.tel || '';
+      const code = btn.dataset.code || '';
+      const nama = btn.dataset.nama || '';
+      let phone = tel.replace(/\D/g, '');
+      if (!phone) { snack('Tiada nombor telefon', true); return; }
+      if (phone.startsWith('0')) phone = '6' + phone;
+      const msg = encodeURIComponent(
+        `Salam ${nama}! Kod referral anda: *${code}*\n\nKongsikan kod ini kepada rakan/keluarga anda. Setiap pembaikan menggunakan kod ini, anda layak menerima komisyen!\n\nTerima kasih.`
+      );
+      window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
     }));
   }
 
-  function sendWa(tel, code, nama){
-    const phone = (tel || '').replace(/[^0-9]/g, '');
-    const formatted = phone.startsWith('0') ? '6'+phone : phone;
-    const msg = encodeURIComponent(`Salam ${nama}! Kod referral anda: *${code}*\n\nKongsikan kod ini kepada rakan/keluarga anda. Setiap pembaikan menggunakan kod ini, anda layak menerima komisyen!\n\nTerima kasih.`);
-    window.open(`https://wa.me/${formatted}?text=${msg}`, '_blank');
-  }
-
-  // ── Jana Kod (search customer) ──
-  function genCode(){ return 'REF-' + (Math.floor(Math.random()*900000)+100000); }
+  function closeAll() { document.querySelectorAll('.rf-modal-bg').forEach((el) => el.classList.remove('is-open')); }
+  document.querySelectorAll('[data-close]').forEach((el) => el.addEventListener('click', () => $(el.dataset.close).classList.remove('is-open')));
 
   $('btnJana').addEventListener('click', () => {
-    $('custSearchInp').value = ''; $('custResults').innerHTML = '';
+    $('custSearchInp').value = '';
+    $('custResults').innerHTML = '';
     $('modalSearch').classList.add('is-open');
   });
 
-  function doCustSearch(){
-    const q = ($('custSearchInp').value || '').toLowerCase().trim();
+  $('custSearchBtn').addEventListener('click', doSearchCust);
+  $('custSearchInp').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearchCust(); });
+
+  async function doSearchCust() {
+    const q = $('custSearchInp').value.trim();
     if (!q) return;
-    const results = rawDataArr.filter(d =>
-      (d.siri||'').toString().toLowerCase().includes(q) ||
-      (d.tel||'').toString().toLowerCase().includes(q));
-    renderCustResults(results);
-  }
-  $('custSearchBtn').addEventListener('click', doCustSearch);
-  $('custSearchInp').addEventListener('keydown', e => { if (e.key === 'Enter') doCustSearch(); });
-
-  function renderCustResults(results){
-    const host = $('custResults');
-    if (!results.length) { host.innerHTML = `<div class="rf-empty"><div class="rf-empty-s">Tiada hasil</div></div>`; return; }
-    host.innerHTML = results.map((c, i) => {
-      const already = referrals.some(r => (r.tel||'') === (c.tel||'') && (r.tel||'') !== '');
+    const { data: jobs } = await window.sb.from('jobs').select('siri,nama,tel').eq('branch_id', branchId).or(`siri.ilike.%${q}%,tel.ilike.%${q}%,nama.ilike.%${q}%`).limit(20);
+    const uniq = new Map();
+    (jobs || []).forEach((j) => { const key = (j.tel||'').replace(/\D/g, ''); if (key && !uniq.has(key)) uniq.set(key, j); });
+    const hits = Array.from(uniq.values());
+    $('custResults').innerHTML = hits.length ? hits.map((h) => {
+      const exists = ALL.some((r) => { const cb = parseCB(r); return (cb.tel||'').replace(/\D/g, '') === (h.tel||'').replace(/\D/g, ''); });
       return `<div class="rf-cust-hit">
-        <div style="flex:1;"><strong>${esc(c.nama || '-')}</strong><small>${esc(c.tel || '-')} | #${esc(c.siri || '-')}</small></div>
-        ${already ? `<span class="exists">SUDAH ADA</span>` : `<button class="addbtn" data-add="${i}"><i class="fas fa-plus"></i> JANA KOD</button>`}
+        <div style="flex:1;"><strong>${h.nama||''}</strong><small>${h.tel||''}</small></div>
+        ${exists ? '<span class="exists">ADA</span>' : `<button class="addbtn" data-nama="${h.nama||''}" data-tel="${h.tel||''}"><i class="fas fa-plus"></i> JANA</button>`}
       </div>`;
-    }).join('');
-    host.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', async () => {
-      const c = results[+b.getAttribute('data-add')];
-      let code = genCode();
-      try { const ex = await db.collection('referrals_'+ownerID).doc(code).get(); if (ex.exists) code = genCode(); } catch(_){}
-      await db.collection('referrals_'+ownerID).doc(code).set({
-        refCode: code,
-        nama: (c.nama || '').toString().toUpperCase(),
-        tel: c.tel || '',
-        siriAsal: c.siri || '',
-        shopID, ownerID,
-        status: 'ACTIVE',
-        bank: '', accNo: '', commission: 0,
-        timestamp: Date.now(),
-      });
-      closeAll();
-      snack('Referral '+code+' dijana');
-    }));
+    }).join('') : '<div style="padding:12px;color:#94a3b8;">Tiada jumpa.</div>';
+    $('custResults').querySelectorAll('.addbtn').forEach((b) => b.addEventListener('click', () => createReferral(b.dataset.nama, b.dataset.tel)));
   }
 
-  // ── Edit referral ──
-  function openEdit(ref){
-    currentRef = ref;
-    const st = (ref.status||'ACTIVE').toString().toUpperCase();
+  async function createReferral(nama, tel) {
+    const code = 'RF' + Date.now().toString(36).toUpperCase().slice(-6);
+    const cb = { nama, tel, commission: 0, bank: '', acc_no: '' };
+    const { error } = await window.sb.from('referrals').insert({
+      tenant_id: tenantId,
+      code,
+      used_count: 0,
+      created_by: JSON.stringify(cb),
+    });
+    if (error) { snack('Gagal: ' + error.message, true); return; }
+    snack('Kod dijana: ' + code);
+    closeAll();
+    ALL = await fetchAll(); refresh();
+  }
+
+  function openEdit(row) {
+    if (!row) return;
+    editing = row;
+    const cb = parseCB(row);
     $('editInfo').innerHTML = `
-      <div class="rf-info-row"><div class="lbl">Kod</div><div class="val">${esc(ref.refCode||'-')}</div></div>
-      <div class="rf-info-row"><div class="lbl">Nama</div><div class="val">${esc(ref.nama||'-')}</div></div>
-      <div class="rf-info-row"><div class="lbl">Tel</div><div class="val">${esc(ref.tel||'-')}</div></div>
-      <div class="rf-info-row"><div class="lbl">Status</div><div class="val">${esc(st)}</div></div>`;
-    $('editBank').value = ref.bank || '';
-    $('editAcc').value = ref.accNo || '';
-    $('editComm').value = ref.commission != null ? ref.commission : '';
-    const tog = $('editToggle');
-    if (st === 'ACTIVE') { tog.className = 'rf-toggle'; tog.innerHTML = '<i class="fas fa-pause"></i> GANTUNG'; }
-    else { tog.className = 'rf-toggle active'; tog.innerHTML = '<i class="fas fa-play"></i> AKTIF'; }
-    $('claimList').innerHTML = '<div class="rf-empty"><div class="rf-empty-s">Memuatkan...</div></div>';
-    $('claimHdrTxt').textContent = 'SEJARAH TUNTUTAN (0)';
-    loadClaims(ref);
+      <div class="rf-info-row"><span class="lbl">NAMA</span><span class="val">${cb.nama || '-'}</span></div>
+      <div class="rf-info-row"><span class="lbl">TELEFON</span><span class="val">${cb.tel || '-'}</span></div>
+      <div class="rf-info-row"><span class="lbl">KOD</span><span class="val">${row.code || '-'}</span></div>
+      <div class="rf-info-row"><span class="lbl">USED</span><span class="val">${row.used_count || 0}x</span></div>`;
+    $('editBank').value = cb.bank || '';
+    $('editAcc').value = cb.acc_no || '';
+    $('editComm').value = cb.commission || 0;
+    const tgl = $('editToggle');
+    tgl.classList.toggle('active', !row.suspended);
+    tgl.innerHTML = row.suspended ? '<i class="fas fa-play"></i> AKTIF' : '<i class="fas fa-pause"></i> GANTUNG';
+    const myClaims = CLAIMS.filter((c) => c.referral_id === row.id);
+    $('claimHdrTxt').textContent = `SEJARAH TUNTUTAN (${myClaims.length})`;
+    $('claimList').innerHTML = myClaims.map((c) => `<div class="rf-claim${c.status==='APPROVED'?' paid':''}">
+      <div class="rf-claim-info">
+        <div class="rf-claim-nm">${c.claimed_by || '-'}</div>
+        <div class="rf-claim-pk">${c.siri || ''}</div>
+      </div>
+      <div class="rf-claim-right">
+        <div class="rf-claim-amt" style="color:${c.status==='APPROVED'?'#10b981':'#eab308'};">${fmtRM(c.amount)}</div>
+        <div class="rf-claim-pay" style="color:${c.status==='APPROVED'?'#10b981':'#eab308'};border-color:currentColor;">${c.status || 'PENDING'}</div>
+      </div>
+    </div>`).join('');
     $('modalEdit').classList.add('is-open');
   }
 
-  async function loadClaims(ref){
-    try {
-      const snap = await db.collection('referral_claims_'+ownerID)
-        .where('refCode','==', ref.refCode).orderBy('timestamp','desc').get();
-      currentClaims = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    } catch(_){ currentClaims = []; }
-    renderClaims();
-  }
-
-  function renderClaims(){
-    $('claimHdrTxt').textContent = `SEJARAH TUNTUTAN (${currentClaims.length})`;
-    if (!currentClaims.length) { $('claimList').innerHTML = `<div class="rf-empty"><div class="rf-empty-s">Tiada sejarah tuntutan</div></div>`; return; }
-    $('claimList').innerHTML = currentClaims.map((cl, i) => {
-      const isPaid = (cl.paymentStatus||'').toString().toUpperCase() === 'PAID';
-      const col = isPaid ? '#10b981' : '#eab308';
-      return `<div class="rf-claim ${isPaid?'paid':''}">
-        <div class="rf-claim-info">
-          <div class="rf-claim-nm">${esc(cl.redeemerName||'-')}</div>
-          <div class="rf-claim-pk">${esc(cl.perkara||'-')}</div>
-          <div class="rf-claim-ts">${fmtTs(cl.timestamp)}</div>
-        </div>
-        <div class="rf-claim-right">
-          <div class="rf-claim-amt" style="color:${col};">RM${Number(cl.amount||0).toFixed(2)}</div>
-          <button class="rf-claim-pay" data-pay="${i}" style="color:${col};border-color:${col};background:${col}22;">${isPaid?'PAID':'UNPAID'}</button>
-        </div>
-      </div>`;
-    }).join('');
-    $('claimList').querySelectorAll('[data-pay]').forEach(b => b.addEventListener('click', async () => {
-      const cl = currentClaims[+b.getAttribute('data-pay')];
-      const isPaid = (cl.paymentStatus||'').toString().toUpperCase() === 'PAID';
-      const newPay = isPaid ? 'UNPAID' : 'PAID';
-      await db.collection('referral_claims_'+ownerID).doc(cl.id).update({
-        paymentStatus: newPay,
-        paidAt: newPay === 'PAID' ? Date.now() : null,
-      });
-      await loadClaims(currentRef);
-    }));
-  }
-
   $('editSave').addEventListener('click', async () => {
-    await db.collection('referrals_'+ownerID).doc(currentRef.id).update({
-      bank: ($('editBank').value || '').trim().toUpperCase(),
-      accNo: ($('editAcc').value || '').trim(),
-      commission: parseFloat($('editComm').value) || 0,
-      lastUpdated: Date.now(),
-    });
-    closeAll();
-    snack('Referral dikemaskini');
+    if (!editing) return;
+    const cb = parseCB(editing);
+    cb.bank = $('editBank').value.trim();
+    cb.acc_no = $('editAcc').value.trim();
+    cb.commission = Number($('editComm').value) || 0;
+    const { error } = await window.sb.from('referrals').update({ created_by: JSON.stringify(cb) }).eq('id', editing.id);
+    if (error) { snack('Gagal: ' + error.message, true); return; }
+    snack('Disimpan'); closeAll();
+    ALL = await fetchAll(); refresh();
   });
 
   $('editToggle').addEventListener('click', async () => {
-    const st = (currentRef.status||'ACTIVE').toString().toUpperCase();
-    const newSt = st === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-    await db.collection('referrals_'+ownerID).doc(currentRef.id).update({
-      status: newSt, lastUpdated: Date.now(),
-    });
-    currentRef.status = newSt;
-    const tog = $('editToggle');
-    if (newSt === 'ACTIVE') { tog.className = 'rf-toggle active'; tog.innerHTML = '<i class="fas fa-pause"></i> GANTUNG'; }
-    else { tog.className = 'rf-toggle'; tog.innerHTML = '<i class="fas fa-play"></i> AKTIF'; }
-    snack(newSt === 'ACTIVE' ? 'Referral diaktifkan' : 'Referral digantung');
+    if (!editing) return;
+    const { error } = await window.sb.from('referrals').update({ suspended: !editing.suspended }).eq('id', editing.id);
+    if (error) { snack('Gagal: ' + error.message, true); return; }
+    snack(editing.suspended ? 'Diaktifkan' : 'Digantung');
+    closeAll();
+    ALL = await fetchAll(); refresh();
   });
 
   $('editDel').addEventListener('click', () => {
-    $('pinMsg').textContent = `Adakah anda pasti mahu memadam referral ${currentRef.refCode}?`;
+    if (!editing) return;
+    delId = editing.id;
+    $('pinMsg').textContent = 'Referral "' + editing.code + '" akan dipadam.';
     $('pinInp').value = '';
     $('modalPin').classList.add('is-open');
   });
 
   $('pinOk').addEventListener('click', async () => {
-    const pin = ($('pinInp').value || '').trim();
-    if (!pin) { snack('Sila masukkan PIN', true); return; }
-    if (pin !== svPass) { snack('PIN tidak sah!', true); return; }
-    await db.collection('referrals_'+ownerID).doc(currentRef.id).delete();
-    closeAll();
-    snack('Referral dipadam');
+    if ($('pinInp').value !== '1234') { snack('PIN salah', true); return; }
+    if (!delId) return;
+    const { error } = await window.sb.from('referrals').delete().eq('id', delId);
+    if (error) { snack('Gagal: ' + error.message, true); return; }
+    snack('Dipadam'); closeAll();
+    ALL = await fetchAll(); refresh();
   });
+
+  $('rfSearch').addEventListener('input', (e) => { searchQ = e.target.value; refresh(); });
+
+  window.sb.channel('referrals-' + tenantId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'referrals', filter: `tenant_id=eq.${tenantId}` }, async () => { ALL = await fetchAll(); refresh(); }).subscribe();
+  window.sb.channel('ref-claims-' + tenantId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'referral_claims' }, async () => { CLAIMS = await fetchClaims(); }).subscribe();
+
+  [ALL, CLAIMS] = await Promise.all([fetchAll(), fetchClaims()]);
+  refresh();
 })();

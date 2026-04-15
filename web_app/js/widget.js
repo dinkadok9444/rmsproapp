@@ -1,226 +1,154 @@
-/* Port dari lib/screens/modules/dashboard_widget_screen.dart (tanpa Quick Sales) */
-(function () {
+/* widget.js — Supabase. Dashboard widget: repair stats + kewangan + komponen search. */
+(async function () {
   'use strict';
-  if (!document.getElementById('wgQuote')) return;
+  const ctx = await window.requireAuth();
+  if (!ctx) return;
+  const branchId = ctx.current_branch_id;
 
-  let ownerID = 'admin', shopID = 'MAIN';
-  let filterStats = 'TODAY', filterKew = 'TODAY';
-  let repairs = [], jualanPantas = [], expenses = [];
-  let bateriResults = [], lcdResults = [];
-  let activeTab = 'bateri';
+  const $ = (id) => document.getElementById(id);
+  const fmtRM = (n) => 'RM ' + (Number(n) || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function toast(msg) { const t = $('wgToast'); if (!t) return; t.textContent = msg; t.hidden = false; setTimeout(() => { t.hidden = true; }, 1600); }
 
-  const branch = localStorage.getItem('rms_current_branch') || '';
-  if (branch.includes('@')) {
-    const p = branch.split('@');
-    ownerID = p[0]; shopID = (p[1] || '').toUpperCase();
+  let DATA = { JOBS: [], QS: [], PS: [], EXP: [], RF: [], PARTS: [] };
+  let statsFilter = 'TODAY';
+  let kewFilter = 'TODAY';
+  let kompTab = 'bateri';
+
+  async function fetchAll() {
+    const [j, qs, ps, ex, rf, pt] = await Promise.all([
+      window.sb.from('jobs').select('id,status,total,payment_status,created_at').eq('branch_id', branchId).limit(5000),
+      window.sb.from('quick_sales').select('*').eq('branch_id', branchId).limit(5000),
+      window.sb.from('phone_sales').select('*').eq('branch_id', branchId).is('deleted_at', null).limit(5000),
+      window.sb.from('expenses').select('*').eq('branch_id', branchId).limit(5000),
+      window.sb.from('refunds').select('*').eq('branch_id', branchId).limit(5000),
+      window.sb.from('stock_parts').select('sku,part_name,category').eq('branch_id', branchId).limit(5000),
+    ]);
+    DATA.JOBS = j.data || []; DATA.QS = qs.data || []; DATA.PS = ps.data || [];
+    DATA.EXP = ex.data || []; DATA.RF = rf.data || []; DATA.PARTS = pt.data || [];
   }
 
-  const $ = id => document.getElementById(id);
-
-  // ─── Range ───
-  function getRange(period) {
-    const now = new Date();
-    let start;
-    switch (period) {
-      case 'TODAY': start = new Date(now.getFullYear(), now.getMonth(), now.getDate()); break;
-      case 'WEEK': {
-        const d = new Date(now); d.setDate(now.getDate() - (now.getDay() % 7));
-        start = new Date(d.getFullYear(), d.getMonth(), d.getDate()); break;
-      }
-      case 'MONTH': start = new Date(now.getFullYear(), now.getMonth(), 1); break;
-      case 'YEAR':  start = new Date(now.getFullYear(), 0, 1); break;
-      default:      start = new Date(2020, 0, 1);
-    }
-    return [start.getTime(), now.getTime()];
+  function inTime(iso, period) {
+    if (period === 'ALL' || !iso) return period === 'ALL';
+    const d = new Date(iso); const now = new Date();
+    if (period === 'TODAY') return d.toDateString() === now.toDateString();
+    if (period === 'WEEK') { const delta = (now - d) / 86400000; return delta >= 0 && delta < 7; }
+    if (period === 'MONTH') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    if (period === 'YEAR') return d.getFullYear() === now.getFullYear();
+    return true;
   }
 
-  // ─── Listeners ───
-  db.collection('repairs_' + ownerID).onSnapshot(snap => {
-    const arr = [];
-    snap.forEach(d => {
-      const v = d.data(); v.id = d.id;
-      if (String(v.shopID || '').toUpperCase() === shopID) arr.push(v);
+  function refreshStats() {
+    const rows = DATA.JOBS.filter((r) => inTime(r.created_at, statsFilter));
+    const S = (s) => rows.filter((r) => (r.status || '').toUpperCase() === s).length;
+    $('wgStTotal').textContent = rows.length;
+    $('wgStProg').textContent = S('IN PROGRESS');
+    $('wgStWait').textContent = S('WAITING PART');
+    $('wgStReady').textContent = S('READY TO PICKUP');
+    $('wgStComp').textContent = S('COMPLETED');
+    $('wgStCancel').textContent = S('CANCELLED');
+    drawStatsChart({
+      'IN PROGRESS': S('IN PROGRESS'),
+      'WAITING PART': S('WAITING PART'),
+      'READY PICKUP': S('READY TO PICKUP'),
+      'COMPLETED': S('COMPLETED'),
+      'CANCELLED': S('CANCELLED'),
     });
-    repairs = arr;
-    updateStats(); updateKewangan();
-  }, e => console.warn('repairs:', e));
-
-  db.collection('jualan_pantas_' + ownerID).onSnapshot(snap => {
-    const arr = [];
-    snap.forEach(d => {
-      const v = d.data(); v.id = d.id;
-      if (String(v.shopID || '').toUpperCase() === shopID) arr.push(v);
-    });
-    jualanPantas = arr;
-    updateKewangan();
-  }, e => console.warn('jualan_pantas:', e));
-
-  db.collection('expenses_' + ownerID).onSnapshot(snap => {
-    const arr = [];
-    snap.forEach(d => {
-      const v = d.data(); v.id = d.id;
-      if (String(v.shopID || '').toUpperCase() === shopID) arr.push(v);
-    });
-    expenses = arr;
-    updateKewangan();
-  }, e => console.warn('expenses:', e));
-
-  // Quote
-  db.collection('system_settings').doc('pengumuman').get().then(doc => {
-    if (doc.exists) {
-      const m = (doc.data() || {}).motivasi || 'Konsisten adalah kunci kejayaan.';
-      $('wgQuote').textContent = '"' + m + '"';
-    }
-  }).catch(() => {});
-
-  // ─── Stats ───
-  function updateStats() {
-    const [s, e] = getRange(filterStats);
-    const arr = repairs.filter(d => {
-      const ts = Number(d.timestamp || 0);
-      const nama = String(d.nama || '').toUpperCase();
-      const jenis = String(d.jenis_servis || '').toUpperCase();
-      return ts >= s && ts <= e && nama !== 'JUALAN PANTAS' && nama !== 'QUICK SALES' && jenis !== 'JUALAN';
-    });
-    $('wgStTotal').textContent = arr.length;
-    $('wgStProg').textContent  = arr.filter(d => up(d.status) === 'IN PROGRESS').length;
-    $('wgStWait').textContent  = arr.filter(d => up(d.status) === 'WAITING PART').length;
-    $('wgStReady').textContent = arr.filter(d => up(d.status) === 'READY TO PICKUP').length;
-    $('wgStComp').textContent  = arr.filter(d => up(d.status) === 'COMPLETED').length;
-    $('wgStCancel').textContent = arr.filter(d => { const u = up(d.status); return u === 'CANCEL' || u === 'CANCELLED'; }).length;
   }
 
-  // ─── Kewangan ───
-  function updateKewangan() {
-    const [s, e] = getRange(filterKew);
-    let sales = 0, refund = 0, exp = 0;
-
-    for (const d of repairs) {
-      const ts = Number(d.timestamp || 0);
-      if (ts < s || ts > e) continue;
-      if (up(d.payment_status) !== 'PAID') continue;
-      const total = parseFloat(d.total) || 0;
-      const st = up(d.status);
-      if (st === 'CANCEL' || st === 'CANCELLED' || st === 'REFUND') refund += total;
-      else sales += total;
-    }
-    for (const d of jualanPantas) {
-      const ts = Number(d.timestamp || 0);
-      if (ts < s || ts > e) continue;
-      if (up(d.payment_status) !== 'PAID') continue;
-      const total = parseFloat(d.total) || 0;
-      const siri = String(d.siri || '');
-      const dup = repairs.some(r => String(r.siri || '') === siri);
-      if (!dup) sales += total;
-    }
-    for (const d of expenses) {
-      const ts = Number(d.timestamp || 0);
-      if (ts < s || ts > e) continue;
-      exp += parseFloat(d.amount) || 0;
-    }
-
-    $('wgKwSales').textContent  = 'RM ' + sales.toFixed(2);
-    $('wgKwRefund').textContent = 'RM ' + refund.toFixed(2);
-    $('wgKwExp').textContent    = 'RM ' + exp.toFixed(2);
-    $('wgKwNet').textContent    = 'RM ' + (sales - refund - exp).toFixed(2);
+  let statsChart = null;
+  function drawStatsChart(map) {
+    const cv = document.getElementById('wgStatsChart');
+    if (!cv || typeof Chart === 'undefined') return;
+    const labels = Object.keys(map);
+    const data = Object.values(map);
+    const colors = ['#2563eb','#f59e0b','#a855f7','#10b981','#dc2626'];
+    if (statsChart) { statsChart.data.datasets[0].data = data; statsChart.update('none'); return; }
+    statsChart = new Chart(cv.getContext('2d'), {
+      type: 'doughnut',
+      data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } } },
+    });
   }
 
-  $('wgStatsFilter').addEventListener('change', e => { filterStats = e.target.value; updateStats(); });
-  $('wgKewFilter').addEventListener('change', e => { filterKew = e.target.value; updateKewangan(); });
+  function refreshKew() {
+    const jobPaid = DATA.JOBS.filter((r) => (r.payment_status||'').toUpperCase() === 'PAID' && inTime(r.created_at, kewFilter)).reduce((s, r) => s + (Number(r.total)||0), 0);
+    const qs = DATA.QS.filter((r) => inTime(r.sold_at, kewFilter)).reduce((s, r) => s + (Number(r.amount)||0), 0);
+    const ps = DATA.PS.filter((r) => inTime(r.sold_at, kewFilter)).reduce((s, r) => s + (Number(r.total_price)||0), 0);
+    const exp = DATA.EXP.filter((r) => inTime(r.created_at, kewFilter)).reduce((s, r) => s + (Number(r.amount)||0), 0);
+    const rf = DATA.RF.filter((r) => (r.refund_status||'').toUpperCase() === 'APPROVED' && inTime(r.created_at, kewFilter)).reduce((s, r) => s + (Number(r.refund_amount)||0), 0);
+    const sales = jobPaid + qs + ps;
+    $('wgKwSales').textContent = fmtRM(sales);
+    $('wgKwRefund').textContent = fmtRM(rf);
+    $('wgKwExp').textContent = fmtRM(exp);
+    $('wgKwNet').textContent = fmtRM(sales - exp - rf);
+  }
 
-  // ─── Komponen search ───
-  $('wgKompBtn').addEventListener('click', searchKomponen);
-  $('wgKompInput').addEventListener('keydown', e => { if (e.key === 'Enter') searchKomponen(); });
-  document.querySelectorAll('.wg-komp-tab').forEach(b => b.addEventListener('click', () => {
-    activeTab = b.dataset.tab;
-    document.querySelectorAll('.wg-komp-tab').forEach(x => x.classList.toggle('is-active', x === b));
-    renderKomponen();
+  function refreshKomp(query) {
+    const q = (query || '').toLowerCase().trim();
+    const list = DATA.PARTS.filter((p) => {
+      if (!q) return false;
+      if (!((p.part_name||'').toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q))) return false;
+      const cat = (p.category||'').toLowerCase();
+      return kompTab === 'bateri' ? cat.includes('bateri') || cat.includes('battery') : cat.includes('lcd') || cat.includes('screen');
+    });
+    const batCount = DATA.PARTS.filter((p) => q && ((p.part_name||'').toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q)) && ((p.category||'').toLowerCase().includes('bateri') || (p.category||'').toLowerCase().includes('battery'))).length;
+    const lcdCount = DATA.PARTS.filter((p) => q && ((p.part_name||'').toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q)) && ((p.category||'').toLowerCase().includes('lcd') || (p.category||'').toLowerCase().includes('screen'))).length;
+    $('wgBatCount').textContent = batCount;
+    $('wgLcdCount').textContent = lcdCount;
+    const res = $('wgKompResults');
+    if (!q) {
+      res.innerHTML = '<div class="wg-komp-empty"><i class="fas fa-magnifying-glass"></i><div>Cari model untuk papar kod bateri/LCD</div></div>';
+    } else if (!list.length) {
+      res.innerHTML = '<div class="wg-komp-empty"><i class="fas fa-circle-xmark"></i><div>Tiada padanan.</div></div>';
+    } else {
+      res.innerHTML = list.map((p) => `<div class="wg-komp-row"><b>${p.sku||''}</b> — ${p.part_name||''}</div>`).join('');
+    }
+  }
+
+  $('wgStatsFilter').addEventListener('change', (e) => { statsFilter = e.target.value; refreshStats(); });
+  $('wgKewFilter').addEventListener('change', (e) => { kewFilter = e.target.value; refreshKew(); });
+  $('wgKompBtn').addEventListener('click', () => refreshKomp($('wgKompInput').value));
+  $('wgKompInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') refreshKomp(e.target.value); });
+  document.querySelectorAll('.wg-komp-tab').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('.wg-komp-tab').forEach((x) => x.classList.remove('is-active'));
+    b.classList.add('is-active');
+    kompTab = b.dataset.tab;
+    refreshKomp($('wgKompInput').value);
   }));
 
-  async function searchKomponen() {
-    const q = $('wgKompInput').value.trim().toLowerCase();
-    if (!q) return;
-    const box = $('wgKompResults');
-    box.innerHTML = '<div class="wg-komp-empty"><i class="fas fa-spinner fa-spin"></i><div>Mencari…</div></div>';
-    try {
-      const [snapBat, snapLcd] = await Promise.all([
-        db.collection('database_bateri_admin').get(),
-        db.collection('database_lcd_admin').get(),
-      ]);
-      const matches = (d) => {
-        const m = String(d.model || '').toLowerCase();
-        const k = String(d.kod || '').toLowerCase();
-        const i = String(d.info || '').toLowerCase();
-        return m.includes(q) || k.includes(q) || i.includes(q);
-      };
-      bateriResults = []; lcdResults = [];
-      snapBat.forEach(doc => { const d = doc.data(); if (matches(d)) bateriResults.push(d); });
-      snapLcd.forEach(doc => { const d = doc.data(); if (matches(d)) lcdResults.push(d); });
-      $('wgBatCount').textContent = bateriResults.length;
-      $('wgLcdCount').textContent = lcdResults.length;
-      renderKomponen();
-    } catch (err) {
-      box.innerHTML = `<div class="wg-komp-empty"><i class="fas fa-triangle-exclamation"></i><div>Ralat: ${escHtml(err.message)}</div></div>`;
-    }
-  }
-
-  function renderKomponen() {
-    const box = $('wgKompResults');
-    const arr = activeTab === 'bateri' ? bateriResults : lcdResults;
-    if (!arr.length) {
-      box.innerHTML = '<div class="wg-komp-empty"><i class="fas fa-circle-info"></i><div>Tiada keputusan. Tekan Cari.</div></div>';
-      return;
-    }
-    box.innerHTML = arr.map(d => `
-      <div class="wg-komp-row">
-        <div class="wg-komp-row__model">${escHtml(d.model || '-')}</div>
-        <div class="wg-komp-row__meta">
-          <span class="wg-komp-row__kod">${escHtml(d.kod || '-')}</span>
-          ${d.info ? `<span class="wg-komp-row__info">${escHtml(d.info)}</span>` : ''}
-        </div>
-      </div>
-    `).join('');
-  }
-
-  // Helpers
-  function up(s) { return String(s || '').toUpperCase(); }
-  function escHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
-  updateStats();
-  updateKewangan();
-
-  // ─── Navigate to other modules (sambung ke Kewangan & Senarai Job) ───
-  function gotoModule(id, hint) {
-    try {
-      if (hint) localStorage.setItem('_pending_' + id, JSON.stringify(hint));
-      const parentDoc = window.parent && window.parent.document;
-      if (!parentDoc) return;
-      const tile = parentDoc.querySelector(`.branch-tile[data-module="${id}"]`);
-      if (tile) tile.click();
-    } catch (e) { console.warn('gotoModule:', e); }
-  }
-
-  // Stat cards → Senarai Job dengan filter status
-  const statMap = {
-    wgStTotal:  'ALL',
-    wgStProg:   'IN PROGRESS',
-    wgStWait:   'WAITING PART',
-    wgStReady:  'READY TO PICKUP',
-    wgStComp:   'COMPLETED',
-    wgStCancel: 'CANCEL',
-  };
-  Object.keys(statMap).forEach(id => {
-    const el = $(id);
-    if (!el) return;
-    const card = el.closest('.wg-stat');
-    if (!card) return;
-    card.classList.add('is-clickable');
-    card.addEventListener('click', () => gotoModule('Senarai_job', { status: statMap[id] }));
+  ['jobs','quick_sales','phone_sales','expenses','refunds'].forEach((table) => {
+    window.sb.channel('wg-' + table + '-' + branchId)
+      .on('postgres_changes', { event: '*', schema: 'public', table, filter: `branch_id=eq.${branchId}` }, async () => { await fetchAll(); refreshStats(); refreshKew(); }).subscribe();
   });
 
-  // Kewangan cards → Kewangan module
-  document.querySelectorAll('.wg-kew__card').forEach(card => {
-    card.classList.add('is-clickable');
-    card.addEventListener('click', () => gotoModule('Kewangan', { range: filterKew }));
-  });
+  await fetchAll();
+  refreshStats();
+  refreshKew();
+
+  // ─── QUOTE ROTATION (mirror _loadQuote + rotate every 8s) ───
+  const FALLBACK_QUOTES = [
+    'Konsisten adalah kunci kejayaan. Lakukan yang terbaik hari ini.',
+    'Setiap pelanggan yang berpuas hati adalah iklan percuma untuk perniagaan anda.',
+    'Kualiti kerja hari ini menentukan reputasi esok.',
+    'Jangan tunggu peluang — cipta peluang.',
+    'Pelanggan tidak beli produk, mereka beli pengalaman.',
+    'Kejayaan datang dari disiplin harian, bukan motivasi semalam.',
+    'Repair dengan hati, bukan sekadar tangan.',
+    'Usaha kecil yang konsisten mengalahkan usaha besar yang sekejap.',
+  ];
+  const qEl = $('wgQuote');
+  if (qEl) {
+    let quotes = FALLBACK_QUOTES.slice();
+    try {
+      const { data: row } = await window.sb.from('system_settings').select('message').eq('id', 'pengumuman').maybeSingle();
+      if (row && row.message) quotes.unshift(String(row.message));
+    } catch (_) {}
+    let qi = 0;
+    const setQuote = (t) => { qEl.textContent = '"' + t + '"'; };
+    setQuote(quotes[0]);
+    setInterval(() => {
+      qi = (qi + 1) % quotes.length;
+      setQuote(quotes[qi]);
+    }, 8000);
+  }
 })();

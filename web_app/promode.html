@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="css/components.css">
   <link rel="stylesheet" href="css/branch.css">
   <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/kerugian.css">
   <link rel="stylesheet" href="css/promode.css">
 </head>
 <body class="settings-page promode-page">
@@ -66,6 +67,7 @@
         <span class="settings-section__icon"><i class="fas fa-briefcase"></i></span>
         <h2 class="settings-section__title" id="listTitle">Senarai</h2>
         <span class="pm-count" id="pmCount">0</span>
+        <button type="button" class="btn-new" id="pmAddWalkinBtn" style="margin-left:auto"><i class="fas fa-plus"></i> TAMBAH WALK-IN</button>
       </div>
       <div class="settings-section__body">
         <div class="pm-list" id="pmList"></div>
@@ -82,6 +84,7 @@
         <span class="settings-section__icon"><i class="fas fa-address-book"></i></span>
         <h2 class="settings-section__title">Buku Dealer</h2>
         <span class="pm-count" id="pmDealerCount">0</span>
+        <button type="button" class="btn-new" id="pmAddDealerBtn" style="margin-left:auto"><i class="fas fa-plus"></i> TAMBAH DEALER</button>
       </div>
       <div class="settings-section__body">
         <div class="pm-dealers" id="pmDealers"></div>
@@ -94,9 +97,52 @@
 
   </main>
 
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js"></script>
+  <!-- Tambah Dealer modal -->
+  <div class="lost-modal-backdrop" id="pmDealerModal">
+    <div class="lost-modal">
+      <div class="lost-modal__head">
+        <span><i class="fas fa-user-plus"></i> TAMBAH DEALER</span>
+        <button type="button" class="lost-modal__close" id="pmDealerClose"><i class="fas fa-xmark"></i></button>
+      </div>
+      <label>NAMA KEDAI *</label>
+      <input type="text" id="pmDlNama" class="lost-input" placeholder="Nama kedai">
+      <label>KOD DEALER</label>
+      <input type="text" id="pmDlKod" class="lost-input" placeholder="Kod (optional)">
+      <label>TEL *</label>
+      <input type="text" id="pmDlTel" class="lost-input" placeholder="01X-XXXXXXX">
+      <label>ALAMAT</label>
+      <textarea id="pmDlAlamat" class="lost-input" rows="2" placeholder="Alamat"></textarea>
+      <label>KOMISEN (%)</label>
+      <input type="number" step="0.01" id="pmDlKom" class="lost-input" placeholder="0.00">
+      <button type="button" class="btn-submit" id="pmDlSubmit"><i class="fas fa-save"></i> SIMPAN</button>
+      <div class="lost-toast" id="pmDlToast" hidden></div>
+    </div>
+  </div>
+
+  <!-- Tambah Walk-in modal -->
+  <div class="lost-modal-backdrop" id="pmWalkinModal">
+    <div class="lost-modal">
+      <div class="lost-modal__head">
+        <span><i class="fas fa-person-walking"></i> TAMBAH WALK-IN</span>
+        <button type="button" class="lost-modal__close" id="pmWalkinClose"><i class="fas fa-xmark"></i></button>
+      </div>
+      <label>NAMA *</label>
+      <input type="text" id="pmWkNama" class="lost-input" placeholder="Nama customer">
+      <label>TEL *</label>
+      <input type="text" id="pmWkTel" class="lost-input" placeholder="01X-XXXXXXX">
+      <label>ITEM / MODEL *</label>
+      <input type="text" id="pmWkItem" class="lost-input" placeholder="Model / item">
+      <label>HARGA (RM)</label>
+      <input type="number" step="0.01" id="pmWkHarga" class="lost-input" placeholder="0.00">
+      <label>TARIKH</label>
+      <input type="date" id="pmWkTarikh" class="lost-input">
+      <button type="button" class="btn-submit" id="pmWkSubmit"><i class="fas fa-save"></i> SIMPAN</button>
+      <div class="lost-toast" id="pmWkToast" hidden></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
   <script src="js/promode.js"></script>
 </body>
 </html>

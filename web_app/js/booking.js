@@ -1,683 +1,515 @@
-/* Port dari lib/screens/modules/booking_screen.dart */
-(function () {
+/* booking.js — Supabase. Mirror booking_screen.dart (list aktif/arkib/sampah + add + status). */
+(async function () {
   'use strict';
-  if (!document.getElementById('bkList')) return;
+  const ctx = await window.requireAuth();
+  if (!ctx) return;
+  const branchId = ctx.current_branch_id;
 
-  const CLOUD_RUN = 'https://rms-backend-94407896005.asia-southeast1.run.app';
-  const NOTIF_URL = 'https://us-central1-rmspro-2f454.cloudfunctions.net/sendBookingNotification';
+  const $ = (id) => document.getElementById(id);
+  const fmtRM = (n) => 'RM ' + (Number(n) || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  };
+  function toast(msg) {
+    const t = $('bkToast'); if (!t) return;
+    t.textContent = msg; t.hidden = false;
+    setTimeout(() => { t.hidden = true; }, 1800);
+  }
+  function parseNotes(s) { try { return JSON.parse(s || '{}'); } catch (e) { return {}; } }
 
-  // ---------- branch context ----------
-  let ownerID = 'admin', shopID = 'MAIN';
-  const branch = localStorage.getItem('rms_current_branch') || '';
-  if (branch.includes('@')) {
-    const p = branch.split('@');
-    ownerID = p[0]; shopID = (p[1] || '').toUpperCase();
+  let ALL = [];
+  let mode = 'ACTIVE'; // ACTIVE | ARCHIVED | DELETED
+  let searchQ = '';
+  let sort = 'desc';
+  const ownerID = (ctx.email || '').split('@')[0] || 'unknown';
+  let currentQrUrl = null;   // branch.extras.bookingQr
+  let currentResitUrl = null; // per-booking receipt url
+
+  async function fetchBookings() {
+    const { data, error } = await window.sb
+      .from('bookings').select('*')
+      .eq('branch_id', branchId)
+      .order('created_at', { ascending: false })
+      .limit(2000);
+    if (error) { console.error(error); return []; }
+    return data || [];
   }
 
-  // ---------- state ----------
-  let bookings = [];
-  let viewMode = 'ACTIVE';
-  let sortOrder = 'desc';
-  let searchText = '';
-  let courierList = ['TIADA', 'J&T EXPRESS', 'POSLAJU', 'NINJAVAN', 'LALAMOVE'];
-  let staffList = [];
-  let branchSettings = {};
-  let domain = 'https://rmspro.net';
-
-  // ---------- helpers ----------
-  const $ = id => document.getElementById(id);
-  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const attr = s => String(s ?? '').replace(/"/g, '&quot;');
-  const num = v => { const n = Number(v); return isNaN(n) ? 0 : n; };
-  const money = v => 'RM ' + num(v).toFixed(2);
-
-  function toast(msg, err = false) {
-    const t = $('bkToast');
-    t.textContent = msg;
-    t.classList.toggle('is-err', !!err);
-    t.hidden = false;
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => { t.hidden = true; }, 2500);
-  }
-
-  function openModal(id) { $(id).classList.add('is-open'); }
-  function closeModal(id) { $(id).classList.remove('is-open'); }
-
-  document.addEventListener('click', e => {
-    const b = e.target.closest('[data-close]');
-    if (b) closeModal(b.dataset.close);
-    // click backdrop
-    if (e.target.classList.contains('bk-modal-backdrop')) e.target.classList.remove('is-open');
-  });
-
-  function fmtDate(v) {
-    if (typeof v === 'string' && v.includes('T')) return v.replace('T', ' ');
-    if (typeof v === 'string') return v;
-    return '-';
-  }
-
-  function kiraBaki(hargaEl, depositEl, bakiEl) {
-    const h = num(hargaEl.value), d = num(depositEl.value);
-    bakiEl.value = Math.max(0, h - d).toFixed(2);
-  }
-
-  function waFormat(tel) {
-    let n = String(tel || '').replace(/[^0-9]/g, '');
-    if (n.startsWith('0')) n = '6' + n;
-    return n;
-  }
-
-  // ---------- Firebase init ----------
-  const db = window.db || firebase.firestore();
-  const storage = firebase.storage();
-
-  async function loadSettings() {
-    try {
-      const doc = await db.collection('shops_' + ownerID).doc(shopID).get();
-      if (doc.exists) {
-        const d = doc.data();
-        branchSettings = d;
-        if (Array.isArray(d.courierList)) courierList = d.courierList.slice();
-        if (!courierList.includes('TIADA')) courierList.unshift('TIADA');
-        if (Array.isArray(d.staffList)) {
-          staffList = d.staffList.map(s => typeof s === 'object' ? (s.name || s.nama || '') : s).filter(Boolean);
-        }
-      }
-    } catch (e) { console.warn('shop settings', e); }
-    try {
-      const dealer = await db.collection('saas_dealers').doc(ownerID).get();
-      if (dealer.exists) domain = dealer.data().domain || domain;
-    } catch (_) {}
-    refreshStaffSelect();
-  }
-
-  function refreshStaffSelect() {
-    const sel = $('bkStaff');
-    const wrap = $('bkStaffWrap');
-    if (!staffList.length) { wrap.hidden = true; return; }
-    wrap.hidden = false;
-    sel.innerHTML = '<option value="">-- PILIH STAFF --</option>' +
-      staffList.map(s => `<option value="${attr(s)}">${esc(s)}</option>`).join('');
-  }
-
-  // ---------- Live listener ----------
-  db.collection('bookings_' + ownerID).onSnapshot(snap => {
-    const list = [];
-    snap.forEach(doc => {
-      const d = doc.data(); d.key = doc.id;
-      if (String(d.shopID || '').toUpperCase() === shopID) list.push(d);
+  function filterByMode(rows) {
+    return rows.filter((r) => {
+      const st = (r.status || 'PENDING').toUpperCase();
+      if (mode === 'DELETED') return st === 'DELETED';
+      if (mode === 'ARCHIVED') return st === 'ARCHIVED';
+      return st !== 'DELETED' && st !== 'ARCHIVED';
     });
-    bookings = list;
-    render();
-  }, err => console.warn('bookings listener', err));
-
-  // ---------- Filter + sort ----------
-  function filtered() {
-    let list = bookings.slice();
-    list = list.filter(b => {
-      const s = String(b.status || 'ACTIVE');
-      if (viewMode === 'ACTIVE') return s !== 'ARCHIVED' && s !== 'DELETED';
-      return s === viewMode;
-    });
-    const q = searchText.toLowerCase().trim();
-    if (q) {
-      list = list.filter(b =>
-        String(b.nama || '').toLowerCase().includes(q) ||
-        String(b.tel || '').includes(q) ||
-        String(b.siriBooking || '').toLowerCase().includes(q)
-      );
-    }
-    switch (sortOrder) {
-      case 'asc': list.sort((a, b) => num(a.timestamp) - num(b.timestamp)); break;
-      case 'az':  list.sort((a, b) => String(a.nama || '').localeCompare(String(b.nama || ''))); break;
-      case 'za':  list.sort((a, b) => String(b.nama || '').localeCompare(String(a.nama || ''))); break;
-      default:    list.sort((a, b) => num(b.timestamp) - num(a.timestamp));
-    }
-    return list;
   }
 
-  // ---------- Render ----------
-  function render() {
-    const arr = filtered();
-    const list = $('bkList'), empty = $('bkEmpty');
-    if (!arr.length) {
-      list.innerHTML = ''; empty.classList.remove('hidden'); return;
+  function refresh() {
+    let rows = filterByMode(ALL);
+    if (searchQ) {
+      const q = searchQ.toLowerCase();
+      rows = rows.filter((r) => (r.nama||'').toLowerCase().includes(q) || (r.tel||'').toLowerCase().includes(q) || (r.model||'').toLowerCase().includes(q) || (r.id||'').toLowerCase().includes(q));
     }
-    empty.classList.add('hidden');
-    list.innerHTML = arr.map(b => {
-      const deposit = num(b.deposit);
-      const hasPaid = deposit > 0;
-      const staff = b.staff || '';
-      const resit = String(b.resitUrl || '');
-      const tagStaff = staff ? `<span class="bk-card__tag c-yellow"><i class="fas fa-user-tag"></i>${esc(staff)}</span>` : '';
-      const viewResit = resit
-        ? `<button type="button" class="bk-card__resit-btn" data-img="${attr(resit)}"><i class="fas fa-receipt"></i> LIHAT RESIT</button>`
-        : '';
-      return `
-        <article class="bk-card" data-key="${attr(b.key)}">
-          <div class="bk-card__siri" data-print="${attr(b.key)}">
-            ${esc(b.siriBooking || '-')} <i class="fas fa-print"></i>
-          </div>
-          <div class="bk-card__row">
-            <span class="bk-card__nama">${esc(b.nama || '-')}</span>
-            <span class="bk-card__harga">${money(b.harga)}</span>
-            ${hasPaid ? '<span class="bk-card__paid">PAID</span>' : ''}
-          </div>
-          ${viewResit}
-          <div class="bk-card__tel" data-phone="${attr(b.key)}">
-            <i class="fas fa-phone"></i> ${esc(b.tel || '-')}
-          </div>
-          <div class="bk-card__item">${esc(b.item || '-')}</div>
-          <div class="bk-card__meta">
-            <span class="bk-card__date">${esc(fmtDate(b.tarikhBooking))}</span>
-            ${tagStaff}
-          </div>
-        </article>
-      `;
+    rows.sort((a,b) => {
+      if (sort === 'asc') return (a.created_at||'').localeCompare(b.created_at||'');
+      if (sort === 'az') return (a.nama||'').localeCompare(b.nama||'');
+      if (sort === 'za') return (b.nama||'').localeCompare(a.nama||'');
+      return (b.created_at||'').localeCompare(a.created_at||'');
+    });
+    $('bkEmpty').classList.toggle('hidden', rows.length > 0);
+    $('bkList').innerHTML = rows.map((r) => {
+      const notes = parseNotes(r.notes);
+      const st = (r.status || 'PENDING').toUpperCase();
+      return `<div class="bk-card" data-id="${r.id}">
+        <div class="bk-card__head">
+          <div><b>${r.nama || '—'}</b></div>
+          <span class="bk-card__status st-${st}">${st}</span>
+        </div>
+        <div class="bk-card__body">
+          <div><i class="fas fa-phone"></i> ${r.tel || '—'}</div>
+          <div><i class="fas fa-mobile"></i> ${r.model || '—'}</div>
+          <div><i class="fas fa-wrench"></i> ${r.kerosakan || '—'}</div>
+          <div><i class="fas fa-calendar"></i> ${fmtDate(r.created_at)}</div>
+          ${notes.harga ? `<div><i class="fas fa-money-bill"></i> ${fmtRM(notes.harga)}</div>` : ''}
+        </div>
+      </div>`;
     }).join('');
+    $('bkList').querySelectorAll('.bk-card').forEach((el) => {
+      el.addEventListener('click', () => openDetail(ALL.find((r) => r.id === el.dataset.id)));
+    });
   }
 
-  // ---------- List event delegation ----------
-  $('bkList').addEventListener('click', e => {
-    const print = e.target.closest('[data-print]');
-    if (print) { const b = bookings.find(x => x.key === print.dataset.print); if (b) showPrintModal(b); return; }
-    const phone = e.target.closest('[data-phone]');
-    if (phone) { const b = bookings.find(x => x.key === phone.dataset.phone); if (b) showPhone(b); return; }
-    const img = e.target.closest('[data-img]');
-    if (img) { showFullImage(img.dataset.img); return; }
-    const card = e.target.closest('.bk-card');
-    if (card) { const b = bookings.find(x => x.key === card.dataset.key); if (b) showDetail(b); }
-  });
-  $('bkList').addEventListener('contextmenu', e => {
-    const card = e.target.closest('.bk-card');
-    if (!card) return;
-    e.preventDefault();
-    const b = bookings.find(x => x.key === card.dataset.key);
-    if (b) showCardPopup(b);
-  });
-  // long-press (touch) for action popup
-  let lpTimer = null;
-  $('bkList').addEventListener('touchstart', e => {
-    const card = e.target.closest('.bk-card');
-    if (!card) return;
-    lpTimer = setTimeout(() => {
-      const b = bookings.find(x => x.key === card.dataset.key);
-      if (b) showCardPopup(b);
-    }, 550);
-  }, { passive: true });
-  $('bkList').addEventListener('touchend', () => clearTimeout(lpTimer));
-  $('bkList').addEventListener('touchmove', () => clearTimeout(lpTimer));
-
-  // ---------- Header controls ----------
-  $('bkTabs').addEventListener('click', e => {
-    const btn = e.target.closest('.bk-tab');
-    if (!btn) return;
-    $('bkTabs').querySelectorAll('.bk-tab').forEach(x => x.classList.remove('is-active'));
-    btn.classList.add('is-active');
-    viewMode = btn.dataset.mode;
-    render();
-  });
-  $('bkSearch').addEventListener('input', e => { searchText = e.target.value; render(); });
-  $('bkSort').addEventListener('change', e => { sortOrder = e.target.value; render(); });
-
-  // ---------- NEW BOOKING ----------
-  $('bkNewBtn').addEventListener('click', () => openAdd());
-
-  function populatePayInfo(container) {
-    const qr = branchSettings.bookingQrImageUrl || '';
-    const bt = branchSettings.bookingBankType || '';
-    const bn = branchSettings.bookingBankAccName || '';
-    const ba = branchSettings.bookingBankAccount || '';
-    let html = '';
-    if (qr) html += `<img src="${attr(qr)}" alt="qr">`;
-    if (!qr && !ba) html += `<div class="bk-paybox__empty">Belum ditetapkan — Sila set di ikon gear (⚙)</div>`;
-    if (bt) html += `<div class="bk-paybox__bank">${esc(bt)}</div>`;
-    if (bn) html += `<div class="bk-paybox__bankname">${esc(bn)}</div>`;
-    if (ba) html += `<div class="bk-paybox__acc" data-copy="${attr(ba)}">${esc(ba)} <i class="fas fa-copy"></i></div>`;
-    container.innerHTML = html;
+  function openDetail(row) {
+    if (!row) return;
+    const notes = parseNotes(row.notes);
+    const st = (row.status || 'PENDING').toUpperCase();
+    $('bkDetailTitle').querySelector('span').textContent = row.nama || '—';
+    $('bkDetailBody').innerHTML = `
+      <div class="bk-field"><label>TELEFON</label><div>${row.tel || '—'}</div></div>
+      <div class="bk-field"><label>MODEL / KEROSAKAN</label><div>${row.model || '—'} — ${row.kerosakan || '—'}</div></div>
+      <div class="bk-field"><label>HARGA</label><div>${fmtRM(notes.harga)}</div></div>
+      <div class="bk-field"><label>DEPOSIT / BAKI</label><div>${fmtRM(notes.deposit)} / ${fmtRM(notes.baki)}</div></div>
+      <div class="bk-field"><label>TARIKH CUST</label><div>${notes.tarikh_cust || '—'}</div></div>
+      <div class="bk-field"><label>STATUS</label>
+        <select id="dStatus" class="bk-input">
+          ${['PENDING','CONFIRMED','COMPLETED','ARCHIVED','DELETED'].map((s) => `<option value="${s}"${s===st?' selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div class="bk-modal__actions">
+        <button class="bk-btn c-primary" id="dPrint"><i class="fas fa-print"></i></button>
+        <button class="bk-btn c-whatsapp" id="dPhone"><i class="fas fa-phone"></i></button>
+        <button class="bk-btn c-yellow" id="dCourier"><i class="fas fa-truck"></i></button>
+        <button class="bk-btn c-blue" id="dImg"><i class="fas fa-image"></i></button>
+      </div>
+      <div class="bk-modal__actions">
+        <button class="btn-submit" id="dSave">SIMPAN</button>
+        <button class="btn-danger" id="dDel">PADAM</button>
+      </div>`;
+    $('bkDetailModal').classList.add('is-open');
+    $('dPrint').addEventListener('click', () => openPrintModal(row));
+    $('dPhone').addEventListener('click', () => openPhoneModal(row));
+    $('dCourier').addEventListener('click', () => { courierTargetId = row.id; renderCourierList(); $('bkCourierModal').classList.add('is-open'); });
+    $('dImg').addEventListener('click', () => {
+      const n = parseNotes(row.notes);
+      openImgViewer([row.qr_url, row.resit_url, n.resit_url, n.qr_url]);
+    });
+    $('dSave').addEventListener('click', async () => {
+      const { error } = await window.sb.from('bookings').update({ status: $('dStatus').value }).eq('id', row.id);
+      if (error) { toast('Gagal: ' + error.message); return; }
+      toast('Disimpan');
+      $('bkDetailModal').classList.remove('is-open');
+      ALL = await fetchBookings(); refresh();
+    });
+    $('dDel').addEventListener('click', async () => {
+      if (!confirm('Padam booking?')) return;
+      const { error } = await window.sb.from('bookings').update({ status: 'DELETED' }).eq('id', row.id);
+      if (error) { toast('Gagal: ' + error.message); return; }
+      toast('Dipadam');
+      $('bkDetailModal').classList.remove('is-open');
+      ALL = await fetchBookings(); refresh();
+    });
   }
 
-  let addResitUrl = '';
-  function openAdd() {
-    $('bkNama').value = ''; $('bkTel').value = '';
-    $('bkItem').value = ''; $('bkHarga').value = '0';
-    $('bkDeposit').value = '0'; $('bkBaki').value = '0';
-    $('bkTarikhCust').value = '';
-    addResitUrl = '';
-    refreshStaffSelect();
-    if ($('bkStaff')) $('bkStaff').value = '';
-    // payment info
-    populatePayInfo($('bkAddPayInfo'));
-    // reset resit box
+  // Tabs
+  document.querySelectorAll('#bkTabs .bk-tab').forEach((t) => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('#bkTabs .bk-tab').forEach((x) => x.classList.remove('is-active'));
+      t.classList.add('is-active');
+      mode = t.dataset.mode;
+      refresh();
+    });
+  });
+
+  $('bkSearch').addEventListener('input', (e) => { searchQ = e.target.value; refresh(); });
+  $('bkSort').addEventListener('change', (e) => { sort = e.target.value; refresh(); });
+
+  // Close handlers
+  document.querySelectorAll('[data-close]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const id = b.dataset.close;
+      if (id) $(id).classList.remove('is-open');
+    });
+  });
+
+  // Add modal
+  $('bkNewBtn').addEventListener('click', () => {
+    ['bkNama','bkTel','bkItem','bkTarikhCust'].forEach((k) => { if ($(k)) $(k).value = ''; });
+    ['bkHarga','bkDeposit','bkBaki'].forEach((k) => { if ($(k)) $(k).value = '0'; });
+    currentResitUrl = null;
     const box = $('bkAddResitBox');
-    box.classList.remove('has-img');
-    box.querySelector('.bk-upload__empty').classList.remove('hidden');
-    box.querySelector('.bk-upload__preview').classList.add('hidden');
-    openModal('bkAddModal');
-  }
-
-  $('bkHarga').addEventListener('input', () => kiraBaki($('bkHarga'), $('bkDeposit'), $('bkBaki')));
-  $('bkDeposit').addEventListener('input', () => kiraBaki($('bkHarga'), $('bkDeposit'), $('bkBaki')));
-
-  $('bkAddResit').addEventListener('change', async e => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const url = await uploadResit(f);
-    if (!url) return;
-    addResitUrl = url;
-    const box = $('bkAddResitBox');
-    box.classList.add('has-img');
-    box.querySelector('.bk-upload__empty').classList.add('hidden');
-    const prev = box.querySelector('.bk-upload__preview');
-    prev.classList.remove('hidden');
-    prev.querySelector('img').src = url;
-  });
-
-  // click-to-copy account number (delegated)
-  document.addEventListener('click', e => {
-    const cp = e.target.closest('[data-copy]');
-    if (cp) {
-      navigator.clipboard.writeText(cp.dataset.copy).then(() => toast('No akaun disalin!'));
+    if (box) {
+      const empty = box.querySelector('.bk-upload__empty');
+      const preview = box.querySelector('.bk-upload__preview');
+      if (empty) empty.classList.remove('hidden');
+      if (preview) preview.classList.add('hidden');
     }
+    $('bkAddModal').classList.add('is-open');
   });
+
+  function recalcBaki() {
+    const h = Number($('bkHarga').value) || 0;
+    const d = Number($('bkDeposit').value) || 0;
+    $('bkBaki').value = Math.max(0, h - d).toFixed(2);
+  }
+  $('bkHarga').addEventListener('input', recalcBaki);
+  $('bkDeposit').addEventListener('input', recalcBaki);
 
   $('bkAddSave').addEventListener('click', async () => {
-    const nama = $('bkNama').value.trim().toUpperCase();
+    const nama = $('bkNama').value.trim();
     const tel = $('bkTel').value.trim();
-    const item = $('bkItem').value.trim().toUpperCase();
-    if (!nama || !tel || !item) { toast('Sila isi maklumat', true); return; }
-    const siri = 'BKG-' + String(Date.now()).slice(7);
-    const harga = num($('bkHarga').value);
-    const deposit = num($('bkDeposit').value);
-    const baki = Math.max(0, harga - deposit);
-    const staff = $('bkStaff') ? $('bkStaff').value : '';
-    const now = new Date();
-    const tarikhBooking = now.toISOString().slice(0, 16); // yyyy-MM-ddTHH:mm
-    const rec = {
-      shopID, siriBooking: siri, nama, tel, item, staff,
-      tarikhBooking,
-      tarikhCustDatang: $('bkTarikhCust').value.trim(),
-      harga, deposit, baki,
-      status: 'ACTIVE', kurier: 'TIADA', tracking_no: '', tracking_status: 'MENUNGGU PROSES',
-      timestamp: Date.now(),
-      resitUrl: addResitUrl || '',
-      pdfUrl_INVOICE: '', pdfUrl_QUOTATION: '',
+    const item = $('bkItem').value.trim();
+    if (!nama || !tel || !item) { toast('Nama, tel, item wajib'); return; }
+    const harga = Number($('bkHarga').value) || 0;
+    const deposit = Number($('bkDeposit').value) || 0;
+    const notes = {
+      harga, deposit, baki: Math.max(0, harga - deposit),
+      tarikh_cust: $('bkTarikhCust').value || null,
+      resit_url: currentResitUrl || null,
     };
-    try {
-      await db.collection('bookings_' + ownerID).add(rec);
-      // push notify
-      fetch(NOTIF_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ownerID, shopID, customerName: nama, item, siriBooking: siri }),
-      }).catch(() => {});
-      closeModal('bkAddModal');
-      toast('Booking #' + siri + ' berjaya!');
-    } catch (e) {
-      toast('Gagal simpan: ' + e.message, true);
-    }
+    // split item into model + kerosakan (first part before "-")
+    let model = item, kerosakan = '';
+    const dash = item.indexOf('-');
+    if (dash > 0) { model = item.slice(0, dash).trim(); kerosakan = item.slice(dash + 1).trim(); }
+
+    const { error } = await window.sb.from('bookings').insert({
+      tenant_id: ctx.tenant_id,
+      branch_id: branchId,
+      nama, tel, model, kerosakan,
+      status: 'PENDING',
+      notes: JSON.stringify(notes),
+    });
+    if (error) { toast('Gagal: ' + error.message); return; }
+    toast('Booking disimpan');
+    $('bkAddModal').classList.remove('is-open');
+    ALL = await fetchBookings(); refresh();
   });
 
-  // ---------- UPLOAD RESIT ----------
-  async function uploadResit(file) {
-    try {
-      toast('Uploading resit...');
-      const ref = storage.ref().child(`booking_resit/${ownerID}/${Date.now()}.jpg`);
-      await ref.put(file, { contentType: file.type || 'image/jpeg' });
-      return await ref.getDownloadURL();
-    } catch (e) {
-      toast('Gagal upload: ' + e.message, true);
-      return null;
+  // ── Branch QR load/upload ────────────────────────────────
+  let branchRow = null;
+  async function loadBranchQr() {
+    const { data } = await window.sb.from('branches').select('*').eq('id', branchId).single();
+    branchRow = data || {};
+    const extras = (branchRow.extras && typeof branchRow.extras === 'object') ? branchRow.extras : {};
+    currentQrUrl = extras.bookingQr || null;
+    renderQrPreview();
+    renderPayInfo();
+    if (extras.bank_type) $('bkBankType').value = extras.bank_type;
+    if (extras.bank_name) $('bkBankName').value = extras.bank_name;
+    if (extras.bank_acc) $('bkBankAcc').value = extras.bank_acc;
+  }
+  function renderQrPreview() {
+    const box = $('bkQrBox'); if (!box) return;
+    const empty = box.querySelector('.bk-upload__empty');
+    const preview = box.querySelector('.bk-upload__preview');
+    const img = preview && preview.querySelector('img');
+    if (currentQrUrl) {
+      if (empty) empty.classList.add('hidden');
+      if (preview) preview.classList.remove('hidden');
+      if (img) img.src = currentQrUrl;
+      if ($('bkQrDel')) $('bkQrDel').classList.remove('hidden');
+    } else {
+      if (empty) empty.classList.remove('hidden');
+      if (preview) preview.classList.add('hidden');
+      if ($('bkQrDel')) $('bkQrDel').classList.add('hidden');
     }
   }
-
-  // ---------- GEAR (Payment Settings) ----------
-  $('bkGearBtn').addEventListener('click', () => openGear());
-
-  let gearQr = '';
-  function openGear() {
-    gearQr = branchSettings.bookingQrImageUrl || '';
-    $('bkBankType').value = branchSettings.bookingBankType || '';
-    $('bkBankName').value = branchSettings.bookingBankAccName || '';
-    $('bkBankAcc').value  = branchSettings.bookingBankAccount || '';
-    renderGearQr();
-    openModal('bkGearModal');
+  function renderPayInfo() {
+    const box = $('bkAddPayInfo'); if (!box) return;
+    const extras = (branchRow && branchRow.extras) || {};
+    if (!currentQrUrl && !extras.bank_type) {
+      box.innerHTML = '<div class="bk-paybox__empty">Belum ditetapkan — Sila set di ikon gear (⚙)</div>';
+      return;
+    }
+    box.innerHTML = `
+      ${currentQrUrl ? `<img src="${currentQrUrl}" style="max-width:120px;border-radius:8px;">` : ''}
+      ${extras.bank_type ? `<div><b>${extras.bank_type}</b></div>` : ''}
+      ${extras.bank_name ? `<div>${extras.bank_name}</div>` : ''}
+      ${extras.bank_acc ? `<div>${extras.bank_acc}</div>` : ''}`;
   }
 
-  function renderGearQr() {
+  // QR upload via hidden input click (input sits inside label#bkQrBox — triggers natively).
+  // Override: intercept change to use Storage instead of raw file.
+  const qrInput = $('bkQrFile');
+  if (qrInput) qrInput.addEventListener('change', async (e) => {
+    e.preventDefault();
+    const f = qrInput.files && qrInput.files[0];
+    if (!f) return;
+    if (!window.SupabaseStorage) { toast('Storage helper missing'); return; }
+    const shopCode = (branchRow && (branchRow.shop_code || branchRow.id)) || 'shop';
     const box = $('bkQrBox');
     const empty = box.querySelector('.bk-upload__empty');
-    const prev = box.querySelector('.bk-upload__preview');
-    const del = $('bkQrDel');
-    if (gearQr) {
-      box.classList.add('has-img');
-      empty.classList.add('hidden');
-      prev.classList.remove('hidden');
-      prev.querySelector('img').src = gearQr;
-      del.classList.remove('hidden');
-    } else {
-      box.classList.remove('has-img');
-      empty.classList.remove('hidden');
-      prev.classList.add('hidden');
-      del.classList.add('hidden');
+    if (empty) empty.innerHTML = '<span>UPLOADING...</span>';
+    try {
+      const blob = await window.SupabaseStorage.resizeImage(f, 1280, 0.85);
+      const path = `${ownerID}/${shopCode}/qr_${Date.now()}.jpg`;
+      const url = await window.SupabaseStorage.uploadFile({ bucket: 'booking_settings', path, file: blob, contentType: 'image/jpeg' });
+      currentQrUrl = url;
+      renderQrPreview();
+    } catch (err) {
+      toast('Upload gagal: ' + err.message);
+    } finally {
+      qrInput.value = '';
+      if (empty) empty.innerHTML = '<i class="fas fa-cloud-arrow-up"></i><span>Upload Gambar QR</span>';
     }
-  }
+  });
+  if ($('bkQrDel')) $('bkQrDel').addEventListener('click', () => {
+    currentQrUrl = null;
+    renderQrPreview();
+  });
 
-  $('bkQrFile').addEventListener('change', async e => {
-    const f = e.target.files[0];
+  // Receipt upload for add modal
+  const resitInput = $('bkAddResit');
+  if (resitInput) resitInput.addEventListener('change', async (e) => {
+    const f = resitInput.files && resitInput.files[0];
     if (!f) return;
+    if (!window.SupabaseStorage) { toast('Storage helper missing'); return; }
+    const box = $('bkAddResitBox');
+    const empty = box && box.querySelector('.bk-upload__empty');
+    const preview = box && box.querySelector('.bk-upload__preview');
+    const img = preview && preview.querySelector('img');
+    if (empty) empty.innerHTML = '<span>UPLOADING...</span>';
     try {
-      toast('Uploading QR...');
-      const ref = storage.ref().child(`booking_settings/${ownerID}/${shopID}/qr_${Date.now()}.jpg`);
-      await ref.put(f, { contentType: f.type || 'image/jpeg' });
-      gearQr = await ref.getDownloadURL();
-      renderGearQr();
-      toast('QR berjaya dimuat naik');
-    } catch (err) { toast('Gagal upload: ' + err.message, true); }
-  });
-
-  $('bkQrDel').addEventListener('click', () => { gearQr = ''; renderGearQr(); });
-
-  $('bkGearSave').addEventListener('click', async () => {
-    const data = {
-      bookingQrImageUrl: gearQr,
-      bookingBankType: $('bkBankType').value.trim().toUpperCase(),
-      bookingBankAccName: $('bkBankName').value.trim().toUpperCase(),
-      bookingBankAccount: $('bkBankAcc').value.trim(),
-    };
-    try {
-      await db.collection('shops_' + ownerID).doc(shopID).set(data, { merge: true });
-      Object.assign(branchSettings, data);
-      closeModal('bkGearModal');
-      toast('Tetapan pembayaran disimpan');
-    } catch (e) { toast('Gagal simpan: ' + e.message, true); }
-  });
-
-  // ---------- COURIER ----------
-  $('bkCourierBtn').addEventListener('click', () => openCourier());
-
-  function openCourier() { $('bkNewCourier').value = ''; renderCourierList(); openModal('bkCourierModal'); }
-
-  function renderCourierList() {
-    $('bkCourierList').innerHTML = courierList.filter(k => k !== 'TIADA').map(k =>
-      `<div class="bk-courier-list__item">
-        <span>${esc(k)}</span>
-        <button type="button" class="bk-courier-list__del" data-k="${attr(k)}"><i class="fas fa-trash"></i></button>
-      </div>`).join('') || '<div class="bk-note">Tiada kurier. Tambah di atas.</div>';
-  }
-
-  $('bkAddCourier').addEventListener('click', async () => {
-    const v = $('bkNewCourier').value.trim().toUpperCase();
-    if (!v || courierList.includes(v)) return;
-    courierList.push(v);
-    $('bkNewCourier').value = '';
-    await db.collection('shops_' + ownerID).doc(shopID).set({ courierList }, { merge: true });
-    renderCourierList();
-  });
-
-  $('bkCourierList').addEventListener('click', async e => {
-    const btn = e.target.closest('[data-k]');
-    if (!btn) return;
-    courierList = courierList.filter(x => x !== btn.dataset.k);
-    await db.collection('shops_' + ownerID).doc(shopID).set({ courierList }, { merge: true });
-    renderCourierList();
-  });
-
-  // ---------- DETAIL ----------
-  function showDetail(b) {
-    const kurierOpts = courierList.map(k => `<option ${k === (b.kurier || 'TIADA') ? 'selected' : ''} value="${attr(k)}">${esc(k)}</option>`).join('');
-    const statusList = ['MENUNGGU PROSES', 'DALAM PERJALANAN', 'BARANG SAMPAI', 'COMPLETED'];
-    const statusOpts = statusList.map(s => `<option ${s === (b.tracking_status || 'MENUNGGU PROSES') ? 'selected' : ''} value="${attr(s)}">${esc(s)}</option>`).join('');
-    const resit = String(b.resitUrl || '');
-
-    $('bkDetailTitle').innerHTML = `<i class="fas fa-user-astronaut"></i><span></span>`;
-    $('bkDetailBody').innerHTML = `
-      <div class="bk-detail-avatar">
-        <div class="bk-detail-avatar__circle"><i class="fas fa-user-astronaut"></i></div>
-        <div class="bk-detail-avatar__name">${esc(b.nama || '-')}</div>
-        <div class="bk-detail-avatar__siri">${esc(b.siriBooking || '-')}</div>
-      </div>
-
-      <div class="bk-section c-primary">
-        <div class="bk-section__title c-primary"><i class="fas fa-money-bill"></i> MAKLUMAT BAYARAN</div>
-        <div class="bk-pay-grid">
-          <div class="bk-field"><label>HARGA (RM)</label><input id="bkDHarga" type="number" step="0.01" class="bk-input" value="${num(b.harga).toFixed(2)}"></div>
-          <div class="bk-field"><label>DEPOSIT (RM)</label><input id="bkDDeposit" type="number" step="0.01" class="bk-input" value="${num(b.deposit).toFixed(2)}"></div>
-          <div class="bk-field"><label>BAKI (RM)</label><input id="bkDBaki" type="number" class="bk-input" value="${num(b.baki).toFixed(2)}" readonly></div>
-        </div>
-        <button type="button" class="bk-btn c-primary" id="bkDSavePay"><i class="fas fa-floppy-disk"></i> SIMPAN BAYARAN</button>
-      </div>
-
-      <div class="bk-section ${resit ? 'c-green' : 'c-muted'}">
-        <div class="bk-section__title ${resit ? 'c-green' : 'c-muted'}" style="display:flex;justify-content:space-between;align-items:center">
-          <span><i class="fas fa-receipt"></i> RESIT PEMBAYARAN</span>
-          <label class="bk-btn c-cyan" style="width:auto;padding:6px 10px;font-size:10px;cursor:pointer">
-            <input type="file" id="bkDResitFile" accept="image/*" hidden>
-            <i class="fas fa-cloud-arrow-up"></i> ${resit ? 'Tukar' : 'Upload'}
-          </label>
-        </div>
-        <div class="bk-detail-resit">
-          ${resit
-            ? `<img src="${attr(resit)}" data-img="${attr(resit)}" alt="resit"><div class="bk-note" style="text-align:center">Tekan gambar untuk lihat penuh</div>`
-            : `<div class="bk-note">Customer belum upload resit</div>`}
-        </div>
-      </div>
-
-      <div class="bk-section c-yellow">
-        <div class="bk-section__title c-yellow"><i class="fas fa-truck"></i> PENGURUSAN TRACKING</div>
-        <div class="bk-field"><label>JENIS KURIER</label><select id="bkDKurier" class="bk-input">${kurierOpts}</select></div>
-        <div class="bk-field"><label>NO TRACKING</label><input id="bkDTrack" type="text" class="bk-input bk-caps" value="${attr(b.tracking_no || '')}" placeholder="Isi no tracking..."></div>
-        <div class="bk-field"><label>STATUS SEMASA</label><select id="bkDStatus" class="bk-input">${statusOpts}</select></div>
-      </div>
-
-      <button type="button" class="bk-btn c-primary-soft" id="bkDSaveTrack"><i class="fas fa-arrows-rotate"></i> KEMASKINI TRACKING</button>
-
-      <div class="bk-row">
-        <button type="button" class="bk-btn c-green" id="bkDWa"><i class="fab fa-whatsapp"></i> WHATSAPP</button>
-        <button type="button" class="bk-btn c-red" id="bkDDel"><i class="fas fa-trash-can"></i> DELETE</button>
-      </div>
-    `;
-
-    openModal('bkDetailModal');
-
-    // wire events
-    const hargaEl = $('bkDHarga'), depEl = $('bkDDeposit'), bakiEl = $('bkDBaki');
-    hargaEl.addEventListener('input', () => kiraBaki(hargaEl, depEl, bakiEl));
-    depEl.addEventListener('input', () => kiraBaki(hargaEl, depEl, bakiEl));
-
-    $('bkDSavePay').addEventListener('click', async () => {
-      await db.collection('bookings_' + ownerID).doc(b.key).update({
-        harga: num(hargaEl.value), deposit: num(depEl.value), baki: num(bakiEl.value),
-      });
-      toast('Bayaran dikemaskini');
-    });
-
-    $('bkDResitFile').addEventListener('change', async e => {
-      const f = e.target.files[0];
-      if (!f) return;
-      const url = await uploadResit(f);
-      if (!url) return;
-      await db.collection('bookings_' + ownerID).doc(b.key).update({ resitUrl: url });
-      b.resitUrl = url;
-      showDetail(b); // refresh
-      toast('Resit berjaya dimuat naik');
-    });
-
-    $('bkDSaveTrack').addEventListener('click', async () => {
-      await db.collection('bookings_' + ownerID).doc(b.key).update({
-        kurier: $('bkDKurier').value,
-        tracking_no: $('bkDTrack').value.trim().toUpperCase(),
-        tracking_status: $('bkDStatus').value,
-      });
-      closeModal('bkDetailModal');
-      toast('Tracking dikemaskini');
-    });
-
-    $('bkDWa').addEventListener('click', () => sendWhatsApp(b));
-    $('bkDDel').addEventListener('click', () => {
-      confirmDialog(`Padam ${b.nama}?`, 'Rekod akan dibuang dari Firestore.', async () => {
-        await db.collection('bookings_' + ownerID).doc(b.key).delete();
-        closeModal('bkDetailModal');
-        toast('Booking dipadam');
-      });
-    });
-  }
-
-  function sendWhatsApp(b) {
-    const wa = waFormat(b.tel);
-    const msg = `Salam ${b.nama || ''},\n\n*No Tempahan:* ${b.siriBooking || ''}\n*Item:* ${b.item || ''}\n*Harga:* RM${num(b.harga).toFixed(2)}\n*Deposit:* RM${num(b.deposit).toFixed(2)}\n*Baki:* RM${num(b.baki).toFixed(2)}\n\nTerima Kasih.`;
-    window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank');
-  }
-
-  // ---------- PHONE MODAL ----------
-  function showPhone(b) {
-    $('bkPhoneText').textContent = b.tel || '-';
-    $('bkPhoneCall').onclick = () => { closeModal('bkPhoneModal'); window.location.href = 'tel:' + b.tel; };
-    $('bkPhoneWa').onclick = () => { closeModal('bkPhoneModal'); window.open('https://wa.me/' + waFormat(b.tel), '_blank'); };
-    openModal('bkPhoneModal');
-  }
-
-  // ---------- ACTION POPUP ----------
-  function showCardPopup(b) {
-    $('bkActionTitle').textContent = String(b.nama || '-').toUpperCase();
-    let html = '';
-    const setStatus = async (s, msg) => {
-      await db.collection('bookings_' + ownerID).doc(b.key).update({ status: s });
-      closeModal('bkActionModal'); toast(msg);
-    };
-    if (viewMode === 'ACTIVE') {
-      html += `<button type="button" class="bk-action-tile c-yellow" data-act="archive"><i class="fas fa-box-archive"></i> Arkib</button>`;
-      html += `<button type="button" class="bk-action-tile c-red" data-act="soft-del"><i class="fas fa-trash-can"></i> Padam</button>`;
-    } else if (viewMode === 'ARCHIVED') {
-      html += `<button type="button" class="bk-action-tile c-primary" data-act="restore"><i class="fas fa-arrow-rotate-left"></i> Pulihkan</button>`;
-    } else if (viewMode === 'DELETED') {
-      html += `<button type="button" class="bk-action-tile c-primary" data-act="restore"><i class="fas fa-arrow-rotate-left"></i> Pulihkan</button>`;
-      html += `<button type="button" class="bk-action-tile c-red" data-act="hard-del"><i class="fas fa-trash-can"></i> Padam Kekal</button>`;
+      const blob = await window.SupabaseStorage.resizeImage(f, 1280, 0.85);
+      const path = `${ownerID}/receipts/${Date.now()}.jpg`;
+      const url = await window.SupabaseStorage.uploadFile({ bucket: 'booking_settings', path, file: blob, contentType: 'image/jpeg' });
+      currentResitUrl = url;
+      if (empty) empty.classList.add('hidden');
+      if (preview) { preview.classList.remove('hidden'); if (img) img.src = url; }
+    } catch (err) {
+      toast('Upload gagal: ' + err.message);
+    } finally {
+      resitInput.value = '';
+      if (empty) empty.innerHTML = '<i class="fas fa-cloud-arrow-up"></i><span>Tekan untuk upload resit</span>';
     }
-    $('bkActionBody').innerHTML = html;
-    $('bkActionBody').onclick = async e => {
-      const btn = e.target.closest('[data-act]');
-      if (!btn) return;
-      const act = btn.dataset.act;
-      if (act === 'archive') return setStatus('ARCHIVED', 'Booking diarkibkan');
-      if (act === 'soft-del') return setStatus('DELETED', 'Booking dialih ke sampah');
-      if (act === 'restore') return setStatus('ACTIVE', 'Booking dipulihkan');
-      if (act === 'hard-del') {
-        closeModal('bkActionModal');
-        confirmDialog(`Padam kekal ${b.nama}?`, 'Tindakan ini tidak boleh dibatalkan.', async () => {
-          await db.collection('bookings_' + ownerID).doc(b.key).delete();
-          toast('Booking dipadam kekal');
-        });
+  });
+
+  // ── Courier list (stored in branch.extras.courierList) ──────────
+  const DEFAULT_COURIERS = ['J&T EXPRESS', 'POSLAJU', 'NINJAVAN', 'LALAMOVE', 'DHL', 'SKYNET', 'POS EKSPRES'];
+  function getCourierList() {
+    const extras = (branchRow && branchRow.extras && typeof branchRow.extras === 'object') ? branchRow.extras : {};
+    const list = Array.isArray(extras.courierList) ? extras.courierList.slice() : DEFAULT_COURIERS.slice();
+    return list;
+  }
+  async function saveCourierList(list) {
+    const extras = (branchRow && branchRow.extras && typeof branchRow.extras === 'object') ? { ...branchRow.extras } : {};
+    extras.courierList = list;
+    const { error } = await window.sb.from('branches').update({ extras }).eq('id', branchId);
+    if (error) throw error;
+    if (branchRow) branchRow.extras = extras;
+  }
+  function renderCourierList() {
+    const wrap = $('bkCourierList'); if (!wrap) return;
+    const list = getCourierList();
+    wrap.innerHTML = list.map((k, i) => `
+      <div class="bk-courier-row">
+        <span class="bk-courier-name" data-pick="${i}">${k}</span>
+        <button type="button" class="bk-hbtn c-red bk-courier-del" data-del="${i}"><i class="fas fa-trash"></i></button>
+      </div>`).join('') || '<div class="bk-empty-mini">Tiada kurier</div>';
+    wrap.querySelectorAll('[data-pick]').forEach((el) => {
+      el.addEventListener('click', () => {
+        const idx = Number(el.dataset.pick);
+        const name = getCourierList()[idx];
+        if (!name) return;
+        pickCourierForCurrent(name);
+      });
+    });
+    wrap.querySelectorAll('[data-del]').forEach((el) => {
+      el.addEventListener('click', async () => {
+        const idx = Number(el.dataset.del);
+        const list = getCourierList();
+        list.splice(idx, 1);
+        try { await saveCourierList(list); renderCourierList(); } catch (e) { toast('Gagal: ' + e.message); }
+      });
+    });
+  }
+  let courierTargetId = null; // booking row id to apply courier to (optional)
+  function pickCourierForCurrent(name) {
+    if (!courierTargetId) { toast('Kurier dipilih: ' + name); $('bkCourierModal').classList.remove('is-open'); return; }
+    const row = ALL.find((r) => r.id === courierTargetId);
+    if (!row) return;
+    const notes = parseNotes(row.notes);
+    notes.courier = name;
+    // optional tracking URL template per courier
+    const trackMap = {
+      'J&T EXPRESS': 'https://www.jtexpress.my/index/query/gzquery.html',
+      'POSLAJU': 'https://www.pos.com.my/postal-services/quick-access/?track-trace',
+      'NINJAVAN': 'https://www.ninjavan.co/en-my/tracking',
+      'LALAMOVE': 'https://www.lalamove.com/en-my/',
+      'DHL': 'https://www.dhl.com/my-en/home/tracking.html',
+      'SKYNET': 'https://www.skynet.com.my/tracking',
+      'POS EKSPRES': 'https://www.pos.com.my/postal-services/quick-access/?track-trace',
+    };
+    notes.courier_track = trackMap[name] || null;
+    window.sb.from('bookings').update({ notes: JSON.stringify(notes) }).eq('id', row.id).then(({ error }) => {
+      if (error) { toast('Gagal: ' + error.message); return; }
+      toast('Kurier: ' + name);
+      $('bkCourierModal').classList.remove('is-open');
+      fetchBookings().then((d) => { ALL = d; refresh(); });
+    });
+  }
+  $('bkAddCourier') && $('bkAddCourier').addEventListener('click', async () => {
+    const inp = $('bkNewCourier'); if (!inp) return;
+    const v = (inp.value || '').trim().toUpperCase();
+    if (!v) return;
+    const list = getCourierList();
+    if (list.includes(v)) { toast('Sudah wujud'); return; }
+    list.push(v);
+    try { await saveCourierList(list); inp.value = ''; renderCourierList(); } catch (e) { toast('Gagal: ' + e.message); }
+  });
+
+  // ── Print modal ─────────────────────────────────────────────
+  function bookingToJob(row) {
+    const notes = parseNotes(row.notes);
+    const items = Array.isArray(notes.items) && notes.items.length
+      ? notes.items
+      : [{ nama: [row.model, row.kerosakan].filter(Boolean).join(' - ') || '-', qty: 1, harga: Number(notes.harga) || 0 }];
+    const total = Number(notes.harga) || items.reduce((s, x) => s + (Number(x.harga) || 0) * (Number(x.qty) || 1), 0);
+    return {
+      siri: row.id ? ('BK-' + String(row.id).slice(0, 8).toUpperCase()) : '-',
+      nama: row.nama || '-',
+      tel: row.tel || '-',
+      model: row.model || '-',
+      kerosakan: row.kerosakan || '-',
+      tarikh: row.created_at,
+      items_array: items,
+      harga: total,
+      total: total,
+      payment_status: (Number(notes.deposit) || 0) > 0 ? 'PAID' : 'UNPAID',
+    };
+  }
+  function openPrintModal(row) {
+    if (!row) return;
+    const job = bookingToJob(row);
+    $('bkPrintSiri').textContent = '#' + job.siri;
+    const P = window.RmsPrinter;
+    const connected = P && P.isConnected && P.isConnected();
+    const body = $('bkPrintBody');
+    body.innerHTML = `
+      <button type="button" class="bk-btn c-blue" id="bkPrintReceipt">
+        <i class="fas fa-receipt"></i> RESIT 80MM
+        <small style="display:block;opacity:.7;font-size:9px;">${connected ? 'Printer tersambung' : 'Printer tidak disambung'}</small>
+      </button>`;
+    $('bkPrintModal').classList.add('is-open');
+    $('bkPrintReceipt').addEventListener('click', async () => {
+      if (!P || !P.isConnected || !P.isConnected()) { toast('Printer tidak disambung'); return; }
+      const shop = {
+        shopName: (branchRow && (branchRow.name || branchRow.shop_name)) || 'RMS PRO',
+        address: (branchRow && branchRow.address) || '',
+        phone: (branchRow && branchRow.phone) || '',
+      };
+      try { await P.printReceipt(job, shop); toast('Cetak dihantar'); $('bkPrintModal').classList.remove('is-open'); }
+      catch (e) { toast('Gagal cetak: ' + e.message); }
+    });
+  }
+
+  // ── Phone modal ─────────────────────────────────────────────
+  function openPhoneModal(row) {
+    if (!row) return;
+    const tel = (row.tel || '').toString();
+    if (!tel) { toast('Tiada nombor'); return; }
+    let wa = tel.replace(/[^0-9]/g, '');
+    if (wa.startsWith('0')) wa = '6' + wa;
+    $('bkPhoneText').innerHTML = '<i class="fas fa-phone"></i> ' + tel;
+    $('bkPhoneModal').classList.add('is-open');
+    const call = $('bkPhoneCall');
+    const waBtn = $('bkPhoneWa');
+    call.onclick = () => { window.location.href = 'tel:' + tel.replace(/\s+/g, ''); };
+    waBtn.onclick = () => {
+      const notes = parseNotes(row.notes);
+      const harga = (Number(notes.harga) || 0).toFixed(2);
+      const deposit = (Number(notes.deposit) || 0).toFixed(2);
+      const baki = (Number(notes.baki) || 0).toFixed(2);
+      const siri = row.id ? ('BK-' + String(row.id).slice(0, 8).toUpperCase()) : '-';
+      const msg = `Salam ${row.nama || ''},\n\n*No Tempahan:* ${siri}\n*Item:* ${row.model || '-'} ${row.kerosakan ? '- ' + row.kerosakan : ''}\n*Harga:* RM${harga}\n*Deposit:* RM${deposit}\n*Baki:* RM${baki}\n\nTerima Kasih.`;
+      window.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(msg), '_blank');
+    };
+  }
+
+  // ── Image viewer ────────────────────────────────────────────
+  function openImgViewer(urls) {
+    const arr = (Array.isArray(urls) ? urls : [urls]).filter(Boolean);
+    if (!arr.length) { toast('Tiada imej'); return; }
+    const v = $('bkImgViewer');
+    const img = v.querySelector('img');
+    let idx = 0;
+    const render = () => { img.src = arr[idx]; };
+    render();
+    v.classList.remove('hidden');
+    v.onclick = (e) => {
+      // click right half = next, left half = prev, outside image = close
+      if (e.target === img) {
+        const rect = img.getBoundingClientRect();
+        if (e.clientX - rect.left > rect.width / 2) idx = (idx + 1) % arr.length;
+        else idx = (idx - 1 + arr.length) % arr.length;
+        render();
+      } else {
+        v.classList.add('hidden');
       }
     };
-    openModal('bkActionModal');
   }
 
-  // ---------- CONFIRM DIALOG ----------
-  function confirmDialog(title, msg, onOk) {
-    $('bkConfirmTitle').textContent = title;
-    $('bkConfirmMsg').textContent = msg;
-    $('bkConfirmOk').onclick = async () => { closeModal('bkConfirmModal'); await onOk(); };
-    openModal('bkConfirmModal');
-  }
+  // expose for inline handlers
+  window.bkOpenPhone = (id) => openPhoneModal(ALL.find((r) => r.id === id));
+  window.bkOpenPrint = (id) => openPrintModal(ALL.find((r) => r.id === id));
+  window.bkOpenImg = (id) => {
+    const r = ALL.find((x) => x.id === id); if (!r) return;
+    const notes = parseNotes(r.notes);
+    openImgViewer([r.qr_url, r.resit_url, notes.resit_url, notes.qr_url]);
+  };
+  window.bkOpenCourier = (id) => {
+    courierTargetId = id || null;
+    renderCourierList();
+    $('bkCourierModal').classList.add('is-open');
+  };
 
-  // ---------- FULL IMAGE ----------
-  function showFullImage(url) {
-    const v = $('bkImgViewer');
-    v.querySelector('img').src = url;
-    v.classList.remove('hidden');
-  }
-  $('bkImgViewer').addEventListener('click', () => $('bkImgViewer').classList.add('hidden'));
-
-  // ---------- PRINT ----------
-  function showPrintModal(b) {
-    const siri = b.siriBooking || '-';
-    $('bkPrintSiri').textContent = '#' + siri;
-    const hasInvoice = !!(b.pdfUrl_INVOICE);
-    const hasQuote = !!(b.pdfUrl_QUOTATION);
-    const btn = (cls, icon, title, desc) =>
-      `<button type="button" class="bk-print-item c-${cls}">
-        <span class="bk-print-item__icon"><i class="fas ${icon}"></i></span>
-        <span class="bk-print-item__text">
-          <span class="bk-print-item__title">${esc(title)}</span>
-          <span class="bk-print-item__desc">${esc(desc)}</span>
-        </span>
-        <i class="fas fa-chevron-right bk-print-item__chev"></i>
-      </button>`;
-    const items = [];
-    items.push({ html: btn('blue', 'fa-receipt', 'RESIT 80MM', 'Cetak thermal (Bluetooth) — web tidak disokong'), act: 'thermal' });
-    items.push(hasInvoice
-      ? { html: btn('green', 'fa-eye', 'VIEW BOOKING', 'Sudah dijana - tekan untuk buka'), act: 'view-inv' }
-      : { html: btn('green', 'fa-file-pdf', 'GENERATE BOOKING', 'Jana booking A4 PDF'), act: 'gen-inv' });
-    items.push(hasQuote
-      ? { html: btn('yellow', 'fa-eye', 'VIEW QUOTATION', 'Sudah dijana - tekan untuk buka'), act: 'view-quo' }
-      : { html: btn('yellow', 'fa-file-lines', 'GENERATE QUOTATION', 'Jana sebut harga A4 PDF'), act: 'gen-quo' });
-
-    $('bkPrintBody').innerHTML = items.map(x => x.html).join('');
-    const buttons = $('bkPrintBody').querySelectorAll('.bk-print-item');
-    buttons.forEach((el, i) => {
-      el.onclick = () => {
-        const act = items[i].act;
-        closeModal('bkPrintModal');
-        if (act === 'thermal') toast('Thermal print tidak disokong di web', true);
-        else if (act === 'view-inv') window.open(b.pdfUrl_INVOICE, '_blank');
-        else if (act === 'view-quo') window.open(b.pdfUrl_QUOTATION, '_blank');
-        else if (act === 'gen-inv') generatePDF(b, 'INVOICE');
-        else if (act === 'gen-quo') generatePDF(b, 'QUOTATION');
-      };
-    });
-    openModal('bkPrintModal');
-  }
-
-  function buildPdfPayload(b, typePDF) {
-    return {
-      typePDF, paperSize: 'A4',
-      templatePdf: branchSettings.templatePdf || 'tpl_1',
-      logoBase64: branchSettings.logoBase64 || '',
-      namaKedai: branchSettings.shopName || branchSettings.namaKedai || 'RMS PRO',
-      alamatKedai: branchSettings.address || branchSettings.alamat || '-',
-      telKedai: branchSettings.phone || branchSettings.ownerContact || '-',
-      noJob: b.siriBooking || '-',
-      namaCust: b.nama || '-',
-      telCust: b.tel || '-',
-      tarikhResit: String(b.tarikhBooking || new Date().toISOString()).split('T')[0],
-      stafIncharge: b.staff || 'Admin',
-      items: [{ nama: b.item || '-', harga: num(b.harga) }],
-      model: b.item || '-', kerosakan: b.item || '-',
-      warranty: 'TIADA', warranty_exp: '',
-      voucherAmt: 0, diskaunAmt: 0, tambahanAmt: 0,
-      depositAmt: num(b.deposit), totalDibayar: num(b.harga),
-      statusBayar: num(b.deposit) > 0 ? 'PAID' : 'UNPAID',
-      nota: typePDF === 'INVOICE'
-        ? (branchSettings.notaInvoice || 'Sila simpan dokumen ini untuk rujukan rasmi.')
-        : (branchSettings.notaQuotation || 'Sebut harga ini sah untuk tempoh 7 hari sahaja.'),
-    };
-  }
-
-  async function generatePDF(b, typePDF) {
-    toast('Menjana ' + typePDF + '...');
+  // Gear/courier buttons
+  $('bkGearBtn').addEventListener('click', () => { $('bkGearModal').classList.add('is-open'); });
+  $('bkCourierBtn') && $('bkCourierBtn').addEventListener('click', () => { courierTargetId = null; renderCourierList(); $('bkCourierModal').classList.add('is-open'); });
+  $('bkGearSave') && $('bkGearSave').addEventListener('click', async () => {
     try {
-      const controller = new AbortController();
-      const to = setTimeout(() => controller.abort(), 15000);
-      const res = await fetch(CLOUD_RUN + '/generate-pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildPdfPayload(b, typePDF)),
-        signal: controller.signal,
-      });
-      clearTimeout(to);
-      if (!res.ok) { toast('Gagal menjana: ' + res.status, true); return; }
-      const out = await res.json();
-      const pdfUrl = out.pdfUrl || '';
-      if (!pdfUrl) { toast('Pautan PDF tidak ditemui', true); return; }
-      await db.collection('bookings_' + ownerID).doc(b.key).update({ ['pdfUrl_' + typePDF]: pdfUrl });
-      toast(typePDF + ' berjaya dijana!');
-      window.open(pdfUrl, '_blank');
+      const extras = (branchRow && branchRow.extras && typeof branchRow.extras === 'object') ? { ...branchRow.extras } : {};
+      extras.bookingQr = currentQrUrl || null;
+      extras.bank_type = $('bkBankType').value.trim();
+      extras.bank_name = $('bkBankName').value.trim();
+      extras.bank_acc = $('bkBankAcc').value.trim();
+      const { error } = await window.sb.from('branches').update({ extras }).eq('id', branchId);
+      if (error) throw error;
+      if (branchRow) branchRow.extras = extras;
+      renderPayInfo();
+      toast('Tetapan disimpan');
+      $('bkGearModal').classList.remove('is-open');
     } catch (e) {
-      toast('Gagal sambung server: ' + e.message, true);
+      toast('Gagal: ' + (e.message || e));
     }
-  }
+  });
 
-  // ---------- init ----------
-  loadSettings();
+  window.sb.channel('bookings-' + branchId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `branch_id=eq.${branchId}` }, async () => { ALL = await fetchBookings(); refresh(); })
+    .subscribe();
+
+  ALL = await fetchBookings();
+  refresh();
+  await loadBranchQr();
 })();
