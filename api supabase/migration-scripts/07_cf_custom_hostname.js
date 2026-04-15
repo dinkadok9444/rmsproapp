@@ -76,13 +76,13 @@ async function removeHostname(hostname) {
 async function syncFromTenants() {
   const { createClient } = require('@supabase/supabase-js');
   const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-  const { data: tenants, error } = await sb.from('tenants').select('id, domain, shop_name').not('domain', 'is', null);
+  const { data: tenants, error } = await sb.from('tenants').select('id, domain, nama_kedai').not('domain', 'is', null);
   if (error) throw error;
   console.log(`${tenants.length} tenant(s) ada domain.`);
   const existing = await cf('GET', `/zones/${ZONE}/custom_hostnames?per_page=100`);
   const haveSet = new Set(existing.map((h) => h.hostname));
   for (const t of tenants) {
-    if (haveSet.has(t.domain)) { console.log(`  = ${t.domain} (${t.shop_name}) — already registered`); continue; }
+    if (haveSet.has(t.domain)) { console.log(`  = ${t.domain} (${t.nama_kedai}) — already registered`); continue; }
     try {
       await addHostname(t.domain);
       await sb.from('tenants').update({ domain_status: 'PENDING_DNS' }).eq('id', t.id);

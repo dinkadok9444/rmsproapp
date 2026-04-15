@@ -25,25 +25,14 @@ Baca DULU: `api supabase/README.md` Progress Log + `api supabase/RUNBOOK.md`.
 - [ ] Click-through test web (https://rmspro.net login + 26 page)
 
 ### 🟡 Infra (interactive, Abe Din)
-- [ ] **Token expand**: https://dash.cloudflare.com/profile/api-tokens → edit token → tambah permission:
-  - `Zone → SSL and Certificates → Edit`
-  - `Zone → Custom Hostnames → Edit`
-  - Scope: rmspro.net zone
-- [ ] **Deploy Edge Function** untuk domain management:
-  ```bash
-  cd "api supabase"
-  supabase functions deploy cf-custom-hostname --no-verify-jwt
-  supabase secrets set CLOUDFLARE_API_TOKEN=<token> CLOUDFLARE_ZONE_ID=2dbf35fb5bd6b3330abe31754f6fd5e8 CF_FALLBACK_ORIGIN=rmspro-web.pages.dev
-  ```
-- [ ] **Sync tenant domains** (lepas token expand):
-  ```bash
-  cd "api supabase/migration-scripts" && npm run cf:sync
-  ```
+- [x] **Token expand** ✅ 2026-04-15 (SSL and Certificates: Edit added)
+- [x] **Deploy Edge Function** ✅ 2026-04-15 (`cf-custom-hostname` deployed + secrets set: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ZONE_ID, CF_FALLBACK_ORIGIN)
+- [ ] **🚫 BLOCKED — CF quota**: `npm run cf:sync` gagal `code 1404: No quota allocated`. SSL for SaaS = paid Enterprise. Hubungi https://www.cloudflare.com/plans/enterprise/contact/ atau switch ke subdomain pattern `xxx.rmspro.net` (free wildcard).
 - [ ] Firebase Hosting disable via console (cosmetic, FCM kekal)
 
 ### 🟠 Agent-completable (low priority)
 - [x] Refactor `getDomains` + `getDealers` dari Firebase Functions → Supabase query langsung dalam `domain_management_screen.dart`. ✅ 2026-04-15
-- [ ] Fasa 12.6 end-to-end test bila Edge Function deployed: add test tenant domain → verify SSL active → tenant dashboard load via custom hostname.
+- [ ] Fasa 12.6 end-to-end test — BLOCKED CF quota (lihat atas).
 
 ### 🚫 Decided — JANGAN sentuh
 - Marketplace: hidden via `saas_flags`, files kekal (`lib/screens/marketplace/**`). Decision 2026-04-15 per Abe Din.
