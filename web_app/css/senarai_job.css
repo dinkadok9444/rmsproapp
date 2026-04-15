@@ -1,11 +1,11 @@
 /* Filter section — satu baris, label atas dropdown (tiru inventory) */
 #secFilter .settings-section__body {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: var(--sp-2);
-  align-items: center;
-  overflow-x: auto;
+  align-items: flex-end;
   padding: var(--sp-3) var(--sp-4);
+  box-sizing: border-box;
 }
 #secFilter .set-row {
   display: flex;
@@ -13,7 +13,9 @@
   align-items: stretch;
   gap: 4px;
   grid-template-columns: none;
-  flex-shrink: 0;
+  flex: 1 1 150px;
+  min-width: 0;
+  box-sizing: border-box;
 }
 #secFilter .set-row .set-label {
   margin: 0;
@@ -27,13 +29,12 @@
 #secFilter .set-select,
 #secFilter .input,
 #secFilter button {
-  min-width: 130px;
+  width: 100%;
+  min-width: 0;
   padding: 8px 10px;
   font-size: var(--fs-xs);
   height: 36px;
-}
-@media (max-width: 720px) {
-  #secFilter .set-select, #secFilter .input, #secFilter button { min-width: 110px; }
+  box-sizing: border-box;
 }
 
 /* Senarai Job page */
@@ -85,7 +86,9 @@
   font-size: var(--fs-lg, 18px);
   font-weight: 800;
   color: var(--text, #0f172a);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.sj-stat__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .sj-list {
   display: flex;
@@ -93,63 +96,103 @@
   gap: var(--sp-2);
 }
 .sj-item {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: var(--sp-3);
   border: 1px solid var(--border, #e2e8f0);
   border-radius: var(--radius, 10px);
   background: var(--card-bg, #fff);
-  align-items: center;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: box-shadow .15s ease, transform .15s ease;
 }
-.sj-item__badge {
-  width: 40px; height: 40px;
-  border-radius: 10px;
-  display: inline-flex;
+.sj-item:hover { box-shadow: 0 2px 8px rgba(15,23,42,.08); }
+
+.sj-item__head {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  background: #dbeafe;
-  color: #2563eb;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--border, #e2e8f0);
 }
-.sj-item__main { min-width: 0; }
-.sj-item__title {
-  font-weight: 700;
+.sj-item__siri {
+  font-weight: 900;
   font-size: var(--fs-sm);
-  color: var(--text, #0f172a);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--primary, #2563eb);
+  white-space: nowrap;
 }
-.sj-item__sub {
-  margin-top: 2px;
+.sj-item__status {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .3px;
+  background: #e2e8f0;
+  color: #475569;
+  white-space: nowrap;
+}
+.sj-item__status[data-st="IN PROGRESS"] { background: #dbeafe; color: #1d4ed8; }
+.sj-item__status[data-st="WAITING FOR PARTS"] { background: #fef3c7; color: #b45309; }
+.sj-item__status[data-st="READY TO PICKUP"] { background: #ede9fe; color: #7c3aed; }
+.sj-item__status[data-st="COMPLETED"] { background: #d1fae5; color: #059669; }
+.sj-item__status[data-st="CANCEL"] { background: #fee2e2; color: #b91c1c; }
+.sj-item__status[data-st="REJECT"] { background: #fee2e2; color: #dc2626; }
+
+.sj-item__body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
   font-size: var(--fs-xs);
-  color: var(--text-muted, #64748b);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text, #0f172a);
 }
-.sj-item__meta {
-  display: flex; gap: 8px; flex-wrap: wrap;
-  margin-top: 4px;
+.sj-item__body > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sj-item__body i {
+  color: var(--text-muted, #64748b);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+@media (max-width: 520px) {
+  .sj-item__body { grid-template-columns: 1fr; }
+}
+
+.sj-item__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border, #e2e8f0);
   font-size: 11px;
   color: var(--text-muted, #64748b);
 }
-.sj-item__meta span {
-  background: var(--bg-subtle, #f1f5f9);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-.sj-item__right {
-  text-align: right;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-end;
-}
-.sj-item__amount {
+.sj-item__foot > span { display: inline-flex; align-items: center; gap: 4px; }
+.sj-item__foot > span:nth-child(2) {
   font-weight: 800;
+  color: var(--text, #0f172a);
   font-size: var(--fs-sm);
-  white-space: nowrap;
-  color: #059669;
 }
-.sj-item__amount--unpaid { color: #dc2626; }
+.sj-pay {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.sj-pay[data-ps="PAID"] { background: #d1fae5; color: #059669; }
+.sj-pay[data-ps="PENDING"] { background: #fef3c7; color: #b45309; }
 
 .sj-status {
   display: inline-block;
@@ -175,3 +218,39 @@
   color: var(--text-muted, #64748b);
 }
 .sj-empty i { font-size: 32px; margin-bottom: 8px; opacity: .6; }
+
+/* Universal hygiene for these screens */
+.sj-pills, .sj-list, .sj-stats, .sj-item, .sj-stat { box-sizing: border-box; }
+.sj-pill { white-space: nowrap; box-sizing: border-box; }
+
+/* Modal polish (senarai_job detail modal) */
+.sj-modal-bg { box-sizing: border-box; }
+.sj-modal { box-sizing: border-box; }
+.sj-modal * { box-sizing: border-box; }
+.sj-modal h3 { font-size: var(--fs-sm); font-weight: 800; color: var(--text-primary, #0f172a); }
+.sj-close:hover { filter: brightness(.95); }
+.sj-field input, .sj-field select, .sj-field textarea {
+  width: 100%; min-width: 0; font-size: var(--fs-xs);
+}
+.sj-field input:focus, .sj-field select:focus, .sj-field textarea:focus {
+  outline: none; border-color: var(--primary, #00C47D);
+}
+.sj-item-edit { grid-template-columns: minmax(0,1fr) 60px 100px auto; align-items: center; }
+@media (max-width: 520px) {
+  .sj-item-edit { grid-template-columns: minmax(0,1fr) 56px 80px auto; }
+}
+.sj-actions button { font-size: var(--fs-xs); }
+
+/* create_job (shares senarai_job.css) — item row + toggle hygiene */
+.cj-item-row { grid-template-columns: minmax(0,1fr) 70px 110px auto; align-items: center; box-sizing: border-box; }
+.cj-item-row .input { min-width: 0; }
+@media (max-width: 520px) {
+  .cj-item-row { grid-template-columns: minmax(0,1fr) 56px 90px auto; gap: 4px; }
+}
+.cj-toggle button { min-width: 0; flex: 1 1 140px; }
+.cj-step__dot { flex: 0 0 auto; }
+.cj-actions button { min-width: 0; }
+.cj-snap { box-sizing: border-box; }
+.cj-snap-card { box-sizing: border-box; }
+.cj-total { box-sizing: border-box; }
+.cj-badge { vertical-align: middle; }
