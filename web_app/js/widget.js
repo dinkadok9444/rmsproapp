@@ -9,22 +9,41 @@
   const fmtRM = (n) => 'RM ' + (Number(n) || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   function toast(msg) { const t = $('wgToast'); if (!t) return; t.textContent = msg; t.hidden = false; setTimeout(() => { t.hidden = true; }, 1600); }
 
-  let DATA = { JOBS: [], QS: [], PS: [], EXP: [], RF: [], PARTS: [] };
+  let DATA = { JOBS: [], QS: [], PS: [], EXP: [], RF: [], KOMP: [], CATS: [] };
   let statsFilter = 'TODAY';
   let kewFilter = 'TODAY';
-  let kompTab = 'bateri';
+  let kompTab = null;
 
   async function fetchAll() {
-    const [j, qs, ps, ex, rf, pt] = await Promise.all([
+    const [j, qs, ps, ex, rf, pt, ct] = await Promise.all([
       window.sb.from('jobs').select('id,status,total,payment_status,created_at').eq('branch_id', branchId).limit(5000),
       window.sb.from('quick_sales').select('*').eq('branch_id', branchId).limit(5000),
       window.sb.from('phone_sales').select('*').eq('branch_id', branchId).is('deleted_at', null).limit(5000),
       window.sb.from('expenses').select('*').eq('branch_id', branchId).limit(5000),
       window.sb.from('refunds').select('*').eq('branch_id', branchId).limit(5000),
-      window.sb.from('stock_parts').select('sku,part_name,category').eq('branch_id', branchId).limit(5000),
+      window.sb.from('master_components').select('category,brand,model,code,notes').limit(10000),
+      window.sb.from('master_component_categories').select('name,sort_order').order('sort_order').order('name'),
     ]);
     DATA.JOBS = j.data || []; DATA.QS = qs.data || []; DATA.PS = ps.data || [];
-    DATA.EXP = ex.data || []; DATA.RF = rf.data || []; DATA.PARTS = pt.data || [];
+    DATA.EXP = ex.data || []; DATA.RF = rf.data || []; DATA.KOMP = pt.data || [];
+    DATA.CATS = (ct.data || []).map(c => c.name);
+    if (!kompTab || !DATA.CATS.includes(kompTab)) kompTab = DATA.CATS[0] || null;
+    renderKompTabs();
+  }
+
+  function renderKompTabs() {
+    const el = $('wgKompTabs');
+    if (!el) return;
+    if (!DATA.CATS.length) { el.innerHTML = '<div style="padding:8px 4px;color:var(--text-muted);font-size:12px">Tiada category.</div>'; return; }
+    el.innerHTML = DATA.CATS.map(name => {
+      const active = name === kompTab ? 'is-active' : '';
+      return `<button type="button" class="wg-komp-tab ${active}" data-tab="${name}">${name} <span>0</span></button>`;
+    }).join('');
+    el.querySelectorAll('.wg-komp-tab').forEach(b => b.addEventListener('click', () => {
+      kompTab = b.dataset.tab;
+      renderKompTabs();
+      refreshKomp($('wgKompInput').value);
+    }));
   }
 
   function inTime(iso, period) {
@@ -85,23 +104,26 @@
 
   function refreshKomp(query) {
     const q = (query || '').toLowerCase().trim();
-    const list = DATA.PARTS.filter((p) => {
-      if (!q) return false;
-      if (!((p.part_name||'').toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q))) return false;
-      const cat = (p.category||'').toLowerCase();
-      return kompTab === 'bateri' ? cat.includes('bateri') || cat.includes('battery') : cat.includes('lcd') || cat.includes('screen');
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const match = (r) => q && [r.brand, r.model, r.code].some(v => (v || '').toLowerCase().includes(q));
+    const list = kompTab ? DATA.KOMP.filter(r => r.category === kompTab && match(r)) : [];
+    document.querySelectorAll('#wgKompTabs .wg-komp-tab').forEach(b => {
+      const n = b.dataset.tab;
+      const c = DATA.KOMP.filter(r => r.category === n && match(r)).length;
+      const span = b.querySelector('span'); if (span) span.textContent = c;
     });
-    const batCount = DATA.PARTS.filter((p) => q && ((p.part_name||'').toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q)) && ((p.category||'').toLowerCase().includes('bateri') || (p.category||'').toLowerCase().includes('battery'))).length;
-    const lcdCount = DATA.PARTS.filter((p) => q && ((p.part_name||'').toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q)) && ((p.category||'').toLowerCase().includes('lcd') || (p.category||'').toLowerCase().includes('screen'))).length;
-    $('wgBatCount').textContent = batCount;
-    $('wgLcdCount').textContent = lcdCount;
     const res = $('wgKompResults');
     if (!q) {
       res.innerHTML = '<div class="wg-komp-empty"><i class="fas fa-magnifying-glass"></i><div>Cari model untuk papar kod bateri/LCD</div></div>';
     } else if (!list.length) {
       res.innerHTML = '<div class="wg-komp-empty"><i class="fas fa-circle-xmark"></i><div>Tiada padanan.</div></div>';
     } else {
-      res.innerHTML = list.map((p) => `<div class="wg-komp-row"><b>${p.sku||''}</b> — ${p.part_name||''}</div>`).join('');
+      res.innerHTML = list.map(r => `
+        <div class="wg-komp-row">
+          <div><b>${esc(r.brand)} ${esc(r.model)}</b></div>
+          <div style="color:var(--cyan);font-weight:700;margin-top:2px">${esc(r.code)}</div>
+          ${r.notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;font-style:italic">${esc(r.notes)}</div>` : ''}
+        </div>`).join('');
     }
   }
 
@@ -109,12 +131,6 @@
   $('wgKewFilter').addEventListener('change', (e) => { kewFilter = e.target.value; refreshKew(); });
   $('wgKompBtn').addEventListener('click', () => refreshKomp($('wgKompInput').value));
   $('wgKompInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') refreshKomp(e.target.value); });
-  document.querySelectorAll('.wg-komp-tab').forEach((b) => b.addEventListener('click', () => {
-    document.querySelectorAll('.wg-komp-tab').forEach((x) => x.classList.remove('is-active'));
-    b.classList.add('is-active');
-    kompTab = b.dataset.tab;
-    refreshKomp($('wgKompInput').value);
-  }));
 
   ['jobs','quick_sales','phone_sales','expenses','refunds'].forEach((table) => {
     window.sb.channel('wg-' + table + '-' + branchId)

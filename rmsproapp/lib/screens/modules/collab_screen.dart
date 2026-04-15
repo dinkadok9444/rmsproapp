@@ -213,7 +213,7 @@ class _CollabScreenState extends State<CollabScreen> {
           try {
             final rows = await _sb
                 .from('branches')
-                .select('nama_kedai, phone, shop_code, tenants!inner(id, nama_kedai, config, expire_date, active)')
+                .select('nama_kedai, phone, shop_code, tenants!branches_tenant_id_fkey!inner(id, nama_kedai, config, expire_date, active)')
                 .eq('shop_code', code)
                 .limit(1);
             if (rows.isEmpty) {

@@ -27,7 +27,7 @@ class RepairService {
     if (_tenantId == null || _branchId == null) {
       final row = await SupabaseService.client
           .from('branches')
-          .select('id, tenant_id, tenants!inner(owner_id)')
+          .select('id, tenant_id, tenants!branches_tenant_id_fkey!inner(owner_id)')
           .eq('shop_code', _shopID!)
           .eq('tenants.owner_id', _ownerID!)
           .maybeSingle();
@@ -203,7 +203,7 @@ class RepairService {
     final row = await SupabaseService.client
         .from('branches')
         .select(
-            'nama_kedai, alamat, phone, email, enabled_modules, single_staff_mode, expire_date, tenants!inner(addon_gallery, gallery_expire, single_staff_mode, config)')
+            'nama_kedai, alamat, phone, email, enabled_modules, single_staff_mode, expire_date, tenants!branches_tenant_id_fkey!inner(addon_gallery, gallery_expire, single_staff_mode, config)')
         .eq('id', _branchId!)
         .maybeSingle();
     if (row == null) return null;

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#00C47D">
+  <title>Database Komponen — Admin SaaS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <link rel="stylesheet" href="css/admin_database_komponen.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__inner">
+      <button class="icon-btn" id="btnBack"><i class="fas fa-arrow-left"></i></button>
+      <span class="app-header__title"><i class="fas fa-microchip" style="color:var(--cyan);margin-right:8px"></i>Database Komponen</span>
+      <div class="app-header__spacer"></div>
+      <span id="countMeta" class="admin-meta" style="padding:0 8px 0 0"></span>
+      <button class="icon-btn" id="btnReload"><i class="fas fa-arrows-rotate"></i></button>
+    </div>
+  </header>
+
+  <main class="container admin-main">
+    <p class="admin-hint" style="margin:0 0 var(--sp-3)">Master catalog kod bateri &amp; LCD semua model phone. Semua dealer boleh rujuk via Cari Komponen di dashboard.</p>
+
+    <section class="admin-section">
+      <div class="mk-tabs" id="mkTabs"></div>
+
+      <div class="admin-toolbar" style="margin-top:var(--sp-3)">
+        <input type="text" id="searchInput" placeholder="Cari brand / model / kod (cth: iPhone 13, SM-A135, EB-BA315)">
+        <button class="btn btn-primary" id="btnAddItem"><i class="fas fa-plus"></i> TAMBAH ITEM</button>
+        <button class="btn btn-cyan" id="btnAddCategory"><i class="fas fa-folder-plus"></i> TAMBAH CATEGORY</button>
+      </div>
+
+      <div id="list" class="mk-list" style="margin-top:var(--sp-3)">
+        <div class="admin-loading"><i class="fas fa-spinner fa-spin"></i> Memuat…</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Edit/Add modal -->
+  <div class="mk-modal hidden" id="editModal">
+    <div class="mk-modal__card">
+      <div class="mk-modal__head">
+        <span id="editTitle"><i class="fas fa-plus"></i> Tambah Komponen</span>
+        <button class="icon-btn" id="editClose"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="mk-modal__body">
+        <label>Kategori</label>
+        <select id="fCategory"></select>
+        <label>Brand</label>
+        <input type="text" id="fBrand" placeholder="Apple / Samsung / Xiaomi / Oppo / Vivo / Realme / Huawei">
+        <label>Model</label>
+        <input type="text" id="fModel" placeholder="iPhone 13 / SM-A135F / Redmi Note 11">
+        <label>Kod Komponen</label>
+        <input type="text" id="fCode" placeholder="cth: EB-BA315ABY, 616-00109, GH82-26485A">
+        <label>Nota (optional)</label>
+        <textarea id="fNotes" rows="3" placeholder="Spec, mAh, voltage, cross-ref model lain..."></textarea>
+      </div>
+      <div class="mk-modal__foot">
+        <button class="btn btn-danger" id="btnDelete" style="margin-right:auto" hidden><i class="fas fa-trash"></i> PADAM</button>
+        <button class="btn btn-muted" id="btnCancel">Batal</button>
+        <button class="btn btn-primary" id="btnSave"><i class="fas fa-floppy-disk"></i> SIMPAN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Category modal -->
+  <div class="mk-modal hidden" id="catModal">
+    <div class="mk-modal__card" style="max-width:380px">
+      <div class="mk-modal__head">
+        <span><i class="fas fa-folder-plus"></i> Urus Category</span>
+        <button class="icon-btn" id="catClose"><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="mk-modal__body">
+        <label>Category Sedia Ada</label>
+        <div id="catList" class="mk-cat-list"></div>
+        <label style="margin-top:14px">Tambah Category Baru</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="catInput" placeholder="cth: TOUCHSCREEN, FLEX, CAS" style="flex:1">
+          <button class="btn btn-primary" id="catAdd"><i class="fas fa-plus"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/admin_database_komponen.js"></script>
+</body>
+</html>

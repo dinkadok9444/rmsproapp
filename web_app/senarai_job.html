@@ -43,20 +43,22 @@
     .pos-printer:hover{border-color:#2563eb;color:#2563eb;}
     .pos-printer.is-on{background:#dbeafe;color:#2563eb;border-color:#2563eb;}
     .pos-printer.is-disabled{opacity:.5;cursor:not-allowed;}
+    #btnTiketBaru:hover{background:#1d4ed8 !important;border-color:#1d4ed8 !important;}
   </style>
 </head>
 <body class="settings-page senaraijob-page">
-  <div class="rms-printer-bar">
-    <button type="button" id="posPrinterBtn" class="pos-printer" title="Printer">
-      <i class="fas fa-print"></i><span id="posPrinterLbl">PRINTER</span>
-    </button>
-  </div>
   <main class="settings-container">
 
     <section class="settings-section">
-      <div class="settings-section__head">
+      <div class="settings-section__head" style="display:flex;align-items:center;gap:8px;">
         <span class="settings-section__icon"><i class="fas fa-screwdriver-wrench"></i></span>
-        <h2 class="settings-section__title">Senarai Job</h2>
+        <h2 class="settings-section__title" style="flex:1;">Senarai Job</h2>
+        <button type="button" id="btnTiketBaru" class="pos-printer" style="background:#2563eb;color:#fff;border-color:#2563eb;" title="Tiket Baru">
+          <i class="fas fa-plus"></i><span>TIKET BARU</span>
+        </button>
+        <button type="button" id="posPrinterBtn" class="pos-printer" title="Printer">
+          <i class="fas fa-print"></i><span id="posPrinterLbl">PRINTER</span>
+        </button>
       </div>
       <div class="settings-section__body">
         <div class="sj-pills" id="sjPills">
@@ -150,5 +152,6 @@
   <script src="js/supabase-init.js"></script>
   <script src="js/printer.js"></script>
   <script src="js/senarai_job.js"></script>
+  <script>document.getElementById('btnTiketBaru').addEventListener('click',()=>{location.href='baikpulih.html';});</script>
 </body>
 </html>

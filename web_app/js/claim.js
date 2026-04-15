@@ -42,19 +42,32 @@
     });
     $('cwCount').textContent = rows.length;
     $('cwEmpty').classList.toggle('hidden', rows.length > 0);
-    $('cwList').innerHTML = rows.map((r) => `
-      <div class="lost-item" data-id="${r.id}">
-        <div class="lost-item__top">
-          <span class="lost-item__siri">${r.siri || '—'}</span>
-          <span class="lost-item__status">${r.claim_status || 'Claim Waiting Approval'}</span>
+    const statusColor = (s) => {
+      const t = (s || '').trim();
+      if (t === 'Claim Waiting Approval') return 'c-yellow';
+      if (t === 'Claim Approve') return 'c-blue';
+      if (t === 'Claim In Progress') return 'c-orange';
+      if (t === 'Claim Done') return 'c-cyan';
+      if (t === 'Claim Ready to Pickup') return 'c-purple';
+      if (t === 'Claim Complete') return 'c-green';
+      return 'c-muted';
+    };
+    $('cwList').innerHTML = rows.map((r) => {
+      const col = statusColor(r.claim_status);
+      return `
+      <div class="lost-card ${col}" data-id="${r.id}">
+        <div class="lost-card__top">
+          <div class="lost-card__jenis"><span class="lost-card__icon"><i class="fas fa-shield-halved"></i></span><span class="cw-cid">${r.claim_code || '—'}</span></div>
+          <span class="cw-status ${col}">${r.claim_status || 'Claim Waiting Approval'}</span>
         </div>
-        <div class="lost-item__body">
-          <div><i class="fas fa-user"></i> ${r.nama || '—'}</div>
-          <div><i class="fas fa-mobile-screen"></i> ${r.model || '—'}</div>
-          <div><i class="fas fa-hashtag"></i> ${r.claim_code || '—'}</div>
+        <div class="cw-cust"><i class="fas fa-user"></i> ${r.nama || '—'}</div>
+        <div class="cw-info-line"><i class="fas fa-mobile-screen"></i> ${r.model || '—'}</div>
+        <div class="lost-card__foot">
+          <span class="lost-card__siri">${r.siri || '—'}</span>
         </div>
-      </div>`).join('');
-    $('cwList').querySelectorAll('.lost-item').forEach((el) => {
+      </div>`;
+    }).join('');
+    $('cwList').querySelectorAll('.lost-card').forEach((el) => {
       el.addEventListener('click', () => openUpdate(ALL.find((r) => r.id === el.dataset.id)));
     });
   }

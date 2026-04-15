@@ -54,7 +54,9 @@
       id: j.id, kind: 'REPAIR', ts: j.created_at, label: j.siri || '—', sub: j.nama || '', amount: Number(j.total) || 0, sign: 1,
     }));
     const qsRows = DATA.QS.filter((q) => inTime(q.sold_at)).map((q) => ({
-      id: q.id, kind: 'QUICK', ts: q.sold_at, label: q.description || q.kind || '—', sub: q.sold_by || '', amount: Number(q.amount) || 0, sign: 1,
+      id: q.id, kind: 'QUICK', ts: q.sold_at,
+      label: (() => { try { const d = JSON.parse(q.description||'{}'); const base = d.siri ? ('#'+d.siri) : (q.kind||'—'); const tax = d.tax_amt ? ` · Tax ${fmtRM(d.tax_amt)}` : ''; return base + tax; } catch (_) { return q.description || q.kind || '—'; } })(),
+      sub: q.sold_by || '', amount: Number(q.amount) || 0, sign: 1,
     }));
     const psRows = DATA.PS.filter((s) => inTime(s.sold_at)).map((s) => ({
       id: s.id, kind: 'PHONE', ts: s.sold_at, label: s.device_name || '—', sub: s.customer_name || '', amount: Number(s.total_price) || 0, sign: 1,
@@ -83,7 +85,7 @@
     $('kwList').innerHTML = rows.map((r) => {
       const color = r.sign < 0 ? '#dc2626' : '#10b981';
       const sign = r.sign < 0 ? '-' : '+';
-      return `<div class="kw-card">
+      return `<div class="kw-card" data-kind="${r.kind}">
         <div class="kw-card__hd">
           <span class="kw-card__label">${r.label}</span>
           <span class="kw-card__amt" style="color:${color};">${sign}${fmtRM(r.amount)}</span>

@@ -62,7 +62,17 @@ async function upsertTenant(ownerId, dealerData) {
     total_sales: dealerData.totalSales || 0,
     ticket_count: dealerData.ticketCount || 0,
     last_sale_at: dealerData.lastSaleAt ? new Date(dealerData.lastSaleAt).toISOString() : null,
-    config: dealerData.config || {},
+    config: {
+      ...(dealerData.config || {}),
+      ownerName: dealerData.ownerName ?? dealerData.config?.ownerName ?? '',
+      ownerContact: dealerData.ownerContact ?? dealerData.phone ?? dealerData.config?.ownerContact ?? '',
+      email: dealerData.email ?? dealerData.emel ?? dealerData.config?.email ?? '',
+      ssm: dealerData.ssm ?? dealerData.config?.ssm ?? '',
+      alamat: dealerData.alamat ?? dealerData.address ?? dealerData.config?.alamat ?? '',
+      daerah: dealerData.daerah ?? dealerData.config?.daerah ?? '',
+      negeri: dealerData.negeri ?? dealerData.config?.negeri ?? '',
+      enabledModules: dealerData.enabledModules ?? dealerData.config?.enabledModules ?? {},
+    },
   };
   const { data, error } = await sb
     .from('tenants')
@@ -87,6 +97,11 @@ async function upsertUserRow(authId, tenantId, role, extra = {}) {
 }
 
 async function upsertBranch(tenantId, shopCode, shopData) {
+  const extras = {
+    ...(shopData.extras || {}),
+    svTel: shopData.svTel ?? shopData.extras?.svTel ?? '',
+    svPass: shopData.svPass ?? shopData.extras?.svPass ?? '',
+  };
   const payload = {
     tenant_id: tenantId,
     shop_code: shopCode,
@@ -98,6 +113,7 @@ async function upsertBranch(tenantId, shopCode, shopData) {
     enabled_modules: shopData.enabledModules || {},
     single_staff_mode: !!shopData.singleStaffMode,
     expire_date: shopData.expireDate ? new Date(shopData.expireDate).toISOString() : null,
+    extras,
   };
   const { data, error } = await sb
     .from('branches')

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#00C47D">
+  <title>Database User — Admin SaaS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__inner">
+      <button class="icon-btn" id="btnBack"><i class="fas fa-arrow-left"></i></button>
+      <span class="app-header__title"><i class="fas fa-database" style="color:var(--sky);margin-right:8px"></i>Database User</span>
+      <div class="app-header__spacer"></div>
+      <span id="countMeta" class="admin-meta" style="padding:0 8px 0 0"></span>
+      <button class="icon-btn" id="btnReload"><i class="fas fa-arrows-rotate"></i></button>
+    </div>
+  </header>
+
+  <main class="container admin-main">
+    <section class="admin-section">
+      <div class="admin-toolbar">
+        <input type="text" id="searchInput" placeholder="Cari nama kedai / owner / no telefon">
+      </div>
+      <div class="sort-chips">
+        <button class="sort-chip is-active" data-sort="newest"><i class="fas fa-arrow-down-wide-short"></i> Terbaru</button>
+        <button class="sort-chip" data-sort="oldest"><i class="fas fa-arrow-up-wide-short"></i> Terlama</button>
+      </div>
+      <div id="userList" class="user-list" style="margin-top:var(--sp-3)">
+        <div class="admin-loading"><i class="fas fa-spinner fa-spin"></i> Memuat…</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/admin_database_user.js"></script>
+</body>
+</html>

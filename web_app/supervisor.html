@@ -76,6 +76,10 @@
         <span class="sup-tile__icon"><i class="fas fa-store"></i></span>
         <span class="sup-tile__label" data-i18n="tab.marketplace">Marketplace</span>
       </button>
+      <button class="sup-tile c-green" data-tab="CHAT">
+        <span class="sup-tile__icon"><i class="fas fa-comments"></i></span>
+        <span class="sup-tile__label" data-i18n="tab.chat">Chat</span>
+      </button>
       <button class="sup-tile c-slate" data-tab="SETTINGS">
         <span class="sup-tile__icon"><i class="fas fa-gear"></i></span>
         <span class="sup-tile__label" data-i18n="tab.settings">Tetapan</span>
@@ -133,41 +137,287 @@
 
     <!-- INVENTORY -->
     <section class="sup-tab-pane" data-tab="INVENTORY">
-      <div class="sup-placeholder">
-        <div class="sup-placeholder__icon c-amber"><i class="fas fa-boxes-stacked"></i></div>
-        <h2 class="sup-placeholder__title">INVENTORI</h2>
-        <p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p>
+      <div class="sv-inv">
+        <div class="sv-inv__seg" id="svInvSeg">
+          <button class="sv-inv__btn is-active c-amber" data-seg="STOCK"><i class="fas fa-screwdriver-wrench"></i><span data-i18n="inv.sparepart">SPAREPART</span></button>
+          <button class="sv-inv__btn c-violet" data-seg="ACC"><i class="fas fa-headphones"></i><span data-i18n="inv.accessories">ACCESSORIES</span></button>
+          <button class="sv-inv__btn c-sky" data-seg="PHONE" id="svInvPhoneBtn"><i class="fas fa-mobile-screen-button"></i><span data-i18n="inv.phone">TELEFON</span></button>
+        </div>
+        <div class="sv-inv__frame">
+          <iframe id="svInvFrame" src="about:blank" title="Inventori" loading="lazy"></iframe>
+        </div>
       </div>
     </section>
 
     <!-- KEWANGAN -->
     <section class="sup-tab-pane" data-tab="KEWANGAN">
-      <div class="sup-placeholder">
-        <div class="sup-placeholder__icon c-teal"><i class="fas fa-sack-dollar"></i></div>
-        <h2 class="sup-placeholder__title">KEWANGAN</h2>
-        <p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p>
+      <div class="sv-kew">
+        <div class="sv-kew__head">
+          <div class="sv-kew__title-row">
+            <div class="sv-kew__title"><i class="fas fa-chart-pie"></i><span data-i18n="kew.title">LAPORAN KEWANGAN</span></div>
+            <button class="sv-kew__back hidden" id="svKewBack"><i class="fas fa-arrow-left"></i><span data-i18n="c.summary">Ringkasan</span></button>
+          </div>
+          <div class="sv-kew__time" id="svKewTime">
+            <button class="is-active" data-t="TODAY" data-i18n="c.today">Hari Ini</button>
+            <button data-t="THIS_WEEK" data-i18n="c.thisWeek">Minggu Ini</button>
+            <button data-t="THIS_MONTH" data-i18n="c.thisMonth">Bulan Ini</button>
+            <button data-t="ALL" data-i18n="c.all">Semua</button>
+            <button data-t="CUSTOM"><i class="fas fa-calendar"></i> <span data-i18n="c.pickDate">Pilih Tarikh</span></button>
+          </div>
+          <div class="sv-kew__range hidden" id="svKewRange">
+            <input type="date" id="svKewFrom"><span>—</span><input type="date" id="svKewTo">
+          </div>
+        </div>
+        <div class="sv-kew__cards" id="svKewCards"></div>
+        <div class="sv-kew__body" id="svKewBody"></div>
       </div>
     </section>
 
-    <!-- REFUND/CLAIM -->
+    <!-- REFUND / CLAIM -->
     <section class="sup-tab-pane" data-tab="REFUND">
-      <div class="sup-placeholder">
-        <div class="sup-placeholder__icon c-red"><i class="fas fa-file-shield"></i></div>
-        <h2 class="sup-placeholder__title">REFUND / CLAIM</h2>
-        <p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p>
+      <div class="sv-rc">
+        <div class="sv-rc__segs" id="svRcSegs">
+          <button class="is-active" data-seg="REFUND"><i class="fas fa-money-bill-transfer"></i><span data-i18n="rc.refund">REFUND</span></button>
+          <button data-seg="CLAIM"><i class="fas fa-file-shield"></i><span data-i18n="rc.claim">CLAIM</span></button>
+        </div>
+        <div class="sv-rc__head">
+          <div class="sv-rc__title-row">
+            <div class="sv-rc__title" id="svRcTitle"><i class="fas fa-money-bill-transfer"></i><span>—</span><span class="sv-rc__badge hidden" id="svRcPending">0</span></div>
+          </div>
+          <div class="sv-rc__toolbar">
+            <div class="sv-rc__search">
+              <i class="fas fa-magnifying-glass"></i>
+              <input type="search" id="svRcSearch" data-i18n-ph="rc.searchPh" placeholder="Cari siri / nama...">
+            </div>
+          </div>
+          <div class="sv-rc__chips" id="svRcChips"></div>
+        </div>
+        <div class="sv-rc__body" id="svRcBody"></div>
       </div>
     </section>
 
-    <!-- STAFF --><section class="sup-tab-pane" data-tab="STAFF"><div class="sup-placeholder"><div class="sup-placeholder__icon c-sky"><i class="fas fa-users"></i></div><h2 class="sup-placeholder__title">STAF</h2><p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p></div></section>
-    <!-- MARKETING --><section class="sup-tab-pane" data-tab="MARKETING"><div class="sup-placeholder"><div class="sup-placeholder__icon c-amber"><i class="fas fa-bullhorn"></i></div><h2 class="sup-placeholder__title">MARKETING</h2><p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p></div></section>
-    <!-- EXPENSE --><section class="sup-tab-pane" data-tab="EXPENSE"><div class="sup-placeholder"><div class="sup-placeholder__icon c-amber"><i class="fas fa-receipt"></i></div><h2 class="sup-placeholder__title">PERBELANJAAN</h2><p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p></div></section>
-    <!-- UNTUNGRUGI --><section class="sup-tab-pane" data-tab="UNTUNGRUGI"><div class="sup-placeholder"><div class="sup-placeholder__icon c-teal"><i class="fas fa-chart-line"></i></div><h2 class="sup-placeholder__title">UNTUNG RUGI</h2><p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p></div></section>
-    <!-- MARKETPLACE --><section class="sup-tab-pane" data-tab="MARKETPLACE"><div class="sup-placeholder"><div class="sup-placeholder__icon c-indigo"><i class="fas fa-store"></i></div><h2 class="sup-placeholder__title">MARKETPLACE</h2><p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p></div></section>
-    <!-- SETTINGS --><section class="sup-tab-pane" data-tab="SETTINGS"><div class="sup-placeholder"><div class="sup-placeholder__icon"><i class="fas fa-gear"></i></div><h2 class="sup-placeholder__title">TETAPAN</h2><p class="sup-placeholder__text">Dalam pembinaan — akan dilaksanakan kemudian.</p></div></section>
+    <!-- STAFF -->
+    <section class="sup-tab-pane" data-tab="STAFF">
+      <div class="sv-st">
+        <div class="sv-st__head">
+          <div class="sv-st__title"><i class="fas fa-users"></i><span data-i18n="st.title">SENARAI STAF</span><span class="sv-st__count" id="svStCount">0</span></div>
+          <button class="sv-st__add" id="svStAdd"><i class="fas fa-plus"></i><span data-i18n="st.addBtn">TAMBAH STAF</span></button>
+        </div>
+        <div class="sv-st__body" id="svStBody"></div>
+      </div>
+      <div class="sv-st__modal hidden" id="svStModal">
+        <div class="sv-st__modal-bg" data-close="1"></div>
+        <div class="sv-st__modal-sheet">
+          <div class="sv-st__modal-head">
+            <div class="sv-st__modal-title"><i class="fas fa-user-plus"></i><span id="svStModalTitle">TAMBAH STAF</span></div>
+            <button class="sv-st__modal-close" data-close="1"><i class="fas fa-xmark"></i></button>
+          </div>
+          <label data-i18n="st.fNama">Nama</label><input id="svStFNama" type="text" placeholder="Nama penuh">
+          <label data-i18n="st.fPhone">No. Telefon</label><input id="svStFPhone" type="tel" placeholder="01X-XXXXXXX">
+          <label data-i18n="st.fPin">PIN (4 digit)</label><input id="svStFPin" type="text" maxlength="4" inputmode="numeric" placeholder="1234">
+          <label data-i18n="st.fProfile">Gambar Profil</label>
+          <div class="sv-st__profile-row">
+            <div class="sv-st__profile-preview" id="svStFPreview"><i class="fas fa-user"></i></div>
+            <div class="sv-st__profile-actions">
+              <button type="button" class="sv-st__upload-btn" id="svStUpload"><i class="fas fa-upload"></i> <span data-i18n="st.upload">Muat Naik</span></button>
+              <input id="svStFProfile" type="url" placeholder="https://...">
+            </div>
+          </div>
+          <button class="sv-st__save" id="svStSave"><i class="fas fa-floppy-disk"></i><span id="svStSaveLbl" data-i18n="c.save">SIMPAN</span></button>
+        </div>
+      </div>
+    </section>
+    <!-- MARKETING -->
+    <section class="sup-tab-pane" data-tab="MARKETING">
+      <div class="sv-mk">
+        <div class="sv-mk__segs" id="svMkSegs">
+          <button class="is-active" data-seg="VOUCHER"><i class="fas fa-ticket"></i><span data-i18n="mk.voucher">VOUCHER</span></button>
+          <button data-seg="REFERRAL"><i class="fas fa-handshake"></i><span data-i18n="mk.referral">REFERRAL</span></button>
+          <button data-seg="CUSTOMER"><i class="fas fa-address-book"></i><span data-i18n="mk.customer">PELANGGAN</span></button>
+        </div>
+        <div class="sv-mk__head">
+          <div class="sv-mk__toolbar">
+            <div class="sv-mk__search">
+              <i class="fas fa-magnifying-glass"></i>
+              <input type="search" id="svMkSearch" placeholder="Cari...">
+            </div>
+            <button class="sv-mk__add" id="svMkAdd"><i class="fas fa-plus"></i></button>
+          </div>
+        </div>
+        <div class="sv-mk__body" id="svMkBody"></div>
+      </div>
+
+      <!-- Voucher modal -->
+      <div class="sv-mk__modal hidden" id="svMkVModal">
+        <div class="sv-mk__modal-bg" data-close="1"></div>
+        <div class="sv-mk__modal-sheet">
+          <div class="sv-mk__modal-head"><div class="sv-mk__modal-title"><i class="fas fa-ticket"></i><span data-i18n="mk.vTitle">VOUCHER BARU</span></div><button class="sv-mk__modal-close" data-close="1"><i class="fas fa-xmark"></i></button></div>
+          <label data-i18n="mk.vCode">Kod Voucher</label><input id="svMkVCode" type="text" placeholder="AUTO atau tulis sendiri">
+          <label data-i18n="mk.vValue">Nilai (RM)</label><input id="svMkVValue" type="number" step="0.01" placeholder="10.00">
+          <label data-i18n="mk.vLimit">Had Guna</label><input id="svMkVLimit" type="number" value="1" min="1">
+          <label data-i18n="mk.vExpiry">Tarikh Luput</label><input id="svMkVExpiry" type="date">
+          <button class="sv-mk__save" id="svMkVSave"><i class="fas fa-floppy-disk"></i><span data-i18n="c.save">SIMPAN</span></button>
+        </div>
+      </div>
+
+      <!-- Referral modal -->
+      <div class="sv-mk__modal hidden" id="svMkRModal">
+        <div class="sv-mk__modal-bg" data-close="1"></div>
+        <div class="sv-mk__modal-sheet">
+          <div class="sv-mk__modal-head"><div class="sv-mk__modal-title"><i class="fas fa-handshake"></i><span data-i18n="mk.rTitle">REFERRAL BARU</span></div><button class="sv-mk__modal-close" data-close="1"><i class="fas fa-xmark"></i></button></div>
+          <label data-i18n="st.fNama">Nama</label><input id="svMkRNama" type="text">
+          <label data-i18n="st.fPhone">No. Telefon</label><input id="svMkRTel" type="tel">
+          <label data-i18n="mk.rCommission">Komisen (%)</label><input id="svMkRCom" type="number" value="5" min="0" max="100">
+          <label data-i18n="mk.rBank">Bank</label><input id="svMkRBank" type="text" placeholder="Maybank">
+          <label data-i18n="mk.rAccNo">No. Akaun</label><input id="svMkRAcc" type="text">
+          <button class="sv-mk__save" id="svMkRSave"><i class="fas fa-floppy-disk"></i><span data-i18n="c.save">SIMPAN</span></button>
+        </div>
+      </div>
+    </section>
+    <!-- EXPENSE -->
+    <section class="sup-tab-pane" data-tab="EXPENSE">
+      <div class="sv-exp">
+        <div class="sv-exp__head">
+          <div class="sv-exp__title-row">
+            <div class="sv-exp__title"><i class="fas fa-receipt"></i><span data-i18n="exp.title">PERBELANJAAN</span></div>
+            <button class="sv-exp__add" id="svExpAdd"><i class="fas fa-plus"></i><span data-i18n="exp.newBtn">REKOD BARU</span></button>
+          </div>
+          <div class="sv-exp__summary">
+            <div>
+              <div class="sv-exp__summary-lbl" data-i18n="exp.totalLbl">JUMLAH PERBELANJAAN</div>
+              <div class="sv-exp__summary-count" id="svExpCount">0</div>
+            </div>
+            <div class="sv-exp__summary-total" id="svExpTotal">RM 0.00</div>
+          </div>
+          <div class="sv-exp__time" id="svExpTime">
+            <button data-t="TODAY" data-i18n="c.today">Hari Ini</button>
+            <button data-t="THIS_WEEK" data-i18n="c.thisWeek">Minggu Ini</button>
+            <button class="is-active" data-t="THIS_MONTH" data-i18n="c.thisMonth">Bulan Ini</button>
+            <button data-t="ALL" data-i18n="c.all">Semua</button>
+            <button data-t="CUSTOM"><i class="fas fa-calendar"></i> <span data-i18n="c.pickDate">Pilih Tarikh</span></button>
+          </div>
+          <div class="sv-exp__range hidden" id="svExpRange">
+            <input type="date" id="svExpFrom"><span>—</span><input type="date" id="svExpTo">
+          </div>
+          <div class="sv-exp__toolbar">
+            <div class="sv-exp__search">
+              <i class="fas fa-magnifying-glass"></i>
+              <input type="search" id="svExpSearch" data-i18n-ph="exp.searchPh" placeholder="Cari perkara / kategori...">
+            </div>
+            <select id="svExpSort">
+              <option value="ZA" data-i18n="c.newest">Terbaru</option>
+              <option value="AZ" data-i18n="c.oldest">Terlama</option>
+            </select>
+          </div>
+          <div class="sv-exp__chips" id="svExpChips"></div>
+        </div>
+        <div class="sv-exp__body" id="svExpBody"></div>
+      </div>
+
+      <!-- Modal: add/edit expense -->
+      <div class="sv-exp__modal hidden" id="svExpModal">
+        <div class="sv-exp__modal-bg" data-close="1"></div>
+        <div class="sv-exp__modal-sheet">
+          <div class="sv-exp__modal-head">
+            <div class="sv-exp__modal-title"><i class="fas fa-receipt"></i><span id="svExpModalTitle">REKOD PERBELANJAAN BARU</span></div>
+            <button class="sv-exp__modal-close" data-close="1"><i class="fas fa-xmark"></i></button>
+          </div>
+          <label data-i18n="exp.kategori">Kategori</label>
+          <select id="svExpFKategori"></select>
+          <label data-i18n="exp.perkara">Perkara / Keterangan</label>
+          <input type="text" id="svExpFPerkara" data-i18n-ph="exp.perkaraPh" placeholder="Cth: Gaji bulan Mac, Bil TNB Mac...">
+          <label data-i18n="exp.jumlah">Jumlah (RM)</label>
+          <input type="number" id="svExpFJumlah" placeholder="0.00" step="0.01" inputmode="decimal">
+          <label data-i18n="exp.catatan">Catatan (Opsional)</label>
+          <textarea id="svExpFCatatan" rows="3" data-i18n-ph="exp.catatanPh" placeholder="Nota tambahan..."></textarea>
+          <button class="sv-exp__modal-save" id="svExpSave"><i class="fas fa-floppy-disk"></i><span id="svExpSaveLbl" data-i18n="c.save">SIMPAN</span></button>
+        </div>
+      </div>
+    </section>
+    <!-- UNTUNGRUGI -->
+    <section class="sup-tab-pane" data-tab="UNTUNGRUGI">
+      <div class="sv-ur">
+        <div class="sv-ur__head">
+          <div class="sv-ur__title-row">
+            <div class="sv-ur__title"><i class="fas fa-chart-line"></i><span data-i18n="pl.title">UNTUNG RUGI</span></div>
+          </div>
+          <div class="sv-ur__filter-row">
+            <select id="svUrTime">
+              <option value="TODAY" data-i18n="c.today">Hari Ini</option>
+              <option value="THIS_WEEK" data-i18n="c.thisWeek">Minggu Ini</option>
+              <option value="THIS_MONTH" data-i18n="c.thisMonth">Bulan Ini</option>
+              <option value="ALL" data-i18n="c.all">Semua</option>
+              <option value="CUSTOM" data-i18n="c.pickDate">Pilih Tarikh</option>
+            </select>
+            <div class="sv-ur__range hidden" id="svUrRange">
+              <input type="date" id="svUrFrom"><span>—</span><input type="date" id="svUrTo">
+            </div>
+          </div>
+        </div>
+        <div class="sv-ur__segs" id="svUrSegs">
+          <button class="is-active" data-seg="REPAIR"><i class="fas fa-screwdriver-wrench"></i><span data-i18n="dash.segRepair">Job Repair</span></button>
+          <button data-seg="PHONE"><i class="fas fa-mobile-screen-button"></i><span data-i18n="dash.segPhone">Jualan Telefon</span></button>
+          <button data-seg="KEWANGAN"><i class="fas fa-chart-pie"></i><span data-i18n="tab.kewangan">Kewangan</span></button>
+        </div>
+        <div class="sv-ur__body" id="svUrBody"></div>
+      </div>
+    </section>
+    <!-- MARKETPLACE — embed marketplace.html (mirror sv_marketplace_tab.dart) -->
+    <section class="sup-tab-pane" data-tab="MARKETPLACE">
+      <iframe id="svMpFrame" src="about:blank" data-src="marketplace.html"
+        style="width:100%; height:calc(100vh - 160px); border:none; border-radius:12px; background:#fff;"
+        title="Marketplace"></iframe>
+    </section>
+    <!-- CHAT — user ↔ Admin SaaS support chat (Firebase RTDB rms_chat_v4/tickets) -->
+    <section class="sup-tab-pane" data-tab="CHAT">
+      <div class="sv-ch sv-ch--single">
+        <div class="sv-ch__room-head">
+          <div class="sv-ch__admin-avatar"><i class="fas fa-user-shield"></i></div>
+          <div>
+            <div class="sv-ch__admin-name">Dealer Support</div>
+            <div class="sv-ch__admin-sub">Hubungi support untuk bantuan</div>
+          </div>
+        </div>
+        <div class="sv-ch__body" id="svChBody"></div>
+        <div class="sv-ch__compose">
+          <input type="text" id="svChInput" placeholder="Tulis mesej...">
+          <button id="svChSend"><i class="fas fa-paper-plane"></i></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="sup-tab-pane" data-tab="SETTINGS">
+      <div class="sv-settings">
+        <div class="sv-settings__head">
+          <i class="fas fa-language"></i>
+          <span data-i18n="set.head">Bahasa / Language</span>
+        </div>
+        <p class="sv-settings__desc" data-i18n="set.desc">Pilih bahasa paparan untuk mod Supervisor.</p>
+        <div class="sv-settings__field">
+          <select id="svLangSelect">
+            <option value="ms">🇲🇾&nbsp;&nbsp;Bahasa Melayu</option>
+            <option value="en">🇬🇧&nbsp;&nbsp;English</option>
+          </select>
+          <i class="fas fa-chevron-down sv-settings__chev"></i>
+        </div>
+      </div>
+    </section>
   </main>  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="js/supabase-init.js"></script>
+  <script src="js/storage-helper.js"></script>
+  <script src="js/sv_i18n.js"></script>
   <script src="js/supervisor.js"></script>
   <script src="js/sv_dashboard.js"></script>
+  <script src="js/sv_settings.js"></script>
+  <script src="js/sv_inventory.js"></script>
+  <script src="js/sv_expense.js"></script>
+  <script src="js/sv_kewangan.js"></script>
+  <script src="js/sv_untungrugi.js"></script>
+  <script src="js/sv_refund.js"></script>
+  <script src="js/sv_staff.js"></script>
+  <script src="js/sv_marketing.js"></script>
+  <script src="js/sv_chat.js"></script>
 </body>
 </html>

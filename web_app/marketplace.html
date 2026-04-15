@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RMS Pro — Marketplace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/module.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/marketplace.css">
+</head>
+<body class="mp-page">
+  <main class="mp-wrap">
+
+    <!-- Shell tabs (mirror marketplace_shell.dart) -->
+    <nav class="mp-tabs" id="mpTabs">
+      <button class="mp-tab active" data-pane="browse"><i class="fas fa-store"></i><span>Marketplace</span></button>
+      <button class="mp-tab" data-pane="kedai"><i class="fas fa-shop"></i><span>Kedai Saya</span></button>
+      <button class="mp-tab" data-pane="pesanan"><i class="fas fa-bag-shopping"></i><span>Pesanan</span></button>
+      <button class="mp-tab" data-pane="jualan"><i class="fas fa-money-bills"></i><span>Jualan</span></button>
+    </nav>
+
+    <!-- PANE: Browse (mirror marketplace_browse_screen.dart) -->
+    <section class="mp-pane active" id="paneBrowse">
+      <div class="mp-search">
+        <i class="fas fa-magnifying-glass"></i>
+        <input type="search" id="mpSearchInput" placeholder="Cari item atau kedai...">
+        <button class="clr" id="mpSearchClear" hidden><i class="fas fa-xmark"></i></button>
+      </div>
+      <div class="mp-chips" id="mpChips"></div>
+      <div id="mpGridHost">
+        <div class="mp-loading"><div class="mp-spin"></div></div>
+      </div>
+    </section>
+
+    <!-- PANE: Kedai Saya (populated by marketplace_seller.js) -->
+    <section class="mp-pane" id="paneKedai">
+      <div class="mp-loading"><div class="mp-spin"></div></div>
+    </section>
+
+    <!-- PANE: Pesanan (populated by marketplace_orders.js) -->
+    <section class="mp-pane" id="panePesanan">
+      <div class="mp-loading"><div class="mp-spin"></div></div>
+    </section>
+
+    <!-- PANE: Jualan Masuk (populated by marketplace_seller.js) -->
+    <section class="mp-pane" id="paneJualan">
+      <div class="mp-loading"><div class="mp-spin"></div></div>
+    </section>
+
+  </main>
+
+  <!-- Product Detail modal (mirror product_detail_screen.dart) -->
+  <div class="mp-modal-bg" id="mpPdBg">
+    <div class="mp-modal" id="mpPdModal">
+      <div class="mp-modal__head">
+        <button class="mp-modal__close" id="mpPdBack"><i class="fas fa-arrow-left"></i></button>
+        <h3 id="mpPdTitle">Produk</h3>
+      </div>
+      <div id="mpPdContent"></div>
+    </div>
+  </div>
+
+  <!-- Checkout modal (Fasa 2 stub — container only) -->
+  <div class="mp-modal-bg" id="mpCoBg">
+    <div class="mp-modal">
+      <div class="mp-modal__head">
+        <button class="mp-modal__close" onclick="document.getElementById('mpCoBg').classList.remove('show')"><i class="fas fa-xmark"></i></button>
+        <h3>Checkout</h3>
+      </div>
+      <div id="mpCoContent" style="padding:20px;">
+        <div class="mp-empty"><i class="fas fa-cart-shopping"></i><p>Checkout flow — Fasa 2</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase (marketplace kekal Firestore — mirror dart source) -->
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <!-- Supabase (untuk auth + tenant lookup) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/marketplace.js"></script>
+  <script src="js/marketplace_orders.js"></script>
+  <script src="js/marketplace_seller.js"></script>
+</body>
+</html>

@@ -787,7 +787,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
             children: [
               if (_saasFlags['chat'] == true) ...[
                 _moreMenuCard(
-                  'Chat',
+                  'Dealer Support',
                   FontAwesomeIcons.comments,
                   const Color(0xFF10B981),
                   const Color(0xFFD1FAE5),

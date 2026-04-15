@@ -20,19 +20,17 @@
 
     <!-- SEGMENT -->
     <section class="settings-section">
-      <div class="settings-section__head">
+      <div class="settings-section__head" style="display:flex;align-items:center;gap:10px;">
         <span class="settings-section__icon"><i class="fas fa-mobile-screen"></i></span>
-        <h2 class="settings-section__title">Jualan Telefon</h2>
+        <h2 class="settings-section__title" style="flex:1;">Jualan Telefon</h2>
+        <button id="jpFab" style="background:#2563eb;color:#fff;border:none;border-radius:24px;padding:10px 18px;font-weight:800;font-size:13px;cursor:pointer;box-shadow:0 4px 12px rgba(37,99,235,.35);white-space:nowrap;">
+          <i class="fas fa-plus"></i> JUAL BARU
+        </button>
       </div>
       <div class="settings-section__body">
         <div class="jp-segment" id="jpSegment">
           <button type="button" class="jp-seg-btn is-active" data-seg="CUSTOMER"><i class="fas fa-user"></i> Customer</button>
           <button type="button" class="jp-seg-btn" data-seg="DEALER"><i class="fas fa-handshake"></i> Dealer</button>
-        </div>
-        <div class="jp-tabs" id="jpTabs">
-          <button type="button" class="jp-tab-btn is-active" data-tab="ACTIVE"><i class="fas fa-receipt"></i> Aktif</button>
-          <button type="button" class="jp-tab-btn" data-tab="ARCHIVED"><i class="fas fa-box-archive"></i> Arkib</button>
-          <button type="button" class="jp-tab-btn" data-tab="DELETED"><i class="fas fa-trash"></i> Padam</button>
         </div>
       </div>
     </section>
@@ -63,9 +61,17 @@
 
     <!-- LIST -->
     <section class="settings-section">
-      <div class="settings-section__head">
+      <div class="settings-section__head" style="display:flex;align-items:center;gap:8px;">
         <span class="settings-section__icon"><i class="fas fa-list"></i></span>
-        <h2 class="settings-section__title" id="listTitle">Senarai Bil Aktif</h2>
+        <h2 class="settings-section__title" id="listTitle" style="flex:1;">Senarai Bil Aktif</h2>
+        <button type="button" id="jpArkibBtn" data-tab="ARCHIVED" title="Arkib"
+          style="display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:5px 9px;font-size:10px;font-weight:800;color:#64748b;cursor:pointer;">
+          <i class="fas fa-box-archive" style="font-size:10px;"></i> Arkib
+        </button>
+        <button type="button" id="jpPadamBtn" data-tab="DELETED" title="Padam" hidden
+          style="display:none;align-items:center;justify-content:center;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:5px 8px;font-size:10px;font-weight:800;color:#dc2626;cursor:pointer;">
+          <i class="fas fa-trash" style="font-size:10px;"></i>
+        </button>
       </div>
       <div class="settings-section__body">
         <div class="jp-list" id="jpList"></div>
@@ -75,10 +81,6 @@
         </div>
       </div>
     </section>
-
-    <button id="jpFab" style="position:fixed;right:20px;bottom:20px;background:#2563eb;color:#fff;border:none;border-radius:30px;padding:14px 22px;font-weight:900;font-size:14px;cursor:pointer;box-shadow:0 6px 20px rgba(37,99,235,.4);z-index:90;">
-      <i class="fas fa-plus"></i> JUAL BARU
-    </button>
 
     <div id="jpCreateBg" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:none;align-items:center;justify-content:center;padding:14px;">
       <div id="jpCreate" style="background:#fff;border-radius:14px;width:100%;max-width:520px;max-height:90vh;overflow:auto;padding:20px;">

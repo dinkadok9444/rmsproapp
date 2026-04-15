@@ -145,15 +145,39 @@
       ROWS = await fetchRows(); render();
     });
   });
-  // Tabs
-  document.querySelectorAll('#jpTabs .jp-tab-btn').forEach((b) => {
-    b.addEventListener('click', async () => {
-      document.querySelectorAll('#jpTabs .jp-tab-btn').forEach((x) => x.classList.remove('is-active'));
-      b.classList.add('is-active');
-      tab = b.dataset.tab;
-      ROWS = await fetchRows(); render();
-    });
+  // Arkib / Padam toggles (mirror Flutter: Arkib toggles ACTIVE↔ARCHIVED; Padam visible only in ARKIB/PADAM)
+  function applyTabStyle() {
+    const ark = document.getElementById('jpArkibBtn');
+    const pad = document.getElementById('jpPadamBtn');
+    if (ark) {
+      const on = tab === 'ARCHIVED';
+      ark.style.background = on ? '#f59e0b' : '#fff';
+      ark.style.color = on ? '#fff' : '#64748b';
+      ark.style.borderColor = on ? '#f59e0b' : '#e2e8f0';
+    }
+    if (pad) {
+      const show = tab === 'ARCHIVED' || tab === 'DELETED';
+      pad.hidden = !show;
+      pad.style.display = show ? 'inline-flex' : 'none';
+      const on = tab === 'DELETED';
+      pad.style.background = on ? '#dc2626' : '#fff';
+      pad.style.color = on ? '#fff' : '#dc2626';
+      pad.style.borderColor = on ? '#dc2626' : '#e2e8f0';
+    }
+  }
+  const arkBtn = document.getElementById('jpArkibBtn');
+  if (arkBtn) arkBtn.addEventListener('click', async () => {
+    tab = (tab === 'ARCHIVED') ? 'ACTIVE' : 'ARCHIVED';
+    applyTabStyle();
+    ROWS = await fetchRows(); render();
   });
+  const padBtn = document.getElementById('jpPadamBtn');
+  if (padBtn) padBtn.addEventListener('click', async () => {
+    tab = (tab === 'DELETED') ? 'ARCHIVED' : 'DELETED';
+    applyTabStyle();
+    ROWS = await fetchRows(); render();
+  });
+  applyTabStyle();
   // Filter
   $('fTime').addEventListener('change', async (e) => { timeFilter = e.target.value; ROWS = await fetchRows(); render(); });
   $('fSearch').addEventListener('input', (e) => { searchQ = e.target.value; render(); });

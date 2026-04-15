@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#10B981">
+  <title>Dealer Support — Admin SaaS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/admin.css">
+  <style>
+    .ac { display: grid; grid-template-columns: 240px 1fr; gap: 10px; height: 560px; max-width: 900px; margin: 12px auto; padding: 0 12px; }
+    .ac__side { display: flex; flex-direction: column; background: #fff; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; }
+    .ac__side-head { padding: 12px 14px; color: #0F172A; font-size: 12px; font-weight: 800; background: #F8FAFC; border-bottom: 1px solid #E2E8F0; display: flex; align-items: center; gap: 8px; }
+    .ac__side-head i { color: #10B981; }
+    .ac__side-search { padding: 8px; border-bottom: 1px solid #E2E8F0; }
+    .ac__side-search input { width: 100%; padding: 8px 12px; font-family: inherit; font-size: 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; outline: none; box-sizing: border-box; }
+    .ac__side-list { flex: 1; overflow-y: auto; padding: 6px; }
+    .ac__user { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px; margin-bottom: 2px; font-family: inherit; background: transparent; border: 0; border-radius: 8px; cursor: pointer; text-align: left; position: relative; }
+    .ac__user:hover { background: #F8FAFC; }
+    .ac__user.is-active { background: rgba(16,185,129,0.12); }
+    .ac__user-avatar { width: 36px; height: 36px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 900; color: #fff; background: #10B981; border-radius: 50%; }
+    .ac__user-info { flex: 1; min-width: 0; }
+    .ac__user-name { color: #0F172A; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ac__user-last { color: #94A3B8; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ac__user-unread { width: 8px; height: 8px; background: #EF4444; border-radius: 50%; flex-shrink: 0; }
+    .ac__room { display: flex; flex-direction: column; background: #fff; border: 1px solid #E2E8F0; border-radius: 12px; overflow: hidden; }
+    .ac__room-head { padding: 12px 14px; display: flex; align-items: center; gap: 10px; background: #F8FAFC; border-bottom: 1px solid #E2E8F0; }
+    .ac__room-name { color: #0F172A; font-size: 13px; font-weight: 800; }
+    .ac__room-sub { color: #64748B; font-size: 10px; }
+    .ac__body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px; background: #F8FAFC; }
+    .ac__empty { margin: auto; padding: 40px; text-align: center; color: #94A3B8; font-size: 12px; }
+    .ac__msg { max-width: 70%; align-self: flex-start; }
+    .ac__msg.is-admin { align-self: flex-end; text-align: right; }
+    .ac__msg-sender { margin-bottom: 2px; color: #10B981; font-size: 10px; font-weight: 800; }
+    .ac__msg-bubble { display: inline-block; padding: 8px 12px; color: #0F172A; font-size: 12px; line-height: 1.4; background: #fff; border: 1px solid #E2E8F0; border-radius: 12px 12px 12px 4px; word-wrap: break-word; white-space: pre-wrap; }
+    .ac__msg.is-admin .ac__msg-bubble { color: #fff; background: #10B981; border-color: #10B981; border-radius: 12px 12px 4px 12px; }
+    .ac__msg-time { margin-top: 2px; color: #94A3B8; font-size: 9px; }
+    .ac__compose { display: flex; gap: 8px; padding: 10px; border-top: 1px solid #E2E8F0; background: #fff; }
+    .ac__compose input { flex: 1; padding: 10px 14px; font-family: inherit; font-size: 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 20px; outline: none; }
+    .ac__compose input:focus { border-color: #10B981; }
+    .ac__compose button { width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; color: #fff; background: #10B981; border: 0; border-radius: 50%; cursor: pointer; }
+    .ac__no-select { margin: auto; color: #94A3B8; font-size: 12px; text-align: center; padding: 20px; }
+    @media (max-width: 720px) { .ac { grid-template-columns: 1fr; height: auto; max-width: 100%; } .ac__side { max-height: 200px; } }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__inner">
+      <button class="icon-btn" id="btnBack" title="Kembali" onclick="history.back()"><i class="fas fa-arrow-left"></i></button>
+      <span class="app-header__title"><i class="fas fa-comments" style="color:#10B981;margin-right:8px"></i>Dealer Support</span>
+      <div class="app-header__spacer"></div>
+    </div>
+  </header>
+
+  <main class="ac">
+    <aside class="ac__side">
+      <div class="ac__side-head"><i class="fas fa-users"></i><span>Pengguna</span><span id="acCount" style="margin-left:auto;color:#64748B;font-size:11px">0</span></div>
+      <div class="ac__side-search"><input type="search" id="acSearch" placeholder="Cari nama / ID..."></div>
+      <div class="ac__side-list" id="acList"></div>
+    </aside>
+    <div class="ac__room" id="acRoom">
+      <div class="ac__no-select" id="acNoSelect"><i class="fas fa-comment-dots" style="font-size:40px;color:#CBD5E1;display:block;margin-bottom:12px"></i>Pilih pengguna untuk chat</div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/admin_chat.js"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#00C47D">
+  <title>Suis Modul — Admin SaaS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__inner">
+      <button class="icon-btn" id="btnBack" title="Kembali"><i class="fas fa-arrow-left"></i></button>
+      <span class="app-header__title"><i class="fas fa-toggle-on" style="color:var(--teal);margin-right:8px"></i>Suis Modul SaaS</span>
+      <div class="app-header__spacer"></div>
+    </div>
+  </header>
+
+  <main class="container admin-main">
+    <section class="admin-section">
+      <p class="admin-hint">On/Off modul untuk SEMUA tenant. Berkesan serta-merta.</p>
+      <div id="flagList" class="flag-list">
+        <div class="admin-loading"><i class="fas fa-spinner fa-spin"></i> Memuat…</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/admin_suis_modul.js"></script>
+</body>
+</html>

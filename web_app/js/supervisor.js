@@ -39,6 +39,11 @@
       panes.forEach((p) => p.classList.toggle('is-active', p.dataset.tab === key));
       // Notify sv_dashboard to reload if DASHBOARD re-activated
       if (key === 'DASHBOARD') window.dispatchEvent(new CustomEvent('sv:dashboard:refresh'));
+      // Lazy-load marketplace iframe on first MARKETPLACE open
+      if (key === 'MARKETPLACE') {
+        const f = document.getElementById('svMpFrame');
+        if (f && f.src === 'about:blank') f.src = f.dataset.src;
+      }
     });
   });
 

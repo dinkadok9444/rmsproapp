@@ -62,7 +62,7 @@ class BranchService {
       final row = await sb
           .from('branches')
           .select(
-              'id, tenant_id, nama_kedai, alamat, phone, email, logo_base64, enabled_modules, single_staff_mode, expire_date, pdf_cloud_run_url, use_custom_pdf_url, tenants!inner(owner_id, nama_kedai, addon_gallery, gallery_expire, single_staff_mode, config, status)')
+              'id, tenant_id, nama_kedai, alamat, phone, email, logo_base64, enabled_modules, single_staff_mode, expire_date, pdf_cloud_run_url, use_custom_pdf_url, tenants!branches_tenant_id_fkey!inner(owner_id, nama_kedai, addon_gallery, gallery_expire, single_staff_mode, config, status)')
           .eq('shop_code', _shopID!)
           .eq('tenants.owner_id', _ownerID!)
           .maybeSingle();

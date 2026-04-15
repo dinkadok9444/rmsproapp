@@ -64,7 +64,7 @@ class _BookingScreenState extends State<BookingScreen> {
       try {
         final row = await _sb
             .from('branches')
-            .select('*, branch_staff(nama, status), tenants!inner(domain, config)')
+            .select('*, branch_staff(nama, status), tenants!branches_tenant_id_fkey!inner(domain, config)')
             .eq('id', _branchId!)
             .maybeSingle();
         if (row != null) {

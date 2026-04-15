@@ -29,6 +29,9 @@
           <button type="button" class="inv-seg-btn is-active" data-seg="SPAREPART" style="--seg-color:#F59E0B;">
             <i class="fas fa-screwdriver-wrench"></i> SPAREPART
           </button>
+          <button type="button" class="inv-seg-btn" data-seg="FAST_SERVICE" style="--seg-color:#EF4444;">
+            <i class="fas fa-bolt"></i> FAST SERVICE
+          </button>
           <button type="button" class="inv-seg-btn" data-seg="ACCESSORIES" style="--seg-color:#8B5CF6;">
             <i class="fas fa-headphones"></i> ACCESSORIES
           </button>
@@ -110,11 +113,50 @@
       </div>
     </section>
 
+    <!-- HISTORY FILTER (only shown in history mode) -->
+    <section class="settings-section" id="secHistFilter" hidden>
+      <div class="settings-section__head">
+        <button type="button" id="btnHistBack" class="inv-hist-back" title="Back"><i class="fas fa-arrow-left"></i></button>
+        <span class="settings-section__icon"><i class="fas fa-clock-rotate-left"></i></span>
+        <h2 class="settings-section__title">History</h2>
+      </div>
+      <div class="settings-section__body">
+        <div class="set-row">
+          <label class="set-label">Status</label>
+          <select class="set-select" id="hStatus">
+            <option value="ALL">Semua</option>
+            <option value="TERJUAL">Terjual</option>
+            <option value="USED">Used (Repair)</option>
+            <option value="RETURNED">Returned</option>
+            <option value="OUT_OF_STOCK">Out of Stock</option>
+          </select>
+        </div>
+        <div class="set-row">
+          <label class="set-label">Dari</label>
+          <input class="input" type="date" id="hFrom">
+        </div>
+        <div class="set-row">
+          <label class="set-label">Hingga</label>
+          <input class="input" type="date" id="hTo">
+        </div>
+        <div class="set-row">
+          <label class="set-label">Cari</label>
+          <input class="input" type="search" id="hSearch" placeholder="Kod / nama / siri jual…">
+        </div>
+        <div class="set-row">
+          <label class="set-label">&nbsp;</label>
+          <button type="button" id="hReset" class="inv-add-btn inv-add-btn--alt"><i class="fas fa-rotate-left"></i> RESET</button>
+        </div>
+      </div>
+    </section>
+
     <!-- LIST -->
     <section class="settings-section" id="secList">
       <div class="settings-section__head">
         <span class="settings-section__icon"><i class="fas fa-list"></i></span>
         <h2 class="settings-section__title" id="listTitle">Senarai Stok</h2>
+        <button type="button" id="btnHistory" class="inv-add-btn inv-add-btn--alt"><i class="fas fa-clock-rotate-left"></i> HISTORY</button>
+        <button type="button" id="btnAdd" class="inv-add-btn"><i class="fas fa-plus"></i> TAMBAH</button>
       </div>
       <div class="settings-section__body">
         <div class="inv-list" id="invList"></div>

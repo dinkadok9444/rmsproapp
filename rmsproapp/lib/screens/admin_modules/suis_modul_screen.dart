@@ -60,8 +60,8 @@ class SuisModulScreen extends StatelessWidget {
                       _tile(
                         icon: FontAwesomeIcons.comments,
                         color: const Color(0xFF10B981),
-                        title: 'Chat',
-                        desc: 'Mesej antara staff & owner kedai.',
+                        title: 'Dealer Support',
+                        desc: 'Chat sokongan antara user & Dealer Support.',
                         value: flags['chat'] ?? true,
                         onChanged: (v) => SaasFlagsService.set('chat', v),
                       ),

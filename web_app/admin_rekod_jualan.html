@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#00C47D">
+  <title>Rekod Jualan — Admin SaaS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__inner">
+      <button class="icon-btn" id="btnBack" title="Kembali"><i class="fas fa-arrow-left"></i></button>
+      <span class="app-header__title"><i class="fas fa-chart-line" style="color:var(--primary);margin-right:8px"></i>Rekod Jualan</span>
+      <div class="app-header__spacer"></div>
+    </div>
+  </header>
+
+  <main class="container admin-main">
+    <div class="admin-tabs">
+      <button class="admin-tab is-active" data-tab="saas">LANGGANAN SAAS</button>
+      <button class="admin-tab" data-tab="sales">JUALAN DEALER</button>
+    </div>
+
+    <section class="admin-section" id="tabSaas">
+      <div class="rekod-summary rekod-summary--primary">
+        <div class="rekod-summary__icon"><i class="fas fa-sack-dollar"></i></div>
+        <div class="rekod-summary__label">JUMLAH KUTIPAN SAAS</div>
+        <div class="rekod-summary__value" id="saasTotal">RM 0.00</div>
+        <div class="rekod-summary__mini">
+          <div class="rekod-mini"><div class="rekod-mini__num" id="cnt1">0</div><div class="rekod-mini__lbl">1 Bulan</div></div>
+          <div class="rekod-mini"><div class="rekod-mini__num" id="cnt6">0</div><div class="rekod-mini__lbl">6 Bulan</div></div>
+          <div class="rekod-mini"><div class="rekod-mini__num" id="cnt12">0</div><div class="rekod-mini__lbl">12 Bulan</div></div>
+        </div>
+      </div>
+      <div class="time-chips" id="saasChips"></div>
+      <div class="admin-toolbar">
+        <input type="text" id="saasSearch" placeholder="Cari dealer, nama kedai, telefon...">
+      </div>
+      <div class="admin-meta" id="saasCount">0 dealer</div>
+      <div id="saasList"><div class="admin-loading"><i class="fas fa-spinner fa-spin"></i> Memuat…</div></div>
+    </section>
+
+    <section class="admin-section hidden" id="tabSales">
+      <div class="rekod-summary rekod-summary--blue">
+        <div class="rekod-summary__icon"><i class="fas fa-ranking-star"></i></div>
+        <div class="rekod-summary__label">JUMLAH JUALAN RANGKAIAN</div>
+        <div class="rekod-summary__value" id="salesTotal">RM 0.00</div>
+        <div class="rekod-summary__sub">Top <span id="salesCount">0</span> Dealer</div>
+      </div>
+      <div class="time-chips" id="salesChips"></div>
+      <div id="salesList"><div class="admin-loading"><i class="fas fa-spinner fa-spin"></i> Memuat…</div></div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/admin_rekod_jualan.js"></script>
+</body>
+</html>

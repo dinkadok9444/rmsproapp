@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#00C47D">
+  <title>Tetapan Sistem — Admin SaaS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__inner">
+      <button class="icon-btn" id="btnBack" title="Kembali"><i class="fas fa-arrow-left"></i></button>
+      <span class="app-header__title"><i class="fas fa-gears" style="color:var(--indigo);margin-right:8px"></i>Tetapan Sistem</span>
+      <div class="app-header__spacer"></div>
+    </div>
+  </header>
+
+  <main class="container admin-main">
+    <section class="admin-section">
+      <div id="tsLoading" class="admin-loading"><i class="fas fa-spinner fa-spin"></i> Memuat…</div>
+      <div id="tsContent" class="hidden">
+
+        <!-- Delyva Courier -->
+        <div class="ts-section ts-section--purple">
+          <div class="ts-section__head">
+            <i class="fas fa-truck"></i>
+            <span>DELYVA COURIER</span>
+            <span class="ts-badge ts-badge--ok hidden" id="badgeDelyva">AKTIF</span>
+          </div>
+          <label class="ts-field">
+            <span class="ts-field__label">API Key (Access Token)</span>
+            <span class="ts-field__wrap">
+              <input type="password" id="delyvaKey" autocomplete="off">
+              <button type="button" class="ts-eye" data-target="delyvaKey"><i class="fas fa-eye"></i></button>
+            </span>
+          </label>
+          <label class="ts-field">
+            <span class="ts-field__label">Customer ID</span>
+            <input type="text" id="delyvaCustomer" autocomplete="off">
+          </label>
+          <label class="ts-field">
+            <span class="ts-field__label">Company ID</span>
+            <input type="text" id="delyvaCompany" autocomplete="off">
+          </label>
+        </div>
+
+        <!-- ToyyibPay -->
+        <div class="ts-section ts-section--blue">
+          <div class="ts-section__head">
+            <i class="fas fa-credit-card"></i>
+            <span>TOYYIBPAY</span>
+            <span class="ts-badge hidden" id="badgeToyyib">SANDBOX</span>
+          </div>
+          <div class="ts-hint">Sandbox: daftar di dev.toyyibpay.com<br>Live: daftar di toyyibpay.com</div>
+          <label class="ts-field">
+            <span class="ts-field__label">User Secret Key</span>
+            <span class="ts-field__wrap">
+              <input type="password" id="toyyibSecret" autocomplete="off">
+              <button type="button" class="ts-eye" data-target="toyyibSecret"><i class="fas fa-eye"></i></button>
+            </span>
+          </label>
+          <label class="ts-field">
+            <span class="ts-field__label">Category Code</span>
+            <input type="text" id="toyyibCat" autocomplete="off">
+          </label>
+          <div class="ts-toggle">
+            <label class="switch">
+              <input type="checkbox" id="toyyibSandbox" checked>
+              <span class="switch__slider"></span>
+            </label>
+            <span class="ts-toggle__label" id="toyyibSandboxLabel">Sandbox Mode</span>
+          </div>
+        </div>
+
+        <!-- Branch PDF Settings -->
+        <div class="ts-section ts-section--red">
+          <div class="ts-section__head">
+            <i class="fas fa-file-pdf"></i>
+            <span>BRANCH PDF SETTINGS</span>
+            <span class="ts-badge ts-badge--blue" id="badgePdf">DEFAULT</span>
+          </div>
+          <div class="ts-hint">Tetapkan URL Cloud Run untuk generate PDF. Kosongkan untuk guna default. (Disimpan sebagai default platform)</div>
+          <label class="ts-field">
+            <span class="ts-field__label">Cloud Run PDF URL</span>
+            <input type="text" id="pdfUrl" autocomplete="off">
+          </label>
+          <div class="ts-toggle">
+            <label class="switch">
+              <input type="checkbox" id="pdfCustom">
+              <span class="switch__slider"></span>
+            </label>
+            <span class="ts-toggle__label" id="pdfCustomLabel">Guna URL Default</span>
+          </div>
+        </div>
+
+        <button class="btn btn-primary ts-save" id="btnSave"><i class="fas fa-floppy-disk"></i> SIMPAN SEMUA TETAPAN</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/admin_tetapan_sistem.js"></script>
+</body>
+</html>

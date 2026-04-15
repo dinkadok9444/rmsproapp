@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#00C47D">
+  <title>Bot WhatsApp — Admin SaaS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__inner">
+      <button class="icon-btn" id="btnBack" title="Kembali"><i class="fas fa-arrow-left"></i></button>
+      <span class="app-header__title"><i class="fab fa-whatsapp" style="color:var(--whatsapp);margin-right:8px"></i>Bot WhatsApp</span>
+      <div class="app-header__spacer"></div>
+    </div>
+  </header>
+
+  <main class="container admin-main">
+    <div class="admin-hero admin-hero--whatsapp">
+      <div class="admin-hero__icon"><i class="fab fa-whatsapp"></i></div>
+      <div class="admin-hero__body">
+        <div class="admin-hero__title">Bot WhatsApp</div>
+        <div class="admin-hero__sub"><span id="botCount">0</span> bot aktif</div>
+      </div>
+      <button class="admin-hero__action" id="btnAdd"><i class="fas fa-plus"></i> Tambah</button>
+    </div>
+
+    <div class="flow-card">
+      <div class="flow-card__title">CARA BOT BERFUNGSI</div>
+      <div class="flow-step"><div class="flow-step__num">1</div><div class="flow-step__text">Customer WhatsApp ke nombor kedai</div></div>
+      <div class="flow-step"><div class="flow-step__num">2</div><div class="flow-step__text">Bot auto reply greeting & minta no telefon</div></div>
+      <div class="flow-step"><div class="flow-step__num">3</div><div class="flow-step__text">Bot cari rekod repair berdasarkan no telefon / no backup</div></div>
+      <div class="flow-step"><div class="flow-step__num">4</div><div class="flow-step__text">Bot reply status repair secara automatik</div></div>
+    </div>
+
+    <section class="admin-section">
+      <div id="botList"><div class="admin-loading"><i class="fas fa-spinner fa-spin"></i> Memuat…</div></div>
+    </section>
+  </main>
+
+  <!-- Add / Setup modal -->
+  <div id="addModal" class="modal hidden">
+    <div class="modal__backdrop"></div>
+    <div class="modal__panel" style="max-width:480px;max-height:90vh;overflow-y:auto">
+      <div class="modal__title" style="color:var(--whatsapp)">SETUP BOT WHATSAPP</div>
+      <div id="addStep1">
+        <label class="modal__label">Cari kedai:</label>
+        <input type="text" class="picker-search" id="dealerSearch" placeholder="Nama atau ID kedai...">
+        <div class="picker-list" id="dealerList"></div>
+      </div>
+      <div id="addStep2" class="hidden">
+        <div class="picker-chip picker-chip--whatsapp">
+          <i class="fas fa-store"></i>
+          <span id="selectedName"></span>
+          <button class="picker-chip__close" id="btnClearSel"><i class="fas fa-times"></i></button>
+        </div>
+        <label class="modal__label">No. WhatsApp kedai (60xxxxxxxxx):</label>
+        <input type="text" id="waInput" placeholder="60123456789" style="font-family:monospace">
+        <label class="modal__label" style="margin-top:12px">Phone Number ID:</label>
+        <input type="text" id="phoneIdInput" style="font-family:monospace">
+        <label class="modal__label" style="margin-top:8px">Access Token:</label>
+        <input type="text" id="accessTokenInput" style="font-family:monospace">
+        <label class="modal__label" style="margin-top:8px">WABA ID:</label>
+        <input type="text" id="wabaIdInput" style="font-family:monospace">
+        <label class="modal__label" style="margin-top:8px">Verify Token:</label>
+        <input type="text" id="verifyTokenInput" style="font-family:monospace">
+        <div class="modal__actions">
+          <button class="btn btn-muted" id="addCancel">BATAL</button>
+          <button class="btn btn-green" id="addSave" style="background:var(--whatsapp)">AKTIFKAN</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="setModal" class="modal hidden">
+    <div class="modal__backdrop"></div>
+    <div class="modal__panel" style="max-width:480px;max-height:90vh;overflow-y:auto">
+      <div class="modal__title" style="color:var(--whatsapp)">TETAPAN BOT</div>
+      <label class="modal__label">No. WhatsApp:</label>
+      <input type="text" id="setNoWa" style="font-family:monospace">
+      <label class="modal__label" style="margin-top:10px">Phone Number ID:</label>
+      <input type="text" id="setPhoneId" style="font-family:monospace">
+      <label class="modal__label" style="margin-top:8px">Access Token:</label>
+      <input type="text" id="setAccessToken" style="font-family:monospace">
+      <label class="modal__label" style="margin-top:8px">WABA ID:</label>
+      <input type="text" id="setWabaId" style="font-family:monospace">
+      <label class="modal__label" style="margin-top:8px">Verify Token:</label>
+      <input type="text" id="setVerifyToken" style="font-family:monospace">
+      <label class="modal__label" style="margin-top:10px">Mesej Greeting:</label>
+      <textarea id="setGreeting" rows="3"></textarea>
+      <label class="modal__label" style="margin-top:8px">Mesej Tidak Dijumpai:</label>
+      <textarea id="setNotFound" rows="3"></textarea>
+      <div class="modal__actions">
+        <button class="btn btn-muted" id="setCancel">BATAL</button>
+        <button class="btn btn-green" id="setSave" style="background:var(--whatsapp)">SIMPAN</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/admin_whatsapp_bot.js"></script>
+</body>
+</html>

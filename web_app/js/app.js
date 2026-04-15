@@ -35,9 +35,8 @@
     const modules = [
       { id: 'widget',         label: 'Dashboard',   icon: 'fa-chart-line',          color: 'teal' },
       { id: 'POS',            label: 'POS',         icon: 'fa-cash-register',       color: 'red' },
-      { id: 'Baikpulih',      label: 'Baikpulih',   icon: 'fa-screwdriver-wrench',  color: 'teal' },
+      { id: 'Senarai_job',    label: 'Baikpulih',   icon: 'fa-screwdriver-wrench',  color: 'teal' },
       { id: 'JualTelefon',    label: 'Jual Fon',    icon: 'fa-mobile-screen-button',color: 'sky' },
-      { id: 'Senarai_job',    label: 'Senarai',     icon: 'fa-clipboard-list',      color: 'indigo' },
       { id: 'Stock',          label: 'Inventori',   icon: 'fa-boxes-stacked',       color: 'amber' },
       { id: 'DB_Cust',        label: 'Pelanggan',   icon: 'fa-users',               color: 'violet' },
       { id: 'Booking',        label: 'Booking',     icon: 'fa-calendar-check',      color: 'cyan' },
@@ -110,32 +109,76 @@
     if (defaultTile) defaultTile.click();
   }
 
-  // ---------- ADMIN DASHBOARD (kekal — untuk SaaS admin) ----------
+  // ---------- ADMIN DASHBOARD (SaaS admin) ----------
   const adminGrid = document.getElementById('moduleGrid');
   if (adminGrid) {
+    // Auth guard: admin only
+    (async () => {
+      if (typeof window.requireAuth !== 'function') return;
+      const ctx = await window.requireAuth();
+      if (!ctx) return;
+      if (ctx.role !== 'admin') { window.location.href = '/index.html'; return; }
+    })();
+
     const modules = [
-      { icon: 'fa-list-check',   label: 'Senarai Aktif', color: 'green' },
-      { icon: 'fa-user-plus',    label: 'Daftar Dealer', color: 'blue' },
-      { icon: 'fa-chart-pie',    label: 'Rekod Jualan',  color: 'orange' },
-      { icon: 'fa-quote-left',   label: 'Kata-Kata',     color: 'indigo' },
-      { icon: 'fa-bullhorn',     label: 'Notis Aduan',   color: 'red' },
-      { icon: 'fa-gear',         label: 'Tetapan API',   color: 'cyan' },
-      { icon: 'fa-trash',        label: 'Tong Sampah',   color: 'muted' },
-      { icon: 'fa-store',        label: 'Marketplace',   color: 'purple' },
-      { icon: 'fa-globe',        label: 'Domain',        color: 'violet' },
-      { icon: 'fa-file-pdf',     label: 'Template PDF',  color: 'pink' },
-      { icon: 'fa-whatsapp',     label: 'Bot WhatsApp',  color: 'whatsapp', brand: true },
-      { icon: 'fa-comment-dots', label: 'Feedback',      color: 'primary' },
-      { icon: 'fa-database',     label: 'Database User', color: 'sky' },
-      { icon: 'fa-toggle-on',    label: 'Suis Modul',    color: 'teal' },
+      { icon: 'fa-list-check',   label: 'Senarai Aktif', color: 'green',    url: 'admin_senarai_aktif.html' },
+      { icon: 'fa-user-plus',    label: 'Daftar Dealer', color: 'blue',     url: 'admin_daftar_manual.html' },
+      { icon: 'fa-chart-pie',    label: 'Rekod Jualan',  color: 'orange',   url: 'admin_rekod_jualan.html' },
+      { icon: 'fa-quote-left',   label: 'Kata-Kata',     color: 'indigo',   url: 'admin_katakata.html' },
+      { icon: 'fa-bullhorn',     label: 'Notis Aduan',   color: 'red',      url: 'admin_notis_aduan.html' },
+      { icon: 'fa-gear',         label: 'Tetapan API',   color: 'cyan',     url: 'admin_tetapan_sistem.html' },
+      { icon: 'fa-trash',        label: 'Tong Sampah',   color: 'muted',    url: 'admin_tong_sampah.html' },
+      { icon: 'fa-store',        label: 'Marketplace',   color: 'purple',   url: 'admin_marketplace.html' },
+      { icon: 'fa-globe',        label: 'Domain',        color: 'violet',   url: 'admin_domain.html' },
+      { icon: 'fa-file-pdf',     label: 'Template PDF',  color: 'pink',     url: 'admin_template_pdf.html' },
+      { icon: 'fa-whatsapp',     label: 'Bot WhatsApp',  color: 'whatsapp', url: 'admin_whatsapp_bot.html', brand: true },
+      { icon: 'fa-comment-dots', label: 'Feedback',      color: 'primary',  url: 'admin_saas_feedback.html' },
+      { icon: 'fa-database',     label: 'Database User', color: 'sky',      url: 'admin_database_user.html' },
+      { icon: 'fa-microchip',    label: 'Database Komponen', color: 'cyan', url: 'admin_database_komponen.html' },
+      { icon: 'fa-toggle-on',    label: 'Suis Modul',    color: 'teal',     url: 'admin_suis_modul.html' },
+      { icon: 'fa-comments',     label: 'Dealer Support', color: 'green',   url: 'admin_chat.html' },
     ];
     adminGrid.innerHTML = modules.map((m, i) => `
-      <button class="module-tile" data-index="${i}">
+      <button class="module-tile" data-index="${i}" data-url="${m.url}">
         <span class="module-tile__icon bg-${m.color}"><i class="${m.brand ? 'fab' : 'fas'} ${m.icon}"></i></span>
         <span class="module-tile__label">${m.label}</span>
       </button>
     `).join('');
+
+    adminGrid.addEventListener('click', (e) => {
+      const tile = e.target.closest('.module-tile');
+      if (!tile) return;
+      const url = tile.dataset.url;
+      if (url) window.location.href = url;
+    });
+
+    // Red badge on Dealer Support tile (count unread = last_from='user')
+    (async function () {
+      const supportTile = adminGrid.querySelector('.module-tile[data-url="admin_chat.html"]');
+      if (!supportTile) return;
+      function setBadge(n) {
+        let b = supportTile.querySelector('.module-tile__badge');
+        if (n > 0) {
+          if (!b) { b = document.createElement('span'); b.className = 'module-tile__badge'; supportTile.appendChild(b); }
+          b.textContent = n > 99 ? '99+' : String(n);
+        } else if (b) b.remove();
+      }
+      async function refresh() {
+        const { count } = await window.sb.from('sv_ticket_meta')
+          .select('branch_id', { count: 'exact', head: true })
+          .eq('last_from', 'user');
+        setBadge(count || 0);
+      }
+      window.sb.channel('admin-grid-meta')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sv_ticket_meta' }, refresh)
+        .subscribe();
+      refresh();
+    })();
+
     const adminLogout = document.getElementById('btnLogout');
-    if (adminLogout) adminLogout.addEventListener('click', () => { window.location.href = 'index.html'; });
+    if (adminLogout) adminLogout.addEventListener('click', () => {
+      if (typeof window.doLogout === 'function') window.doLogout();
+      else window.location.href = 'index.html';
+    });
   }
 })();

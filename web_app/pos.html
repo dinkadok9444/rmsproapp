@@ -27,11 +27,13 @@
         <i class="fas fa-clock-rotate-left"></i>
         <span>SEJARAH</span>
       </button>
-      <button type="button" id="posPrinterBtn" class="pos-printer" title="Printer Bluetooth">
-        <i class="fas fa-print"></i>
-        <span id="posPrinterLbl">PRINTER</span>
+      <button type="button" id="posSettingsBtn" class="pos-printer" title="Tetapan POS">
+        <i class="fas fa-gear"></i>
       </button>
       <select id="posStaff" class="pos-input" title="Staff"></select>
+      <button type="button" id="posStaffDefault" class="pos-printer" title="Default staff untuk sehari">
+        <i class="fas fa-check"></i>
+      </button>
     </div>
   </div>
 
@@ -82,35 +84,61 @@
         <button type="button" class="pos-seg__item" data-type="ONLINE">ONLINE</button>
       </div>
 
-      <div class="cw-2col">
-        <div><label>NAMA PELANGGAN</label>
-          <input type="text" id="posCustName" class="lost-input" list="posCustList" placeholder="Opsyenal">
-          <datalist id="posCustList"></datalist>
-        </div>
-        <div><label>TELEFON</label>
-          <input type="text" id="posCustTel" class="lost-input" placeholder="Opsyenal">
-        </div>
+      <div style="display:flex;gap:8px;">
+        <button type="button" id="posCustToggleBtn" class="pos-printer" style="flex:1;justify-content:center;">
+          <i class="fas fa-user-plus"></i><span>PELANGGAN</span>
+        </button>
+        <button type="button" id="posDiskaunBtn" class="pos-printer" style="flex:1;justify-content:center;">
+          <i class="fas fa-tag"></i><span>DISKAUN</span>
+        </button>
+        <button type="button" id="posVoucherBtn" class="pos-printer" style="flex:1;justify-content:center;">
+          <i class="fas fa-ticket"></i><span>VOUCHER</span>
+        </button>
       </div>
-      <label>ALAMAT</label>
-      <input type="text" id="posCustAlamat" class="lost-input" placeholder="Opsyenal">
+
+      <div id="posCustFields" class="hidden">
+        <div class="cw-2col">
+          <div><label>NAMA PELANGGAN</label>
+            <input type="text" id="posCustName" class="lost-input" list="posCustList">
+            <datalist id="posCustList"></datalist>
+          </div>
+          <div><label>TELEFON</label>
+            <input type="text" id="posCustTel" class="lost-input">
+          </div>
+        </div>
+        <label>ALAMAT</label>
+        <input type="text" id="posCustAlamat" class="lost-input">
+      </div>
+
+      <div id="posDiskaunWrap" class="hidden">
+        <label>DISKAUN (RM)</label>
+        <input type="number" id="posDiskaun" class="lost-input" min="0" step="0.10" value="0">
+      </div>
+
+      <div id="posVoucherWrap" class="hidden">
+        <label>KOD VOUCHER</label>
+        <div style="display:flex;gap:6px;">
+          <input type="text" id="posVoucherCode" class="lost-input" style="flex:1;text-transform:uppercase;" placeholder="cth: V-XXXX">
+          <button type="button" id="posVoucherApply" class="pos-printer" style="background:#2563eb;color:#fff;border-color:#2563eb;">APPLY</button>
+          <button type="button" id="posVoucherReset" class="pos-printer">RESET</button>
+        </div>
+        <div id="posVoucherMsg" style="font-size:11px;font-weight:700;margin-top:4px;color:#64748b;">—</div>
+      </div>
 
       <label>KAEDAH BAYARAN</label>
       <div class="pos-pay-grid" id="posPayGrid"></div>
 
       <div class="pos-pay-sum">
-        <span>JUMLAH DIBAYAR</span>
-        <span class="pos-pay-sum__amt" id="posPayTotal">RM 0.00</span>
+        <span>JUMLAH</span>
+        <input type="number" id="posPayTotalInput" class="pos-pay-sum__amt" style="background:transparent;border:0;text-align:right;font:inherit;color:inherit;width:50%;" min="0" step="0.10">
       </div>
-
-      <div class="pos-toggles">
-        <label class="pos-toggle">
-          <input type="checkbox" id="posAutoPrint" checked>
-          <span><i class="fas fa-print"></i> Auto-Print Resit</span>
-        </label>
-        <label class="pos-toggle">
-          <input type="checkbox" id="posAutoDrawer" checked>
-          <span><i class="fas fa-cash-register"></i> Kick Cash Drawer (CASH)</span>
-        </label>
+      <div class="pos-pay-sum" style="background:#dbeafe;">
+        <span>BAYARAN</span>
+        <input type="number" id="posBayaran" class="pos-pay-sum__amt" style="background:transparent;border:0;text-align:right;font:inherit;color:#2563eb;width:50%;" min="0" step="0.10" placeholder="0.00">
+      </div>
+      <div class="pos-pay-sum" id="posBakiRow" style="background:#fef3c7;">
+        <span>BAKI</span>
+        <span class="pos-pay-sum__amt" id="posBaki" style="color:#b45309;">RM 0.00</span>
       </div>
 
       <button type="button" class="btn-submit" id="posPayConfirm" style="background:var(--green)">
@@ -148,19 +176,64 @@
           <i class="fas fa-search"></i>
           <input type="text" id="posHistSearch" placeholder="Cari siri / pelanggan / tel…">
         </div>
+        <input type="date" id="posHistFrom" class="pos-input" title="Dari">
+        <input type="date" id="posHistTo" class="pos-input" title="Hingga">
         <select id="posHistRange" class="pos-input">
           <option value="today">Hari Ini</option>
           <option value="week">7 Hari</option>
           <option value="month">30 Hari</option>
+          <option value="custom">Julat Tersuai</option>
           <option value="all">Semua</option>
         </select>
       </div>
       <div class="pos-hist-summary" id="posHistSummary">
         <span><strong id="posHistCount">0</strong> rekod</span>
         <span>Jumlah: <strong id="posHistTotal">RM 0.00</strong></span>
+        <button type="button" id="posHistPrintRange" class="pos-hist-print-range"><i class="fas fa-print"></i> CETAK JULAT</button>
       </div>
       <div class="pos-hist-list" id="posHistList"></div>
       <div class="pos-hist-empty hidden" id="posHistEmpty">Tiada jualan dijumpai.</div>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div class="lost-modal-backdrop" id="posSettingsModal">
+    <div class="lost-modal lost-modal--sm">
+      <div class="lost-modal__head">
+        <span style="color:var(--primary)"><i class="fas fa-gear"></i> TETAPAN POS</span>
+        <button type="button" class="lost-modal__close" id="posSettingsClose"><i class="fas fa-xmark"></i></button>
+      </div>
+      <button type="button" id="posPrinterBtn" class="pos-printer" style="width:100%;justify-content:center;margin-bottom:8px;" title="Printer Bluetooth">
+        <i class="fas fa-print"></i>
+        <span id="posPrinterLbl">PRINTER</span>
+      </button>
+      <div class="pos-toggles">
+        <label class="pos-toggle">
+          <input type="checkbox" id="posAutoPrint" checked>
+          <span><i class="fas fa-print"></i> Auto-Print Resit</span>
+        </label>
+        <label class="pos-toggle">
+          <input type="checkbox" id="posTaxEnable">
+          <span><i class="fas fa-percent"></i> Enable Tax</span>
+        </label>
+      </div>
+      <div id="posTaxRow" class="hidden" style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+        <label style="flex:1;font-size:11px;font-weight:800;color:#64748b;">Peratus Tax (%)</label>
+        <input type="number" id="posTaxPct" class="lost-input" style="width:100px;" min="0" max="100" step="0.1" value="6">
+      </div>
+      <label style="font-size:11px;font-weight:800;color:#64748b;margin-top:10px;display:block;">NOTA KAKI RESIT</label>
+      <textarea id="posFooterNote" class="lost-input" rows="2" placeholder="cth: Terima kasih atas sokongan anda."></textarea>
+
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button type="button" id="posPushDrawerBtn" class="pos-printer" style="flex:1;justify-content:center;" title="Push Cash Drawer">
+          <i class="fas fa-cash-register"></i>
+          <span>PUSH DRAWER</span>
+        </button>
+        <button type="button" id="posSaveSettings" class="pos-printer" style="flex:1;justify-content:center;background:#10b981;color:#fff;border-color:#10b981;" title="Simpan Tetapan">
+          <i class="fas fa-floppy-disk"></i>
+          <span>SIMPAN</span>
+        </button>
+      </div>
     </div>
   </div>
 

@@ -56,6 +56,7 @@ class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
     return {
       'id': r['id'],
       'ownerID': r['owner_id'],
+      'shopID': '',
       'namaKedai': r['nama_kedai'] ?? '',
       'ownerName': config['ownerName'] ?? '',
       'ownerContact': config['ownerContact'] ?? '',
@@ -84,7 +85,28 @@ class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
       if (rows.isEmpty) {
         _hasMore = false;
       } else {
-        _dealers.addAll(rows.map<Map<String, dynamic>>(_tenantToUi));
+        final tenantIds = rows.map((r) => r['id']).where((v) => v != null).toList();
+        final Map<String, String> shopByTenant = {};
+        if (tenantIds.isNotEmpty) {
+          try {
+            final brs = await _sb
+                .from('branches')
+                .select('tenant_id, shop_code, created_at')
+                .inFilter('tenant_id', tenantIds)
+                .order('created_at', ascending: true);
+            for (final b in brs) {
+              final tid = (b['tenant_id'] ?? '').toString();
+              if (tid.isNotEmpty && !shopByTenant.containsKey(tid)) {
+                shopByTenant[tid] = (b['shop_code'] ?? '').toString();
+              }
+            }
+          } catch (_) {}
+        }
+        for (final r in rows) {
+          final ui = _tenantToUi(r);
+          ui['shopID'] = shopByTenant[(r['id'] ?? '').toString()] ?? '';
+          _dealers.add(ui);
+        }
         _offset += rows.length;
         if (rows.length < _fetchBatch) _hasMore = false;
       }
@@ -881,7 +903,7 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
         'negeri': _negeriCtrl.text.trim(),
         'ownerContact': _telCtrl.text.trim(),
         'emel': _emelCtrl.text.trim(),
-        'username': _dealerID,
+        'username': (_d['ownerID'] ?? '').toString(),
         'password': _passCtrl.text.trim(),
       };
       await _updateTenantMerged(update);
@@ -912,7 +934,7 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
   String get _dealerID => (_d['id'] ?? '').toString(); // tenant UUID
   String get _shopID {
     final s = (_d['shopID'] ?? '').toString();
-    return (s.isEmpty || s == '-') ? 'MAIN' : s;
+    return (s.isEmpty || s == '-') ? '-' : s;
   }
 
   // Split update map: some keys go to tenant columns, rest merge into config jsonb
@@ -1518,7 +1540,7 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
                           ),
                           child: Column(
                             children: [
-                              _idRow(FontAwesomeIcons.idBadge, 'Owner ID / Username', _dealerID, AppColors.orange),
+                              _idRow(FontAwesomeIcons.idBadge, 'Owner ID / Username', (_d['ownerID'] ?? '').toString(), AppColors.orange),
                               const SizedBox(height: 6),
                               _idRow(FontAwesomeIcons.shop, 'Shop ID', _shopID, AppColors.primary),
                               const SizedBox(height: 12),

@@ -174,7 +174,7 @@ class _SenaraiJobScreenState extends State<SenaraiJobScreen> {
     if (_branchId == null) return;
     final branch = await _sb
         .from('branches')
-        .select('*, branch_staff(nama, phone, role, pin, status), tenants!inner(*)')
+        .select('*, branch_staff(nama, phone, role, pin, status), tenants!branches_tenant_id_fkey!inner(*)')
         .eq('id', _branchId!)
         .maybeSingle();
     if (branch == null) return;

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#8B5CF6">
+  <title>Marketplace — Admin SaaS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__inner">
+      <button class="icon-btn" id="btnBack" title="Kembali"><i class="fas fa-arrow-left"></i></button>
+      <span class="app-header__title"><i class="fas fa-store" style="color:#8B5CF6;margin-right:8px"></i>Marketplace Admin</span>
+      <div class="app-header__spacer"></div>
+    </div>
+  </header>
+
+  <main class="container admin-main">
+    <div class="mp-stats">
+      <div class="mp-stat c-green">
+        <div class="mp-stat__icon"><i class="fas fa-money-bill-trend-up"></i></div>
+        <div class="mp-stat__label">JUMLAH JUALAN</div>
+        <div class="mp-stat__val" id="statGmv">RM 0.00</div>
+      </div>
+      <div class="mp-stat c-purple">
+        <div class="mp-stat__icon"><i class="fas fa-percent"></i></div>
+        <div class="mp-stat__label">KOMISYEN 2%</div>
+        <div class="mp-stat__val" id="statComm">RM 0.00</div>
+      </div>
+      <div class="mp-stat c-blue">
+        <div class="mp-stat__icon"><i class="fas fa-spinner"></i></div>
+        <div class="mp-stat__label">AKTIF</div>
+        <div class="mp-stat__val" id="statActive">0</div>
+      </div>
+      <div class="mp-stat c-green">
+        <div class="mp-stat__icon"><i class="fas fa-circle-check"></i></div>
+        <div class="mp-stat__label">SELESAI</div>
+        <div class="mp-stat__val" id="statDone">0</div>
+      </div>
+    </div>
+
+    <div class="admin-tabs">
+      <button class="admin-tab is-active" data-tab="trx">TRANSAKSI</button>
+      <button class="admin-tab" data-tab="ana">ANALITIK</button>
+    </div>
+
+    <section class="admin-section" id="tabTrx">
+      <div class="mp-filter-row" id="filterRow"></div>
+      <div id="orderList" class="admin-list">
+        <div class="admin-loading"><i class="fas fa-spinner fa-spin"></i> Memuat…</div>
+      </div>
+    </section>
+
+    <section class="admin-section hidden" id="tabAna">
+      <div class="mp-analytic-row">
+        <div class="mp-analytic-box c-green" style="background:rgba(16,185,129,0.08);border-color:rgba(16,185,129,0.2);color:var(--green)">
+          <div class="mp-analytic-box__label">Jumlah GMV</div>
+          <div class="mp-analytic-box__val" id="anaGmv">RM 0.00</div>
+        </div>
+        <div class="mp-analytic-box" style="background:rgba(139,92,246,0.08);border-color:rgba(139,92,246,0.2);color:#8B5CF6">
+          <div class="mp-analytic-box__label">Pendapatan Komisyen</div>
+          <div class="mp-analytic-box__val" id="anaComm">RM 0.00</div>
+        </div>
+      </div>
+      <div class="mp-analytic-row">
+        <div class="mp-analytic-box" style="background:rgba(59,130,246,0.08);border-color:rgba(59,130,246,0.2);color:var(--blue)">
+          <div class="mp-analytic-box__label">Listing Aktif</div>
+          <div class="mp-analytic-box__val" id="anaListing">0</div>
+        </div>
+        <div class="mp-analytic-box" style="background:var(--bg);border-color:var(--border);color:var(--text-sub)">
+          <div class="mp-analytic-box__label">Jumlah Transaksi</div>
+          <div class="mp-analytic-box__val" id="anaTotal">0</div>
+        </div>
+      </div>
+
+      <div class="mp-section-title">JUALAN MENGIKUT KATEGORI</div>
+      <div id="catList"></div>
+
+      <div class="mp-section-title">PENJUAL TERTINGGI</div>
+      <div id="sellerList"></div>
+    </section>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/admin_marketplace.js"></script>
+</body>
+</html>

@@ -80,7 +80,6 @@
     empty.hidden = true;
     host.innerHTML = rows.map((r) => {
       const st = (r.status || 'IN PROGRESS').toUpperCase();
-      const ps = (r.payment_status || 'PENDING').toUpperCase();
       return `<div class="sj-item" data-id="${r.id}">
         <div class="sj-item__head">
           <span class="sj-item__siri">${r.siri || ''}</span>
@@ -95,7 +94,6 @@
         <div class="sj-item__foot">
           <span><i class="fas fa-calendar"></i> ${fmtDate(r.created_at)}</span>
           <span>${fmtRM(r.total || r.harga)}</span>
-          <span class="sj-pay" data-ps="${ps}">${ps}</span>
         </div>
       </div>`;
     }).join('');

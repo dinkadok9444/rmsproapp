@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#00C47D">
+  <title>Daftar Manual — Admin SaaS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header__inner">
+      <button class="icon-btn" id="btnBack" title="Kembali"><i class="fas fa-arrow-left"></i></button>
+      <span class="app-header__title"><i class="fas fa-user-plus" style="color:var(--primary);margin-right:8px"></i>Daftar Dealer Manual</span>
+      <div class="app-header__spacer"></div>
+      <button class="icon-btn" id="btnReload" title="Refresh"><i class="fas fa-arrows-rotate"></i></button>
+    </div>
+  </header>
+
+  <main class="container admin-main">
+    <section class="admin-section">
+      <div class="dealer-hero">
+        <div class="dealer-hero__icon"><i class="fas fa-user-plus"></i></div>
+        <div class="dealer-hero__body">
+          <div class="dealer-hero__title">Daftar Dealer</div>
+          <div class="dealer-hero__sub" id="dealerCount">0 dealer berdaftar</div>
+        </div>
+        <button class="dealer-hero__cta" id="btnAdd"><i class="fas fa-plus"></i> Tambah</button>
+      </div>
+
+      <div id="dealerList" class="dealer-list">
+        <div class="admin-loading"><i class="fas fa-spinner fa-spin"></i> Memuat…</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal: Add Dealer -->
+  <div class="modal hidden" id="addModal">
+    <div class="modal__backdrop" data-close></div>
+    <div class="modal__panel modal__panel--lg">
+      <div class="modal__title">DAFTAR DEALER BARU</div>
+
+      <div class="form-section">
+        <div class="form-section__head"><i class="fas fa-key"></i> MAKLUMAT AKAUN</div>
+        <label class="modal__label">SYSTEM ID</label>
+        <input type="text" id="fSystemId" placeholder="cth: kedaiali123" autocomplete="off">
+        <div class="form-hint">Huruf kecil dan nombor sahaja. Tidak boleh ditukar selepas pendaftaran.</div>
+        <div class="form-error hidden" id="fSystemIdErr"></div>
+        <label class="modal__label" style="margin-top:12px">PASSWORD</label>
+        <input type="text" id="fPassword" placeholder="Kata laluan dealer" autocomplete="off">
+      </div>
+
+      <div class="form-section">
+        <div class="form-section__head"><i class="fas fa-user"></i> MAKLUMAT PEMILIK</div>
+        <div class="form-row">
+          <div class="form-col">
+            <label class="modal__label">NAMA PEMILIK</label>
+            <input type="text" id="fOwnerName" placeholder="Nama penuh pemilik">
+          </div>
+          <div class="form-col">
+            <label class="modal__label">NO TELEFON PEMILIK</label>
+            <input type="text" id="fOwnerPhone" placeholder="012-3456789">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section__head"><i class="fas fa-store"></i> MAKLUMAT KEDAI</div>
+        <label class="modal__label">NAMA KEDAI</label>
+        <input type="text" id="fShopName" placeholder="Cth: Ali Phone Repair">
+        <div class="form-row" style="margin-top:12px">
+          <div class="form-col">
+            <label class="modal__label">EMAIL KEDAI</label>
+            <input type="text" id="fShopEmail" placeholder="email@contoh.com">
+          </div>
+          <div class="form-col">
+            <label class="modal__label">NO TELEFON KEDAI</label>
+            <input type="text" id="fShopPhone" placeholder="03-12345678">
+          </div>
+        </div>
+        <div class="form-row" style="margin-top:12px">
+          <div class="form-col">
+            <label class="modal__label">DAERAH</label>
+            <input type="text" id="fDistrict" placeholder="Cth: Petaling Jaya">
+          </div>
+          <div class="form-col">
+            <label class="modal__label">NEGERI</label>
+            <select id="fNegeri"></select>
+          </div>
+        </div>
+        <label class="modal__label" style="margin-top:12px">ALAMAT PENUH</label>
+        <textarea id="fAddress" rows="3" placeholder="No. lot, jalan, poskod, bandar..."></textarea>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section__head"><i class="fas fa-calendar-check"></i> LANGGANAN</div>
+        <label class="modal__label">TEMPOH LANGGANAN</label>
+        <select id="fDuration">
+          <option value="1 bulan">1 bulan</option>
+          <option value="6 bulan">6 bulan</option>
+          <option value="12 bulan">12 bulan</option>
+        </select>
+      </div>
+
+      <div class="modal__actions">
+        <button class="btn btn-outline" data-close>Batal</button>
+        <button class="btn btn-primary" id="btnSubmit"><i class="fas fa-floppy-disk"></i> DAFTAR DEALER</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/admin_daftar_manual.js"></script>
+</body>
+</html>
