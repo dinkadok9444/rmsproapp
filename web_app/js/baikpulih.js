@@ -1,673 +1,328 @@
-/* Baikpulih — port 1:1 daripada lib/screens/modules/create_job_screen.dart
-   Wizard 3-langkah (Pelanggan → Kerosakan & Harga → Bayaran) + Gambar (addon). */
-(function () {
+/* baikpulih.js — Create repair ticket wizard. Mirror baikpulih HTML (3-step).
+   Step 1: Pelanggan (nama, tel, model, tarikh). Step 2: Items + staff + password/pattern.
+   Step 3: Bayaran (deposit, diskaun, voucher, method, status). Save → jobs + job_items. */
+(async function () {
   'use strict';
-  if (!document.getElementById('bpItems')) return;
+  const ctx = await window.requireAuth();
+  if (!ctx) return;
+  const branchId = ctx.current_branch_id;
 
-  // ─── Branch / owner ───
-  let ownerID = 'admin', shopID = 'MAIN';
-  const branch = localStorage.getItem('rms_current_branch') || '';
-  if (branch.includes('@')) {
-    const p = branch.split('@');
-    ownerID = (p[0] || '').toLowerCase();
-    shopID = (p[1] || '').toUpperCase();
+  const $ = (id) => document.getElementById(id);
+  const fmtRM = (n) => 'RM ' + (Number(n) || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  function toast(msg, err) {
+    const t = $('bpToast'); if (!t) return;
+    t.textContent = msg; t.hidden = false;
+    t.style.background = err ? '#dc2626' : '#0f172a';
+    setTimeout(() => { t.hidden = true; }, 2200);
   }
-  const storage = (window.firebase && firebase.storage) ? firebase.storage() : null;
 
-  // ─── State ───
-  const state = {
-    custType: 'NEW CUST',
-    jenisServis: 'TAK PASTI',
-    paymentStatus: 'UNPAID',
-    caraBayaran: 'TAK PASTI',
-    staffTerima: '',
-    staffList: [],
-    branchSettings: {},
-    existingCustomers: [],
-    activeVouchers: [],
-    voucherByTel: {},
-    kodVoucher: '',
-    voucherAmt: 0,
-    items: [{ nama: '', qty: 1, harga: 0 }],
-    patternPts: [],
-    imgDepan: null,
-    imgBelakang: null,
-    tarikhEdited: false,
-    tarikh: new Date(),
-    hasGallery: false,
-    isSaving: false,
-    lastSaved: null,
-    shopInfo: {},
-    step: 0,
-    stepsOrder: ['1', '2', '3'], // gallery diselit antara 2 & 3 bila addon aktif
-  };
+  let step = 1; // 1, 2, 3 (skip gallery)
+  let items = [{ nama: '', qty: 1, harga: 0 }];
+  let pattern = [];
+  let backupTel = '';
+  let voucher = null;
+  let custType = 'NEW CUST';
+  let lastSavedJob = null;
+  let lastShop = null;
 
-  const $ = id => document.getElementById(id);
-  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-  const num = v => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
-  const pad = (n, l = 2) => String(n).padStart(l, '0');
-  const fmt = n => 'RM ' + (Number(n) || 0).toFixed(2);
-  const cleanTel = t => String(t || '').replace(/\D/g, '');
+  const STEP_NAMES = { 1: 'PELANGGAN', 2: 'KEROSAKAN', 3: 'BAYARAN' };
 
-  // ─── Tarikh auto ───
-  function setTarikhInput() {
-    const d = state.tarikh;
-    $('bpTarikh').value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-  setTarikhInput();
-  setInterval(() => {
-    if (!state.tarikhEdited && !state.isSaving) {
-      state.tarikh = new Date();
-      setTarikhInput();
-    }
-  }, 1000);
-  $('bpTarikh').addEventListener('change', e => {
-    state.tarikhEdited = true;
-    state.tarikh = new Date(e.target.value);
-  });
-
-  // ─── Load branch / staff / vouchers / referrals / customers ───
-  async function loadData() {
-    const merged = {};
-    try { const d = await db.collection('saas_dealers').doc(ownerID).get(); if (d.exists) Object.assign(merged, d.data() || {}); } catch (_) {}
-    try { const s = await db.collection('shops_' + ownerID).doc(shopID).get(); if (s.exists) Object.assign(merged, s.data() || {}); } catch (_) {}
-
-    let hasGallery = merged.addonGallery === true;
-    if (hasGallery && merged.galleryExpire && Date.now() > merged.galleryExpire) hasGallery = false;
-    state.hasGallery = hasGallery;
-    state.branchSettings = merged;
-    $('bpGallerySect').hidden = !hasGallery;
-    if (hasGallery) state.stepsOrder = ['1', '2', 'gallery', '3'];
-
-    state.shopInfo = {
-      shopName: merged.shopName || merged.namaKedai || 'RMS PRO',
-      address: merged.address || merged.alamat || '',
-      phone: merged.phone || merged.ownerContact || '-',
-      notaInvoice: merged.notaInvoice || 'Terima kasih atas sokongan anda.',
-    };
-
-    const staffList = Array.isArray(merged.staffList) ? merged.staffList.map(s => {
-      if (typeof s === 'string') return s;
-      if (s && typeof s === 'object') return s.name || s.nama || '';
-      return '';
-    }).filter(Boolean) : [];
-    state.staffList = staffList;
-    const sel = $('bpStaff');
-    if (staffList.length) {
-      sel.innerHTML = staffList.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
-      state.staffTerima = staffList[0];
-      sel.value = staffList[0];
-    } else {
-      sel.innerHTML = '<option value="">(Tiada staff)</option>';
-    }
-
-    // Vouchers
-    try {
-      const vs = await db.collection('shop_vouchers_' + ownerID).get();
-      vs.forEach(doc => {
-        const d = doc.data() || {};
-        state.activeVouchers.push({ code: d.code || doc.id, value: d.value || 0, ...d });
-        const code = d.code || doc.id;
-        const tel = cleanTel(d.customerTel || d.custTel);
-        if (tel) (state.voucherByTel[tel] = state.voucherByTel[tel] || []).push(code);
-        else (state.voucherByTel['_SHOP'] = state.voucherByTel['_SHOP'] || []).push(code);
-      });
-    } catch (_) {}
-
-    // Referrals
-    const referralByTel = {};
-    try {
-      const rs = await db.collection('referrals_' + ownerID).get();
-      rs.forEach(doc => {
-        const d = doc.data() || {};
-        const tel = cleanTel(d.tel);
-        if (!tel) return;
-        referralByTel[tel] = d.refCode || doc.id;
-      });
-    } catch (_) {}
-
-    // Existing customers
-    try {
-      const snap = await db.collection('repairs_' + ownerID).get();
-      const seen = new Set();
-      const custs = [];
-      snap.forEach(doc => {
-        const d = doc.data() || {};
-        if (String(d.shopID || '').toUpperCase() !== shopID) return;
-        const tel = String(d.tel || '').trim();
-        if (!tel || seen.has(tel)) return;
-        seen.add(tel);
-        const key = cleanTel(tel);
-        const vList = state.voucherByTel[key] || [];
-        custs.push({
-          nama: d.nama || '',
-          tel,
-          tel_wasap: d.tel_wasap || d.wasap || '',
-          model: d.model || '',
-          voucher: vList[0] || '',
-          referral: referralByTel[key] || '',
-        });
-      });
-      state.existingCustomers = custs;
-      $('bpCustList').innerHTML = custs.slice(0, 50).map(c => `<option value="${esc(c.nama)}" label="${esc(c.tel)}">`).join('');
-    } catch (_) {}
-  }
-  loadData();
-
-  // ─── Wizard step logic ───
-  const STEP_NAMES = { '1': 'PELANGGAN', '2': 'KEROSAKAN & HARGA', 'gallery': 'GAMBAR', '3': 'BAYARAN' };
-  function showStep() {
-    const key = state.stepsOrder[state.step];
-    document.querySelectorAll('.bp-step').forEach(el => {
-      el.hidden = el.dataset.step !== key;
-      el.classList.toggle('is-active', el.dataset.step === key);
+  function renderStep() {
+    $('bpStepNow').textContent = String(step);
+    $('bpStepName').textContent = STEP_NAMES[step] || '';
+    $('bpStepFill').style.width = `${(step / 3) * 100}%`;
+    document.querySelectorAll('.bp-step').forEach((s) => {
+      const ds = s.dataset.step;
+      s.hidden = String(ds) !== String(step);
+      s.classList.toggle('is-active', String(ds) === String(step));
     });
-    const total = state.stepsOrder.length;
-    const now = state.step + 1;
-    $('bpStepNow').textContent = now;
-    $('bpStepTotal').textContent = total;
-    $('bpStepName').textContent = STEP_NAMES[key] || '-';
-    $('bpStepFill').style.width = Math.round((now / total) * 100) + '%';
-    $('bpPrev').hidden = state.step === 0;
-    const isLast = state.step === state.stepsOrder.length - 1;
-    $('bpNext').hidden = isLast;
-    $('bpSave').hidden = !isLast;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    $('bpPrev').hidden = step <= 1;
+    $('bpNext').hidden = step >= 3;
+    $('bpSave').hidden = step !== 3;
   }
-  function validateStep() {
-    const key = state.stepsOrder[state.step];
-    if (key === '1') {
-      if (!$('bpNama').value.trim()) return toast('Sila isi Nama Pelanggan', true), false;
-      if (!$('bpTel').value.trim()) return toast('Sila isi No Telefon', true), false;
-    } else if (key === '2') {
-      const valid = state.items.filter(it => (it.nama || '').trim());
-      if (!valid.length) return toast('Sila tambah sekurang-kurangnya satu item', true), false;
-    }
-    return true;
-  }
-  $('bpNext').addEventListener('click', () => {
-    if (!validateStep()) return;
-    if (state.step < state.stepsOrder.length - 1) { state.step++; showStep(); }
-  });
-  $('bpPrev').addEventListener('click', () => {
-    if (state.step > 0) { state.step--; showStep(); }
+
+  // ── Cust type toggle ──────────────────────────────────────
+  document.querySelectorAll('#bpCustTypeToggle button').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#bpCustTypeToggle button').forEach((x) => x.classList.remove('is-on'));
+      b.classList.add('is-on');
+      custType = b.dataset.v;
+      $('bpCustSearchRow').hidden = custType !== 'REGULAR';
+    });
   });
 
-  // ─── Toggle NEW CUST / REGULAR ───
-  $('bpCustTypeToggle').addEventListener('click', e => {
-    const b = e.target.closest('button[data-v]'); if (!b) return;
-    document.querySelectorAll('#bpCustTypeToggle button').forEach(x => x.classList.toggle('is-on', x === b));
-    const v = b.dataset.v;
-    state.custType = v;
-    $('bpCustType').value = v;
-    $('bpCustSearchRow').hidden = v !== 'REGULAR';
+  // Regular cust search
+  const bpSearch = $('bpCustSearch');
+  if (bpSearch) bpSearch.addEventListener('input', async (e) => {
+    const q = e.target.value.trim();
+    if (q.length < 2) { $('bpCustHits').hidden = true; return; }
+    const { data } = await window.sb.from('jobs')
+      .select('nama,tel,model').eq('branch_id', branchId)
+      .or(`nama.ilike.%${q}%,tel.ilike.%${q}%`).limit(10);
+    const seen = {};
+    const hits = (data || []).filter((r) => { if (!r.tel || seen[r.tel]) return false; seen[r.tel] = 1; return true; });
+    $('bpCustHits').innerHTML = hits.map((r, i) => `<div class="bp-cust-hit" data-i="${i}" style="padding:8px;border-bottom:1px solid #f1f5f9;cursor:pointer;"><b>${r.nama}</b> · ${r.tel} · ${r.model || ''}</div>`).join('');
+    $('bpCustHits').hidden = !hits.length;
+    $('bpCustHits').querySelectorAll('.bp-cust-hit').forEach((el) => {
+      el.addEventListener('click', () => {
+        const r = hits[Number(el.dataset.i)];
+        $('bpNama').value = r.nama || '';
+        $('bpTel').value = r.tel || '';
+        $('bpModel').value = r.model || '';
+        $('bpCustHits').hidden = true;
+      });
+    });
   });
 
-  // ─── Customer search ───
-  $('bpCustSearch').addEventListener('input', e => {
-    const q = e.target.value.toLowerCase().trim();
-    const hits = $('bpCustHits');
-    if (!q) { hits.hidden = true; hits.innerHTML = ''; return; }
-    const r = state.existingCustomers.filter(c =>
-      (c.nama || '').toLowerCase().includes(q) ||
-      (c.tel || '').includes(q) ||
-      (c.voucher || '').toLowerCase().includes(q) ||
-      (c.referral || '').toLowerCase().includes(q)
-    ).slice(0, 8);
-    hits.hidden = r.length === 0;
-    hits.innerHTML = r.map((c, i) => {
-      const badges = [
-        c.voucher ? `<span class="bp-cust-badge bp-cust-badge--v"><i class="fas fa-ticket"></i>${esc(c.voucher)}</span>` : '',
-        c.referral ? `<span class="bp-cust-badge bp-cust-badge--r"><i class="fas fa-user-plus"></i>${esc(c.referral)}</span>` : '',
-      ].join('');
-      return `
-        <div class="bp-cust-hit" data-i="${i}">
-          <i class="fas fa-user-check bp-cust-hit__ic"></i>
-          <div class="bp-cust-hit__body">
-            <div class="bp-cust-hit__name">${esc((c.nama || '').toUpperCase())}</div>
-            <div class="bp-cust-hit__tel">Tel: ${esc(c.tel)}</div>
-            ${badges ? `<div class="bp-cust-hit__badges">${badges}</div>` : ''}
-          </div>
-        </div>`;
-    }).join('');
-    hits._data = r;
+  // ── Backup modal ──────────────────────────────────────────
+  $('bpBackupBtn').addEventListener('click', () => {
+    $('bpWasap').value = backupTel;
+    $('bpBackupModal').classList.add('is-open');
   });
-  $('bpCustHits').addEventListener('click', e => {
-    const h = e.target.closest('.bp-cust-hit'); if (!h) return;
-    const hits = $('bpCustHits'); const c = hits._data[+h.dataset.i];
-    $('bpNama').value = c.nama;
-    $('bpTel').value = c.tel;
-    $('bpWasap').value = c.tel_wasap || '';
-    $('bpCustSearch').value = '';
-    hits.hidden = true;
-    if (state.custType !== 'REGULAR') {
-      state.custType = 'REGULAR'; $('bpCustType').value = 'REGULAR';
-      document.querySelectorAll('#bpCustTypeToggle button').forEach(x => x.classList.toggle('is-on', x.dataset.v === 'REGULAR'));
-    }
-  });
-  $('bpNama').addEventListener('change', e => {
-    const val = e.target.value;
-    try {
-      const opt = $('bpCustList').querySelector(`option[value="${CSS.escape(val)}"]`);
-      if (opt && opt.getAttribute('label') && !$('bpTel').value) $('bpTel').value = opt.getAttribute('label');
-    } catch (_) {}
-  });
-
-  // ─── Backup modal ───
-  $('bpBackupBtn').addEventListener('click', () => $('bpBackupModal').classList.add('is-open'));
   $('bpBackupClose').addEventListener('click', () => $('bpBackupModal').classList.remove('is-open'));
   $('bpBackupSave').addEventListener('click', () => {
+    backupTel = $('bpWasap').value.trim();
     $('bpBackupModal').classList.remove('is-open');
-    $('bpBackupBtn').classList.toggle('is-on', !!$('bpWasap').value.trim());
+    toast('No backup disimpan');
   });
-  $('bpBackupModal').addEventListener('click', e => { if (e.target === $('bpBackupModal')) $('bpBackupModal').classList.remove('is-open'); });
 
-  // ─── Pattern modal ───
-  function refreshPatternUI() {
-    const str = state.patternPts.join('-') || '-';
-    $('bpPatternTxtModal').textContent = str;
-    $('bpPatternTxt').textContent = str;
-    $('bpPatternChip').hidden = state.patternPts.length === 0;
-    $('bpPatternBtn').classList.toggle('is-on', state.patternPts.length > 0);
-    document.querySelectorAll('.bp-pattern-dot').forEach(x =>
-      x.classList.toggle('is-on', state.patternPts.includes(+x.dataset.n)));
-  }
-  (function buildPattern() {
-    const box = $('bpPatternBox');
-    box.innerHTML = '';
-    for (let i = 1; i <= 9; i++) {
-      const d = document.createElement('div');
-      d.className = 'bp-pattern-dot';
-      d.textContent = i;
-      d.dataset.n = i;
-      d.addEventListener('click', () => {
-        const n = +d.dataset.n;
-        const idx = state.patternPts.indexOf(n);
-        if (idx >= 0) state.patternPts.splice(idx, 1); else state.patternPts.push(n);
-        refreshPatternUI();
+  // ── Items ─────────────────────────────────────────────────
+  function renderItems() {
+    $('bpItems').innerHTML = items.map((it, i) => `
+      <div class="bp-item-row" style="display:grid;grid-template-columns:2fr 60px 90px auto;gap:6px;margin-bottom:6px;">
+        <input class="bp-input" data-k="nama" data-i="${i}" placeholder="Item / kerosakan" value="${it.nama || ''}">
+        <input class="bp-input" data-k="qty" data-i="${i}" type="number" min="1" value="${it.qty || 1}">
+        <input class="bp-input" data-k="harga" data-i="${i}" type="number" step="0.01" value="${it.harga || 0}">
+        <button type="button" data-del="${i}" style="padding:8px;border:1px solid #dc262655;color:#dc2626;background:transparent;border-radius:8px;cursor:pointer;"><i class="fas fa-trash"></i></button>
+      </div>`).join('');
+    $('bpItems').querySelectorAll('input').forEach((inp) => {
+      inp.addEventListener('input', (e) => {
+        const i = Number(e.target.dataset.i);
+        const k = e.target.dataset.k;
+        items[i][k] = k === 'nama' ? e.target.value : (Number(e.target.value) || 0);
+        recalc();
       });
-      box.appendChild(d);
-    }
-  })();
-  function clearPattern() { state.patternPts = []; refreshPatternUI(); }
+    });
+    $('bpItems').querySelectorAll('[data-del]').forEach((b) => {
+      b.addEventListener('click', () => {
+        items.splice(Number(b.dataset.del), 1);
+        if (!items.length) items.push({ nama: '', qty: 1, harga: 0 });
+        renderItems(); recalc();
+      });
+    });
+  }
+  $('bpAddItem').addEventListener('click', () => { items.push({ nama: '', qty: 1, harga: 0 }); renderItems(); });
+
+  function subtotal() { return items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.harga) || 0), 0); }
+  function recalc() {
+    const sub = subtotal();
+    $('bpItemTotal').textContent = fmtRM(sub);
+    $('bpSubTotal').textContent = fmtRM(sub);
+    const deposit = Number($('bpDeposit').value) || 0;
+    const diskaun = Number($('bpDiskaun').value) || 0;
+    const vAmt = voucher ? Number(voucher.amount || 0) : 0;
+    $('bpVoucherShow').textContent = '- ' + fmtRM(vAmt);
+    $('bpDiskaunShow').textContent = '- ' + fmtRM(diskaun);
+    $('bpDepositShow').textContent = '- ' + fmtRM(deposit);
+    const baki = Math.max(0, sub - vAmt - diskaun - deposit);
+    $('bpBaki').textContent = fmtRM(baki);
+  }
+  ['bpDeposit', 'bpDiskaun'].forEach((k) => $(k).addEventListener('input', recalc));
+
+  // ── Staff ─────────────────────────────────────────────────
+  async function loadStaff() {
+    const { data } = await window.sb.from('users').select('id,nama').eq('tenant_id', ctx.tenant_id).limit(100);
+    const list = (data && data.length) ? data : [{ id: ctx.id, nama: ctx.nama }];
+    $('bpStaff').innerHTML = list.map((u) => `<option value="${u.nama || u.id}">${u.nama || u.id}</option>`).join('');
+    if (ctx.nama) $('bpStaff').value = ctx.nama;
+  }
+
+  // ── Pattern modal ─────────────────────────────────────────
+  const patternBox = $('bpPatternBox');
+  if (patternBox) {
+    patternBox.innerHTML = Array.from({ length: 9 }, (_, i) => `<div class="bp-pattern-dot" data-i="${i + 1}" style="width:40px;height:40px;border:2px solid #cbd5e1;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;margin:4px;">${i + 1}</div>`).join('');
+    patternBox.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;justify-items:center;';
+    patternBox.querySelectorAll('.bp-pattern-dot').forEach((d) => {
+      d.addEventListener('click', () => {
+        const i = Number(d.dataset.i);
+        if (pattern.includes(i)) return;
+        pattern.push(i);
+        d.style.background = '#6366F1'; d.style.color = '#fff'; d.style.borderColor = '#6366F1';
+        $('bpPatternTxtModal').textContent = pattern.join('-');
+      });
+    });
+  }
   $('bpPatternBtn').addEventListener('click', () => $('bpPatternModal').classList.add('is-open'));
   $('bpPatternClose').addEventListener('click', () => $('bpPatternModal').classList.remove('is-open'));
-  $('bpPatternSave').addEventListener('click', () => $('bpPatternModal').classList.remove('is-open'));
-  $('bpPatternClear').addEventListener('click', clearPattern);
-  $('bpPatternReset').addEventListener('click', clearPattern);
-  $('bpPatternModal').addEventListener('click', e => { if (e.target === $('bpPatternModal')) $('bpPatternModal').classList.remove('is-open'); });
-
-  // ─── Voucher modal (butang + di step 2) ───
-  function refreshVoucherUI() {
-    const has = !!state.kodVoucher;
-    $('bpVoucherChip').hidden = !has;
-    if (has) $('bpVoucherChipTxt').textContent = `${state.kodVoucher} (-${fmt(state.voucherAmt)})`;
-    $('bpVoucherBtn').classList.toggle('is-on', has);
-    $('bpVoucherBtn').classList.toggle('is-on--yellow', has);
-    $('bpPromo').value = state.kodVoucher;
-    $('bpPromoMsg').textContent = has ? `Voucher aktif: -${fmt(state.voucherAmt)}` : '';
-    updateTotals();
-  }
-  async function applyVoucherCode(kod, msgEl) {
-    kod = (kod || '').trim().toUpperCase();
-    state.kodVoucher = ''; state.voucherAmt = 0;
-    if (!kod) { msgEl.textContent = ''; refreshVoucherUI(); return; }
-    try {
-      if (kod.startsWith('V-')) {
-        const d = await db.collection('shop_vouchers_' + ownerID).doc(kod).get();
-        if (!d.exists) { msgEl.textContent = 'Voucher tidak dijumpai'; refreshVoucherUI(); return; }
-        const data = d.data() || {};
-        if ((data.claimed || 0) >= (data.maxClaim || 1)) { msgEl.textContent = 'Voucher telah digunakan'; refreshVoucherUI(); return; }
-        state.kodVoucher = kod; state.voucherAmt = num(data.value);
-        msgEl.textContent = `Voucher diguna: -${fmt(state.voucherAmt)}`;
-      } else if (kod.startsWith('REF-')) {
-        const d = await db.collection('referrals_' + ownerID).doc(kod).get();
-        if (!d.exists) { msgEl.textContent = 'Referral tidak dijumpai'; refreshVoucherUI(); return; }
-        const data = d.data() || {};
-        state.kodVoucher = kod; state.voucherAmt = num(data.rewardValue || data.value || 5);
-        msgEl.textContent = `Referral diguna: -${fmt(state.voucherAmt)}`;
-      } else {
-        msgEl.textContent = 'Format kod tidak sah (V-... atau REF-...)';
-      }
-    } catch (e) { msgEl.textContent = 'Ralat: ' + e.message; }
-    refreshVoucherUI();
-  }
-  $('bpVoucherBtn').addEventListener('click', () => {
-    $('bpVoucherInput').value = state.kodVoucher || '';
-    $('bpVoucherMsg').textContent = '';
-    $('bpVoucherModal').classList.add('is-open');
+  $('bpPatternClear').addEventListener('click', () => {
+    pattern = [];
+    patternBox.querySelectorAll('.bp-pattern-dot').forEach((d) => { d.style.background = ''; d.style.color = ''; d.style.borderColor = '#cbd5e1'; });
+    $('bpPatternTxtModal').textContent = '-';
   });
-  $('bpVoucherClose').addEventListener('click', () => $('bpVoucherModal').classList.remove('is-open'));
-  $('bpVoucherApply').addEventListener('click', async () => {
-    await applyVoucherCode($('bpVoucherInput').value, $('bpVoucherMsg'));
-    if (state.kodVoucher) setTimeout(() => $('bpVoucherModal').classList.remove('is-open'), 800);
-  });
-  $('bpVoucherReset').addEventListener('click', () => applyVoucherCode('', $('bpPromoMsg')));
-  $('bpVoucherModal').addEventListener('click', e => { if (e.target === $('bpVoucherModal')) $('bpVoucherModal').classList.remove('is-open'); });
-  $('bpPromoApply').addEventListener('click', () => applyVoucherCode($('bpPromo').value, $('bpPromoMsg')));
-
-  // ─── Items ───
-  function renderItems() {
-    $('bpItems').innerHTML = state.items.map((it, i) => `
-      <div class="bp-item" data-i="${i}">
-        <input type="text" data-f="nama" value="${esc(it.nama)}" placeholder="Cari Inventori / taip manual..." class="bp-input bp-item__nama">
-        <div class="bp-item__row2">
-          <input type="number" data-f="qty" value="${it.qty}" min="1" class="bp-input bp-item__qty">
-          <input type="number" data-f="harga" value="${Number(it.harga).toFixed(2)}" step="0.01" min="0" placeholder="Harga (RM)" class="bp-input bp-item__harga">
-          <div class="bp-item__sub">RM ${((Number(it.qty) || 0) * (Number(it.harga) || 0)).toFixed(2)}</div>
-          <button type="button" class="icon-btn icon-btn--danger" data-del="${i}" ${state.items.length === 1 ? 'disabled' : ''}><i class="fas fa-trash"></i></button>
-        </div>
-      </div>
-    `).join('');
-    updateTotals();
-  }
-  $('bpItems').addEventListener('input', e => {
-    const row = e.target.closest('.bp-item'); if (!row) return;
-    const i = +row.dataset.i; const f = e.target.dataset.f;
-    if (f === 'nama') state.items[i].nama = e.target.value;
-    else if (f === 'qty') state.items[i].qty = Math.max(1, parseInt(e.target.value, 10) || 1);
-    else if (f === 'harga') state.items[i].harga = Math.max(0, num(e.target.value));
-    const sub = row.querySelector('.bp-item__sub');
-    if (sub) sub.textContent = 'RM ' + ((Number(state.items[i].qty) || 0) * (Number(state.items[i].harga) || 0)).toFixed(2);
-    updateTotals();
-  });
-  $('bpItems').addEventListener('click', e => {
-    const b = e.target.closest('[data-del]'); if (!b || state.items.length === 1) return;
-    state.items.splice(+b.dataset.del, 1);
-    renderItems();
-  });
-  $('bpAddItem').addEventListener('click', () => {
-    state.items.push({ nama: '', qty: 1, harga: 0 });
-    renderItems();
-  });
-
-  function subtotal() { return state.items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.harga) || 0), 0); }
-  function updateTotals() {
-    const sub = subtotal();
-    const dep = num($('bpDeposit').value);
-    const dis = num($('bpDiskaun').value);
-    const vch = state.voucherAmt;
-    const baki = sub - vch - dis - dep;
-    $('bpItemTotal').textContent = fmt(sub);
-    $('bpSubTotal').textContent = fmt(sub);
-    $('bpVoucherShow').textContent = '- ' + fmt(vch);
-    $('bpDiskaunShow').textContent = '- ' + fmt(dis);
-    $('bpDepositShow').textContent = '- ' + fmt(dep);
-    $('bpBaki').textContent = fmt(baki);
-  }
-  $('bpDeposit').addEventListener('input', updateTotals);
-  $('bpDiskaun').addEventListener('input', updateTotals);
-
-  // ─── Gallery ───
-  function readFileToDataUrl(file) {
-    return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
-  }
-  document.querySelectorAll('.bp-gallery-card').forEach(c => {
-    c.addEventListener('click', () => {
-      const id = c.dataset.k === 'depan' ? 'bpFileDepan' : 'bpFileBelakang';
-      $(id).click();
-    });
-  });
-  $('bpFileDepan').addEventListener('change', async e => {
-    const f = e.target.files[0]; if (!f) return;
-    state.imgDepan = await readFileToDataUrl(f);
-    const c = document.querySelector('.bp-gallery-card[data-k="depan"]');
-    c.style.backgroundImage = `url(${state.imgDepan})`;
-    c.classList.add('is-ok');
-    c.innerHTML = '<i class="fas fa-circle-check fa-2x"></i><div>DEPAN OK</div>';
-  });
-  $('bpFileBelakang').addEventListener('change', async e => {
-    const f = e.target.files[0]; if (!f) return;
-    state.imgBelakang = await readFileToDataUrl(f);
-    const c = document.querySelector('.bp-gallery-card[data-k="belakang"]');
-    c.style.backgroundImage = `url(${state.imgBelakang})`;
-    c.classList.add('is-ok');
-    c.innerHTML = '<i class="fas fa-circle-check fa-2x"></i><div>BELAKANG OK</div>';
-  });
-  async function uploadImages(siri) {
-    const out = {};
-    if (!state.hasGallery || !storage) return out;
-    async function up(b64, label) {
-      if (!b64) return null;
-      try {
-        const ref = storage.ref(`repairs/${ownerID}/${siri}/${label}_${Date.now()}.jpg`);
-        await ref.putString(b64, 'data_url', { contentType: 'image/jpeg' });
-        return await ref.getDownloadURL();
-      } catch (_) { return null; }
+  $('bpPatternSave').addEventListener('click', () => {
+    if (pattern.length) {
+      $('bpPatternChip').hidden = false;
+      $('bpPatternTxt').textContent = pattern.join('-');
     }
-    const a = await up(state.imgDepan, 'depan'); if (a) out.img_sebelum_depan = a;
-    const b = await up(state.imgBelakang, 'belakang'); if (b) out.img_sebelum_belakang = b;
-    return out;
-  }
-
-  // ─── Bindings ───
-  $('bpJenis').addEventListener('change', e => { state.jenisServis = e.target.value; });
-  $('bpPayStatus').addEventListener('change', e => { state.paymentStatus = e.target.value; });
-  $('bpPayMethod').addEventListener('change', e => { state.caraBayaran = e.target.value; });
-  $('bpStaff').addEventListener('change', e => { state.staffTerima = e.target.value; });
-
-  // ─── Header back / close ───
-  $('bpBack').addEventListener('click', () => history.back());
-  $('bpClose').addEventListener('click', () => {
-    if (confirm('Tutup tiket ini? Data akan hilang.')) location.href = 'index.html';
+    $('bpPatternModal').classList.remove('is-open');
+  });
+  $('bpPatternReset').addEventListener('click', () => {
+    pattern = []; $('bpPatternChip').hidden = true; $('bpPatternTxt').textContent = '-';
   });
 
-  // ─── Siri + save (tak diubah) ───
-  async function getNextSiri() {
-    const ref = db.collection('counters_' + ownerID).doc(shopID + '_global');
-    const newCount = await db.runTransaction(async tx => {
-      const snap = await tx.get(ref);
-      let count = 1;
-      if (snap.exists) count = ((snap.data() || {}).count || 0) + 1;
-      tx.set(ref, { count }, { merge: true });
-      return count;
-    });
-    let pure = shopID; if (pure.includes('-')) pure = pure.split('-')[1];
-    return pure + String(newCount).padStart(5, '0');
+  // ── Voucher modal ─────────────────────────────────────────
+  $('bpVoucherBtn').addEventListener('click', () => $('bpVoucherModal').classList.add('is-open'));
+  $('bpVoucherClose').addEventListener('click', () => $('bpVoucherModal').classList.remove('is-open'));
+  async function checkVoucher(code, targetMsg) {
+    if (!code) return;
+    const { data } = await window.sb
+      .from('shop_vouchers')
+      .select('id, voucher_code, allocated_amount, used_amount, remaining, expiry_date')
+      .eq('tenant_id', tenantId)
+      .eq('voucher_code', code.toUpperCase())
+      .maybeSingle();
+    const fail = (msg) => { $(targetMsg).textContent = msg; $(targetMsg).style.color = '#dc2626'; voucher = null; $('bpVoucherChip').hidden = true; recalc(); };
+    if (!data) return fail('Kod tidak sah');
+    if (data.expiry_date && new Date(data.expiry_date) < new Date()) return fail('Voucher dah expired');
+    const remaining = Number(data.remaining ?? (data.allocated_amount - data.used_amount));
+    if (remaining <= 0) return fail('Voucher dah habis pakai');
+    voucher = { id: data.id, code: data.voucher_code, amount: remaining };
+    $(targetMsg).textContent = `OK — potongan ${fmtRM(voucher.amount)}`;
+    $(targetMsg).style.color = '#10b981';
+    $('bpVoucherChip').hidden = false;
+    $('bpVoucherChipTxt').textContent = `${voucher.code} · ${fmtRM(voucher.amount)}`;
+    recalc();
   }
-  function genVoucherCode() {
-    const c = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let r = ''; for (let i = 0; i < 6; i++) r += c[Math.floor(Math.random() * c.length)];
-    return 'V-' + r;
+  $('bpVoucherApply').addEventListener('click', () => checkVoucher($('bpVoucherInput').value.trim(), 'bpVoucherMsg'));
+  $('bpPromoApply').addEventListener('click', () => checkVoucher($('bpPromo').value.trim(), 'bpPromoMsg'));
+  $('bpVoucherReset').addEventListener('click', () => { voucher = null; $('bpVoucherChip').hidden = true; recalc(); });
+
+  // ── Nav ───────────────────────────────────────────────────
+  $('bpNext').addEventListener('click', () => {
+    if (step === 1) {
+      if (!$('bpNama').value.trim() || !$('bpTel').value.trim()) { toast('Nama & telefon wajib', true); return; }
+    }
+    if (step === 2) {
+      if (!items.some((i) => i.nama)) { toast('Tambah sekurang-kurangnya 1 item', true); return; }
+    }
+    step = Math.min(3, step + 1); renderStep(); recalc();
+  });
+  $('bpPrev').addEventListener('click', () => { step = Math.max(1, step - 1); renderStep(); });
+  $('bpBack').addEventListener('click', () => { history.length > 1 ? history.back() : (window.location.href = 'branch.html'); });
+  $('bpClose').addEventListener('click', () => { if (confirm('Tutup dan buang data?')) window.location.reload(); });
+
+  // ── Save ──────────────────────────────────────────────────
+  function genSiri() {
+    const d = new Date();
+    const yy = String(d.getFullYear()).slice(2);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const rnd = Math.floor(Math.random() * 9000) + 1000;
+    return `B${yy}${mm}${dd}${rnd}`;
   }
 
-  $('bpSave').addEventListener('click', simpanTiket);
-
-  function resetForm() {
-    state.items = [{ nama: '', qty: 1, harga: 0 }];
-    ['bpNama', 'bpTel', 'bpWasap', 'bpModel', 'bpPass', 'bpCatatan', 'bpPromo', 'bpCustSearch'].forEach(id => $(id).value = '');
-    $('bpDeposit').value = '0'; $('bpDiskaun').value = '0';
-    state.custType = 'NEW CUST'; $('bpCustType').value = 'NEW CUST';
-    document.querySelectorAll('#bpCustTypeToggle button').forEach(x => x.classList.toggle('is-on', x.dataset.v === 'NEW CUST'));
-    $('bpCustSearchRow').hidden = true;
-    $('bpJenis').value = 'TAK PASTI'; state.jenisServis = 'TAK PASTI';
-    $('bpPayStatus').value = 'UNPAID'; state.paymentStatus = 'UNPAID';
-    $('bpPayMethod').value = 'TAK PASTI'; state.caraBayaran = 'TAK PASTI';
-    clearPattern();
-    state.kodVoucher = ''; state.voucherAmt = 0; refreshVoucherUI();
-    $('bpBackupBtn').classList.remove('is-on');
-    state.imgDepan = null; state.imgBelakang = null;
-    document.querySelectorAll('.bp-gallery-card').forEach(c => {
-      c.style.backgroundImage = ''; c.classList.remove('is-ok');
-      const k = c.dataset.k;
-      c.innerHTML = `<i class="fas fa-camera fa-2x"></i><div>${k.toUpperCase()}</div>`;
-    });
-    state.tarikhEdited = false; state.tarikh = new Date(); setTarikhInput();
-    $('bpCustHits').hidden = true;
-    state.step = 0; showStep();
-    renderItems();
-  }
-
-  async function simpanTiket() {
-    if (state.isSaving) return;
-    const nama = $('bpNama').value.trim();
-    const tel = $('bpTel').value.trim();
-    if (!nama || !tel) return toast('Sila isi Nama & No Telefon', true);
-    const validItems = state.items.filter(it => (it.nama || '').trim());
-    if (!validItems.length) return toast('Sila tambah sekurang-kurangnya satu item', true);
-    if (!state.staffTerima && state.staffList.length) return toast('Sila pilih staff terima', true);
-
-    state.isSaving = true;
-    const btn = $('bpSave');
-    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> MENYIMPAN...';
-
+  $('bpSave').addEventListener('click', async () => {
+    $('bpSave').disabled = true;
     try {
-      const siri = await getNextSiri();
-      const voucherGen = genVoucherCode();
-      const phonePass = $('bpPass').value.trim();
-      const patternResult = state.patternPts.join('-');
-      let finalPass = phonePass || 'Tiada';
-      if (patternResult && finalPass === 'Tiada') finalPass = 'Pattern: ' + patternResult;
-      else if (patternResult) finalPass += ' (Pattern: ' + patternResult + ')';
-
       const harga = subtotal();
-      const deposit = num($('bpDeposit').value);
-      const diskaun = num($('bpDiskaun').value);
-      const voucherAmt = state.voucherAmt;
-      const total = harga - voucherAmt - diskaun - deposit;
+      const deposit = Number($('bpDeposit').value) || 0;
+      const diskaun = Number($('bpDiskaun').value) || 0;
+      const vAmt = voucher ? Number(voucher.amount || 0) : 0;
+      const total = Math.max(0, harga - diskaun - vAmt);
+      const baki = Math.max(0, total - deposit);
+      const siri = genSiri();
+      const payStatus = $('bpPayStatus').value === 'PAID' ? 'PAID' : 'PENDING';
 
-      const itemsArray = validItems.map(i => ({ nama: String(i.nama).trim(), qty: parseInt(i.qty) || 1, harga: num(i.harga) }));
-      const kerosakan = itemsArray.map(i => `${i.nama} (x${i.qty})`).join(', ');
-      const d = state.tarikh;
-      const tarikhStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-      const telWasap = $('bpWasap').value.trim();
-
-      const data = {
-        siri, receiptNo: siri, shopID,
-        nama: nama.toUpperCase(), pelanggan: nama.toUpperCase(),
-        tel, telefon: tel,
-        tel_wasap: telWasap || '-', wasap: telWasap || '-',
-        model: $('bpModel').value.trim().toUpperCase(),
-        kerosakan,
-        items_array: itemsArray,
-        tarikh: tarikhStr,
-        harga: harga.toFixed(2),
-        deposit: deposit.toFixed(2),
-        diskaun: diskaun.toFixed(2),
-        tambahan: '0',
-        total: total.toFixed(2),
-        baki: total.toFixed(2),
-        voucher_generated: voucherGen,
-        voucher_used: state.kodVoucher,
-        voucher_used_amt: voucherAmt,
-        payment_status: state.paymentStatus,
-        cara_bayaran: state.caraBayaran,
-        catatan: $('bpCatatan').value.trim(),
-        jenis_servis: state.jenisServis,
-        staff_terima: state.staffTerima,
-        staff_repair: '',
-        staff_serah: '',
-        password: finalPass,
-        cust_type: state.custType,
+      const payload = {
+        tenant_id: ctx.tenant_id,
+        branch_id: branchId,
+        siri,
+        nama: $('bpNama').value.trim(),
+        tel: $('bpTel').value.trim(),
+        tel_wasap: backupTel || null,
+        model: $('bpModel').value.trim(),
+        kerosakan: items.filter((i) => i.nama).map((i) => i.nama).join(', '),
+        jenis_servis: $('bpJenis').value,
         status: 'IN PROGRESS',
-        status_history: [{ status: 'IN PROGRESS', timestamp: tarikhStr }],
-        timestamp: Date.now(),
+        tarikh: $('bpTarikh').value ? new Date($('bpTarikh').value).toISOString() : new Date().toISOString(),
+        harga: Number(harga.toFixed(2)),
+        deposit: Number(deposit.toFixed(2)),
+        diskaun: Number(diskaun.toFixed(2)),
+        tambahan: 0,
+        total: Number(total.toFixed(2)),
+        baki: Number(baki.toFixed(2)),
+        payment_status: payStatus,
+        cara_bayaran: $('bpPayMethod').value,
+        device_password: $('bpPass').value.trim() || (pattern.length ? 'PATTERN:' + pattern.join('-') : null),
+        cust_type: custType,
+        staff_terima: $('bpStaff').value || ctx.nama,
+        catatan: $('bpCatatan').value.trim() || null,
+        voucher_used: voucher ? voucher.code : null,
+        voucher_used_amt: voucher ? Number(vAmt.toFixed(2)) : 0,
       };
 
-      await db.collection('repairs_' + ownerID).doc(siri).set(data);
-      const imgUrls = await uploadImages(siri);
-      if (Object.keys(imgUrls).length) {
-        await db.collection('repairs_' + ownerID).doc(siri).update(imgUrls);
-        Object.assign(data, imgUrls);
+      const { data: job, error } = await window.sb.from('jobs').insert(payload).select().single();
+      if (error) throw error;
+
+      const itemRows = items.filter((i) => i.nama).map((i) => ({
+        tenant_id: ctx.tenant_id, job_id: job.id, nama: i.nama,
+        qty: Number(i.qty) || 1, harga: Number(Number(i.harga || 0).toFixed(2)),
+      }));
+      if (itemRows.length) await window.sb.from('job_items').insert(itemRows);
+
+      // Bump voucher used_amount
+      if (voucher && vAmt > 0) {
+        const { data: vRow } = await window.sb.from('shop_vouchers').select('used_amount').eq('id', voucher.id).single();
+        const newUsed = Number((Number(vRow?.used_amount || 0) + vAmt).toFixed(2));
+        await window.sb.from('shop_vouchers').update({ used_amount: newUsed }).eq('id', voucher.id);
       }
 
-      if (state.kodVoucher.startsWith('REF-')) {
-        try {
-          await db.collection('referral_claims_' + ownerID).add({
-            referralCode: state.kodVoucher, claimedBy: tel,
-            claimedByName: nama.toUpperCase(),
-            siri, amount: voucherAmt, shopID, timestamp: Date.now(),
-          });
-        } catch (_) {}
+      lastSavedJob = Object.assign({}, job, { items_array: itemRows });
+      if (!lastShop) {
+        const { data: br } = await window.sb.from('branches').select('*').eq('id', branchId).single();
+        lastShop = br || {};
       }
-      if (state.kodVoucher.startsWith('V-')) {
-        try {
-          await db.collection('shop_vouchers_' + ownerID).doc(state.kodVoucher).update({
-            claimed: firebase.firestore.FieldValue.increment(1),
-          });
-        } catch (_) {}
-      }
-
-      state.lastSaved = data;
       $('bpDoneSiri').textContent = '#' + siri;
-      $('bpDoneAmt').textContent = 'Baki: ' + fmt(total);
-      $('bpDoneStatus').textContent = 'IN PROGRESS';
-      $('bpDonePrint').textContent = '';
+      $('bpDoneAmt').textContent = fmtRM(total);
+      $('bpDoneStatus').textContent = payStatus;
       $('bpDoneModal').classList.add('is-open');
-
-      if (window.RmsPrinter && RmsPrinter.isConnected()) {
-        try {
-          $('bpDonePrint').textContent = 'Mencetak resit…';
-          await RmsPrinter.printReceipt(data, state.shopInfo);
-          $('bpDonePrint').textContent = '✓ Resit dicetak';
-        } catch (e) {
-          $('bpDonePrint').textContent = '✗ Gagal cetak: ' + e.message;
-        }
-      }
     } catch (e) {
-      toast('Gagal simpan: ' + e.message, true);
+      toast('Gagal: ' + (e.message || e), true);
+    } finally {
+      $('bpSave').disabled = false;
     }
-    state.isSaving = false;
-    btn.disabled = false;
-    btn.innerHTML = '<i class="fas fa-floppy-disk"></i> SIMPAN TIKET';
-  }
+  });
 
-  // ─── Done modal ───
-  $('bpDoneOk').addEventListener('click', () => {
-    $('bpDoneModal').classList.remove('is-open');
-    resetForm();
-  });
-  $('bpDoneModal').addEventListener('click', e => {
-    if (e.target === $('bpDoneModal')) $('bpDoneModal').classList.remove('is-open');
-  });
+  $('bpDoneOk').addEventListener('click', () => window.location.reload());
   $('bpDonePrintBtn').addEventListener('click', async () => {
-    if (!state.lastSaved) return;
-    if (window.RmsPrinter && RmsPrinter.isConnected()) {
-      try {
-        $('bpDonePrint').textContent = 'Mencetak resit…';
-        await RmsPrinter.printReceipt(state.lastSaved, state.shopInfo);
-        $('bpDonePrint').textContent = '✓ Resit dicetak';
-      } catch (e) {
-        $('bpDonePrint').textContent = '✗ Gagal: ' + e.message;
-      }
-    } else {
-      window.print();
-    }
+    const P = window.RmsPrinter;
+    if (!P || !P.isConnected || !P.isConnected()) { toast('Printer tidak disambung. Klik PRINTER dulu.', true); return; }
+    if (!lastSavedJob) { toast('Tiada resit untuk dicetak', true); return; }
+    try { await P.printReceipt(lastSavedJob, lastShop || {}); }
+    catch (e) { toast('Gagal cetak: ' + e.message, true); }
+  });
+  $('bpPrinterBtn').addEventListener('click', async () => {
+    const P = window.RmsPrinter;
+    if (!P) { toast('Printer module tiada', true); return; }
+    if (P.isConnected()) { await P.disconnect(); await P.disconnectUSB(); toast('Printer disconnect'); return; }
+    try {
+      if (P.bleSupported()) await P.connect();
+      else if (P.usbSupported()) await P.connectUSB();
+      else toast('Browser tak support printer', true);
+      if (P.isConnected()) toast('Printer: ' + P.getName());
+    } catch (e) { toast(e.message, true); }
   });
 
-  // ─── Printer ───
-  (function wirePrinter() {
-    const btn = $('bpPrinterBtn');
-    const lbl = $('bpPrinterLbl');
-    if (!btn || !window.RmsPrinter) return;
-    RmsPrinter.onChange(st => {
-      if (!st.supported) { btn.classList.add('is-disabled'); btn.title = 'Tidak disokong'; return; }
-      btn.classList.toggle('is-on', st.connected);
-      if (lbl) lbl.textContent = st.connected ? (st.name || 'TERSAMBUNG') : 'PRINTER';
-      btn.title = st.connected ? ('Printer: ' + (st.name || '')) : 'Sambung printer';
-    });
-    btn.addEventListener('click', async () => {
-      if (!RmsPrinter.isSupported()) return toast('Web Bluetooth tidak disokong', true);
-      if (RmsPrinter.isConnected()) {
-        if (confirm('Putus sambungan printer?')) await RmsPrinter.disconnect();
-        return;
-      }
-      try { await RmsPrinter.connect(); toast('Printer tersambung: ' + RmsPrinter.getName()); }
-      catch (e) { toast('Gagal sambung: ' + e.message, true); }
-    });
+  // Init date
+  (function initDate() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    $('bpTarikh').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   })();
 
-  // ─── Helpers ───
-  function toast(msg, isErr) {
-    const t = $('bpToast');
-    t.textContent = msg;
-    t.style.background = isErr ? '#DC2626' : '#0F172A';
-    t.hidden = false;
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => t.hidden = true, 2500);
-  }
-
-  // ─── Init ───
   renderItems();
-  showStep();
+  recalc();
+  await loadStaff();
+  renderStep();
 })();
