@@ -1,0 +1,22 @@
+{
+  "name": "rmspro-migration-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Firebase → Supabase migration scripts for RMS Pro",
+  "scripts": {
+    "auth": "node 01_migrate_auth.js",
+    "data": "node 02_migrate_data.js",
+    "globals": "node 03_migrate_globals.js",
+    "verify": "node 04_verify_counts.js",
+    "storage": "node 05_migrate_storage.js",
+    "smoke": "node 06_smoke_test.js",
+    "cf:list": "node 07_cf_custom_hostname.js list",
+    "cf:add": "node 07_cf_custom_hostname.js add",
+    "cf:sync": "node 07_cf_custom_hostname.js sync-tenants"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "dotenv": "^16.4.5",
+    "firebase-admin": "^12.4.0"
+  }
+}

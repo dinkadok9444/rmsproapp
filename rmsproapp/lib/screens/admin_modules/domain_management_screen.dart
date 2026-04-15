@@ -1,12 +1,16 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../theme/app_theme.dart';
+import '../../services/supabase_client.dart';
 
+// Cloudflare-backed via Supabase Edge Function (cf-custom-hostname).
+// Legacy Firebase Functions endpoint kekal untuk getDomains/getDealers list je
+// (read-only, panggil Firestore — perlu migrate ke Supabase query langsung suatu hari).
 const _functionsBase = 'https://us-central1-rmspro-2f454.cloudfunctions.net';
+const _edgeBase = 'https://lpurtgmqecabgwwenikb.supabase.co/functions/v1/cf-custom-hostname';
 
 class DomainManagementScreen extends StatefulWidget {
   const DomainManagementScreen({super.key});
@@ -15,7 +19,7 @@ class DomainManagementScreen extends StatefulWidget {
 }
 
 class _DomainManagementScreenState extends State<DomainManagementScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
   List<Map<String, dynamic>> _domainList = [];
   bool _isLoading = true;
 
@@ -272,9 +276,9 @@ class _DomainManagementScreenState extends State<DomainManagementScreen> {
     _showLoading('Menyediakan domain...');
     try {
       final resp = await http.post(
-        Uri.parse('$_functionsBase/addCustomDomain'),
+        Uri.parse(_edgeBase),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'domain': domain, 'ownerID': ownerID}),
+        body: jsonEncode({'action': 'add', 'hostname': domain, 'ownerID': ownerID}),
       );
 
       if (!mounted) return;
@@ -314,11 +318,11 @@ class _DomainManagementScreenState extends State<DomainManagementScreen> {
     _showLoading('Menyemak status...');
     try {
       final resp = await http.post(
-        Uri.parse('$_functionsBase/checkDomainStatus'),
+        Uri.parse(_edgeBase),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'domain': (item['domain'] ?? '').toString(),
-          'ownerID': (item['id'] ?? '').toString(),
+          'action': 'check',
+          'hostname': (item['domain'] ?? '').toString(),
         }),
       );
 
@@ -387,10 +391,10 @@ class _DomainManagementScreenState extends State<DomainManagementScreen> {
     try {
       final safeId = (item['id'] ?? '').toString();
       if (safeId.isNotEmpty) {
-        await _db.collection('saas_dealers').doc(safeId).update({
-          'domain': FieldValue.delete(),
-          'domainStatus': FieldValue.delete(),
-        });
+        await _sb.from('tenants').update({
+          'domain': null,
+          'domain_status': 'PENDING_DNS',
+        }).eq('owner_id', safeId);
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
