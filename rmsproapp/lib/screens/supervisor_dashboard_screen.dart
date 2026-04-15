@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import '../services/saas_flags_service.dart';
+import '../services/repair_service.dart';
+import '../services/supabase_client.dart';
 import 'login_screen.dart';
 import 'modules/chat_screen.dart';
 import 'supervisor_modules/sv_inventory_tab.dart';
@@ -30,9 +32,13 @@ class SupervisorDashboardScreen extends StatefulWidget {
 }
 
 class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _db = FirebaseFirestore.instance; // legacy: marketplace_notifications (skip per marketplace rule)
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   final _authService = AuthService();
 
+  String? _tenantId;
+  String? _branchId;
   String _ownerID = '', _shopID = '', _staffName = '';
   String _shopName = '';
   String? _logoBase64;
@@ -45,7 +51,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
   StreamSubscription? _shopSub;
   StreamSubscription? _flagsSub;
   Map<String, dynamic> _enabledModules = {};
-  Map<String, bool> _saasFlags = {'marketplace': true, 'chat': true};
+  Map<String, bool> _saasFlags = {'marketplace': false, 'chat': true};
 
   @override
   void initState() {
@@ -54,31 +60,36 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
   }
 
   Future<void> _init() async {
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+
     final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
     _staffName = prefs.getString('rms_staff_name') ?? 'SUPERVISOR';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0];
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
-    _shopSub = _db
-        .collection('shops_$_ownerID')
-        .doc(_shopID)
-        .snapshots()
-        .listen((snap) {
-      if (!snap.exists || !mounted) return;
-      final data = snap.data() ?? {};
-      final hex = data['themeColor'] as String?;
-      final em = data['enabledModules'];
-      setState(() {
-        if (hex != null && hex.isNotEmpty) {
-          _themeColor = Color(int.parse(hex.replaceFirst('#', '0xFF')));
-        }
-        _shopName = data['namaKedai'] ?? data['shopName'] ?? '';
-        _logoBase64 = data['logoBase64'] as String?;
-        _enabledModules = em is Map ? Map<String, dynamic>.from(em) : {};
+
+    if (_branchId != null) {
+      _shopSub = _sb
+          .from('branches')
+          .stream(primaryKey: ['id'])
+          .eq('id', _branchId!)
+          .listen((rows) {
+        if (rows.isEmpty || !mounted) return;
+        final data = rows.first;
+        final extras = (data['extras'] is Map) ? Map<String, dynamic>.from(data['extras']) : <String, dynamic>{};
+        final hex = extras['themeColor'] as String?;
+        final em = data['enabled_modules'];
+        setState(() {
+          if (hex != null && hex.isNotEmpty) {
+            _themeColor = Color(int.parse(hex.replaceFirst('#', '0xFF')));
+          }
+          _shopName = (data['nama_kedai'] ?? '').toString();
+          _logoBase64 = data['logo_base64'] as String?;
+          _enabledModules = em is Map ? Map<String, dynamic>.from(em) : {};
+        });
       });
-    });
+    }
     if (mounted) setState(() {});
     _listenNotifications();
     _flagsSub = SaasFlagsService.stream().listen((flags) {
@@ -928,20 +939,17 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
                               foundDocId = null;
                             });
                             try {
-                              final snap = await _db
-                                  .collection('repairs_$_ownerID')
-                                  .where(
-                                    'siri',
-                                    isEqualTo: siriCtrl.text
-                                        .trim()
-                                        .toUpperCase(),
-                                  )
-                                  .limit(1)
-                                  .get();
-                              if (snap.docs.isNotEmpty) {
+                              if (_branchId == null) throw Exception('Branch belum resolved');
+                              final rows = await _sb
+                                  .from('jobs')
+                                  .select()
+                                  .eq('branch_id', _branchId!)
+                                  .eq('siri', siriCtrl.text.trim().toUpperCase())
+                                  .limit(1);
+                              if (rows.isNotEmpty) {
                                 setS(() {
-                                  foundRecord = snap.docs.first.data();
-                                  foundDocId = snap.docs.first.id;
+                                  foundRecord = Map<String, dynamic>.from(rows.first);
+                                  foundDocId = rows.first['id']?.toString();
                                 });
                               } else {
                                 _svSnack('Rekod tidak dijumpai', err: true);
@@ -1112,7 +1120,7 @@ class _SupervisorDashboardScreenState extends State<SupervisorDashboardScreen> {
 
   Future<void> _performDeleteRecord(String docId) async {
     try {
-      await _db.collection('repairs_$_ownerID').doc(docId).delete();
+      await _sb.from('jobs').delete().eq('id', docId);
       _svSnack('Rekod berjaya dipadam');
     } catch (e) {
       _svSnack('Gagal padam rekod: $e', err: true);

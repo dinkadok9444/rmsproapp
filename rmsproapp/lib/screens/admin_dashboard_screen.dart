@@ -83,9 +83,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           child: Row(children: [
             _bottomNavItem(0),
-            _bottomNavItem(7), // Marketplace
             _bottomNavItem(2), // Rekod Jualan
             _bottomNavItem(5), // Tetapan API
+            _bottomNavItem(13), // Suis Modul
             _bottomNavMore(),
           ]),
         ),
@@ -137,7 +137,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Text('MODUL LAIN', style: TextStyle(color: AppColors.textSub, fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1)),
           const SizedBox(height: 16),
-          for (final i in [1, 12, 10, 9, 8, 3, 4, 11, 6]) _moreMenuItem(ctx, i), // Daftar Dealer, Database User, Template PDF, Domain, Marketplace, Kata-Kata, Notis Aduan, Feedback, Tong Sampah
+          for (final i in [1, 12, 10, 9, 3, 4, 11, 6]) _moreMenuItem(ctx, i), // Daftar Dealer, Database User, Template PDF, Domain, Kata-Kata, Notis Aduan, Feedback, Tong Sampah (Marketplace hidden)
           const SizedBox(height: 8),
           // Promosi
           GestureDetector(
