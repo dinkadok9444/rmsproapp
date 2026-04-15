@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 import '../../theme/app_theme.dart';
 import '../../services/app_language.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 
 const _functionsBase = 'https://us-central1-rmspro-2f454.cloudfunctions.net';
 
@@ -25,8 +25,9 @@ class _LinkScreenState extends State<LinkScreen> {
     return m['JualTelefon'] != false;
   }
   final _lang = AppLanguage();
-  final _db = FirebaseFirestore.instance;
-  String _ownerID = 'admin';
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _tenantId;
   String _dealerCode = '';
   String _domain = 'https://rmspro.net';
   bool _isCustomDomain = false;
@@ -40,37 +41,35 @@ class _LinkScreenState extends State<LinkScreen> {
   }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0];
-    }
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    if (_tenantId == null) return;
     try {
-      final dealerSnap = await _db
-          .collection('saas_dealers')
-          .doc(_ownerID)
-          .get();
-      if (dealerSnap.exists) {
-        final data = dealerSnap.data()!;
-        final domain = data['domain'] as String?;
+      final row = await _sb
+          .from('tenants')
+          .select('domain, domain_status, dns_records, config')
+          .eq('id', _tenantId!)
+          .maybeSingle();
+      if (row != null) {
+        final domain = row['domain'] as String?;
         if (domain != null && domain.isNotEmpty) {
-          _domain = domain;
+          _domain = domain.startsWith('http') ? domain : 'https://$domain';
           _isCustomDomain = _domain != 'https://rmspro.net';
         }
-        _domainStatus = (data['domainStatus'] ?? '').toString();
-        final rawDns = data['dnsRecords'] as List? ?? [];
+        _domainStatus = (row['domain_status'] ?? '').toString();
+        final rawDns = row['dns_records'] as List? ?? [];
         _dnsRecords = rawDns
             .whereType<Map>()
             .map((r) => r.map((k, v) => MapEntry(k.toString(), (v ?? '').toString())))
             .toList();
-        // Load or generate dealerCode
-        if (data['dealerCode'] != null && (data['dealerCode'] as String).isNotEmpty) {
-          _dealerCode = data['dealerCode'];
+        final config = (row['config'] is Map) ? Map<String, dynamic>.from(row['config']) : <String, dynamic>{};
+        final existingCode = (config['dealerCode'] ?? '').toString();
+        if (existingCode.isNotEmpty) {
+          _dealerCode = existingCode;
         } else {
           _dealerCode = _generateCode();
-          await _db.collection('saas_dealers').doc(_ownerID).set({
-            'dealerCode': _dealerCode,
-          }, SetOptions(merge: true));
+          config['dealerCode'] = _dealerCode;
+          await _sb.from('tenants').update({'config': config}).eq('id', _tenantId!);
         }
       }
     } catch (_) {}
@@ -257,7 +256,7 @@ class _LinkScreenState extends State<LinkScreen> {
       final resp = await http.post(
         Uri.parse('$_functionsBase/addCustomDomain'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'domain': domain, 'ownerID': _ownerID}),
+        body: jsonEncode({'domain': domain, 'ownerID': _repairService.ownerID}),
       );
 
       if (!mounted) return;
@@ -303,7 +302,7 @@ class _LinkScreenState extends State<LinkScreen> {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'domain': domainClean,
-          'ownerID': _ownerID,
+          'ownerID': _repairService.ownerID,
         }),
       );
 
@@ -369,11 +368,12 @@ class _LinkScreenState extends State<LinkScreen> {
     if (confirm != true) return;
 
     try {
-      await _db.collection('saas_dealers').doc(_ownerID).update({
-        'domain': FieldValue.delete(),
-        'domainStatus': FieldValue.delete(),
-        'dnsRecords': FieldValue.delete(),
-      });
+      if (_tenantId == null) return;
+      await _sb.from('tenants').update({
+        'domain': null,
+        'domain_status': 'PENDING_DNS',
+        'dns_records': [],
+      }).eq('id', _tenantId!);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text('Domain telah dipadam'),
@@ -648,13 +648,14 @@ class _LinkScreenState extends State<LinkScreen> {
   }
 
   void _showCustomSheet(String pageKey, String title) async {
-    // Load existing theme
+    // Load existing theme from tenants.config.pageThemes
     Map<String, dynamic> theme = {};
     try {
-      final doc = await _db.collection('saas_dealers').doc(_ownerID).get();
-      if (doc.exists) {
-        final themes = doc.data()?['pageThemes'] as Map?;
-        if (themes != null && themes[pageKey] != null) {
+      if (_tenantId != null) {
+        final row = await _sb.from('tenants').select('config').eq('id', _tenantId!).maybeSingle();
+        final config = (row?['config'] is Map) ? Map<String, dynamic>.from(row!['config']) : <String, dynamic>{};
+        final themes = config['pageThemes'];
+        if (themes is Map && themes[pageKey] is Map) {
           theme = Map<String, dynamic>.from(themes[pageKey] as Map);
         }
       }
@@ -814,16 +815,18 @@ class _LinkScreenState extends State<LinkScreen> {
     ).then((result) async {
       if (result == true) {
         try {
-          await _db.collection('saas_dealers').doc(_ownerID).set({
-            'pageThemes': {
-              pageKey: {
-                'bgColor': bgColor,
-                'textColor': textColor,
-                'accentColor': accentColor,
-                'fontSize': fontSize.round(),
-              }
-            }
-          }, SetOptions(merge: true));
+          if (_tenantId == null) return;
+          final row = await _sb.from('tenants').select('config').eq('id', _tenantId!).maybeSingle();
+          final config = (row?['config'] is Map) ? Map<String, dynamic>.from(row!['config']) : <String, dynamic>{};
+          final themes = (config['pageThemes'] is Map) ? Map<String, dynamic>.from(config['pageThemes']) : <String, dynamic>{};
+          themes[pageKey] = {
+            'bgColor': bgColor,
+            'textColor': textColor,
+            'accentColor': accentColor,
+            'fontSize': fontSize.round(),
+          };
+          config['pageThemes'] = themes;
+          await _sb.from('tenants').update({'config': config}).eq('id', _tenantId!);
 
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(

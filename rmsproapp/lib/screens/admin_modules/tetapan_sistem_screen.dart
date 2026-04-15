@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/branch_service.dart';
+import '../../services/supabase_client.dart';
 
 class TetapanSistemScreen extends StatefulWidget {
   const TetapanSistemScreen({super.key});
@@ -11,7 +11,7 @@ class TetapanSistemScreen extends StatefulWidget {
 }
 
 class _TetapanSistemScreenState extends State<TetapanSistemScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
   bool _isLoading = true;
   bool _isSaving = false;
 
@@ -56,18 +56,18 @@ class _TetapanSistemScreenState extends State<TetapanSistemScreen> {
       await _branchService.initialize();
 
       // Load Delyva config
-      final courierSnap = await _db.collection('config').doc('courier').get();
-      if (courierSnap.exists) {
-        final d = courierSnap.data() ?? {};
+      final courierRow = await _sb.from('platform_config').select('value').eq('id', 'courier').maybeSingle();
+      if (courierRow != null) {
+        final d = (courierRow['value'] is Map) ? Map<String, dynamic>.from(courierRow['value']) : <String, dynamic>{};
         _delyvaApiKeyCtrl.text = d['apiKey'] ?? '';
         _delyvaCustomerIdCtrl.text = d['customerId'] ?? '';
         _delyvaCompanyIdCtrl.text = d['companyId'] ?? '';
       }
 
       // Load ToyyibPay config
-      final toyyibSnap = await _db.collection('config').doc('toyyibpay').get();
-      if (toyyibSnap.exists) {
-        final d = toyyibSnap.data() ?? {};
+      final toyyibRow = await _sb.from('platform_config').select('value').eq('id', 'toyyibpay').maybeSingle();
+      if (toyyibRow != null) {
+        final d = (toyyibRow['value'] is Map) ? Map<String, dynamic>.from(toyyibRow['value']) : <String, dynamic>{};
         _toyyibSecretCtrl.text = d['secretKey'] ?? '';
         _toyyibCategoryCtrl.text = d['categoryCode'] ?? '';
         _toyyibSandbox = d['isSandbox'] ?? true;
@@ -106,22 +106,28 @@ class _TetapanSistemScreenState extends State<TetapanSistemScreen> {
     try {
       // Save Delyva
       if (_delyvaApiKeyCtrl.text.trim().isNotEmpty) {
-        await _db.collection('config').doc('courier').set({
-          'provider': 'delyva',
-          'apiKey': _delyvaApiKeyCtrl.text.trim(),
-          'customerId': _delyvaCustomerIdCtrl.text.trim(),
-          'companyId': _delyvaCompanyIdCtrl.text.trim(),
-          'updatedAt': FieldValue.serverTimestamp(),
+        await _sb.from('platform_config').upsert({
+          'id': 'courier',
+          'value': {
+            'provider': 'delyva',
+            'apiKey': _delyvaApiKeyCtrl.text.trim(),
+            'customerId': _delyvaCustomerIdCtrl.text.trim(),
+            'companyId': _delyvaCompanyIdCtrl.text.trim(),
+            'updatedAt': DateTime.now().toIso8601String(),
+          },
         });
       }
 
       // Save ToyyibPay
       if (_toyyibSecretCtrl.text.trim().isNotEmpty) {
-        await _db.collection('config').doc('toyyibpay').set({
-          'secretKey': _toyyibSecretCtrl.text.trim(),
-          'categoryCode': _toyyibCategoryCtrl.text.trim(),
-          'isSandbox': _toyyibSandbox,
-          'updatedAt': FieldValue.serverTimestamp(),
+        await _sb.from('platform_config').upsert({
+          'id': 'toyyibpay',
+          'value': {
+            'secretKey': _toyyibSecretCtrl.text.trim(),
+            'categoryCode': _toyyibCategoryCtrl.text.trim(),
+            'isSandbox': _toyyibSandbox,
+            'updatedAt': DateTime.now().toIso8601String(),
+          },
         });
       }
 

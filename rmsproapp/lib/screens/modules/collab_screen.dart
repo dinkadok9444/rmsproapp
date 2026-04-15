@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
 import '../../services/app_language.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 
 class CollabScreen extends StatefulWidget {
   const CollabScreen({super.key});
@@ -15,8 +15,11 @@ class CollabScreen extends StatefulWidget {
 
 class _CollabScreenState extends State<CollabScreen> {
   final _lang = AppLanguage();
-  final _db = FirebaseFirestore.instance;
-  String _ownerID = 'admin', _shopID = 'MAIN';
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _tenantId;
+  String? _branchId;
+  String _shopID = 'MAIN';
   List<Map<String, dynamic>> _sentArr = [];
   List<Map<String, dynamic>> _repairs = [];
   List<Map<String, dynamic>> _savedDealers = [];
@@ -30,41 +33,113 @@ class _CollabScreenState extends State<CollabScreen> {
   @override
   void dispose() { _collabSub?.cancel(); _repairSub?.cancel(); super.dispose(); }
 
-  Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) { _ownerID = branch.split('@')[0]; _shopID = branch.split('@')[1].toUpperCase(); }
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
+    return 0;
+  }
+
+  Map<String, dynamic> _collabToUi(Map<String, dynamic> r) {
+    final payload = (r['payload'] is Map) ? Map<String, dynamic>.from(r['payload']) : <String, dynamic>{};
+    return {
+      'key': r['id'],
+      'siri': r['siri'] ?? payload['siri'] ?? '',
+      'sender': (r['poster_shop_id'] ?? '').toString(),
+      'sender_name': r['poster_name'] ?? payload['sender_name'] ?? '',
+      'receiver': r['receiver_shop_id'] ?? payload['receiver'] ?? '',
+      'kurier': payload['kurier'] ?? '',
+      'hantar': payload['hantar'] ?? '',
+      'terima': payload['terima'] ?? '',
+      'catatan': payload['catatan'] ?? '',
+      'namaCust': r['nama'] ?? payload['namaCust'] ?? '',
+      'model': r['model'] ?? '',
+      'kerosakan': r['kerosakan'] ?? '',
+      'password': payload['password'] ?? '',
+      'catatan_pro': payload['catatan_pro'] ?? '',
+      'kurier_return': payload['kurier_return'] ?? '',
+      'harga': r['harga'] ?? 0,
+      'kos': payload['kos'] ?? 0,
+      'payment_status': payload['payment_status'] ?? 'UNPAID',
+      'cara_bayaran': payload['cara_bayaran'] ?? 'CASH',
+      'status': r['status'] ?? 'PENDING',
+      'archived': r['archived'] == true,
+      'timestamp': _tsFromIso(r['created_at']),
+      'timestamp_update': _tsFromIso(r['updated_at']),
+    };
+  }
+
+  Future<void> _loadSavedDealers() async {
+    if (_branchId == null) return;
     try {
-      final shopDoc = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-      if (shopDoc.exists) {
-        final raw = shopDoc.data()?['savedDealers'];
-        if (raw is List) _savedDealers = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      }
+      final row = await _sb.from('branches').select('extras').eq('id', _branchId!).maybeSingle();
+      final extras = (row?['extras'] is Map) ? Map<String, dynamic>.from(row!['extras']) : <String, dynamic>{};
+      final raw = extras['savedDealers'];
+      if (raw is List) _savedDealers = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
     } catch (_) {}
-    _collabSub = _db.collection('collab_global_network').snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) { final d = doc.data(); d['key'] = doc.id; if (d['sender'] == _shopID) list.add(d); }
+  }
+
+  Future<void> _init() async {
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+    _shopID = _repairService.shopID;
+
+    await _loadSavedDealers();
+
+    if (_tenantId == null || _branchId == null) return;
+
+    _collabSub = _sb
+        .from('collab_tasks')
+        .stream(primaryKey: ['id'])
+        .eq('owner_tenant_id', _tenantId!)
+        .listen((rows) {
+      final list = rows
+          .where((r) => (r['poster_shop_id'] ?? '').toString().toUpperCase() == _shopID.toUpperCase())
+          .map<Map<String, dynamic>>(_collabToUi)
+          .toList();
       list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
       if (mounted) setState(() => _sentArr = list);
     });
-    _repairSub = _db.collection('repairs_$_ownerID').snapshots().listen((snap) {
-      _repairs = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+
+    _repairSub = _sb
+        .from('jobs')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      _repairs = rows.map<Map<String, dynamic>>((r) => {
+        'id': r['id'],
+        'siri': r['siri'] ?? '',
+        'nama': r['nama'] ?? '',
+        'tel': r['tel'] ?? '',
+        'model': r['model'] ?? '',
+        'kerosakan': r['kerosakan'] ?? '',
+        'password': r['device_password'] ?? '',
+      }).toList();
     });
   }
 
   Future<void> _saveDealerToBook(String code, String name, String phone) async {
     if (_savedDealers.any((d) => d['code'] == code)) return;
     _savedDealers.add({'code': code, 'name': name, 'phone': phone, 'timestamp': DateTime.now().millisecondsSinceEpoch});
-    try {
-      await _db.collection('shops_$_ownerID').doc(_shopID).set({'savedDealers': _savedDealers}, SetOptions(merge: true));
-    } catch (_) {}
+    await _persistSavedDealers();
   }
 
   Future<void> _removeSavedDealer(String code) async {
     _savedDealers.removeWhere((d) => d['code'] == code);
+    await _persistSavedDealers();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _persistSavedDealers() async {
+    if (_branchId == null) return;
     try {
-      await _db.collection('shops_$_ownerID').doc(_shopID).set({'savedDealers': _savedDealers}, SetOptions(merge: true));
-      if (mounted) setState(() {});
+      final row = await _sb.from('branches').select('extras').eq('id', _branchId!).maybeSingle();
+      final extras = (row?['extras'] is Map) ? Map<String, dynamic>.from(row!['extras']) : <String, dynamic>{};
+      extras['savedDealers'] = _savedDealers;
+      await _sb.from('branches').update({'extras': extras}).eq('id', _branchId!);
     } catch (_) {}
   }
 
@@ -75,7 +150,7 @@ class _CollabScreenState extends State<CollabScreen> {
     return AppColors.yellow;
   }
 
-  String _fmtDate(dynamic ts) => ts is int ? DateFormat('dd/MM/yy').format(DateTime.fromMillisecondsSinceEpoch(ts)) : '-';
+  String _fmtDate(dynamic ts) => ts is int && ts > 0 ? DateFormat('dd/MM/yy').format(DateTime.fromMillisecondsSinceEpoch(ts)) : '-';
 
   void _showStatusModal(Map<String, dynamic> d) {
     final col = _statusColor(d['status'] ?? 'PENDING');
@@ -131,25 +206,42 @@ class _CollabScreenState extends State<CollabScreen> {
     showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
 
-        // Function to check dealer
+        // Check dealer by shop_code — join branches + tenants, check pro mode
         Future<void> semakDealer(String code) async {
           if (code.isEmpty) return;
           setS(() { isChecking = true; dealerStatus = 'Sedang semak...'; foundDealer = null; canSend = false; });
           try {
-            final snap = await _db.collection('saas_dealers').get();
-            Map<String, dynamic>? dealer;
-            for (final doc in snap.docs) {
-              final d = doc.data();
-              final sid = (d['shopID'] ?? '').toString().toUpperCase();
-              if (sid == code) { dealer = d; break; }
-            }
-            if (dealer != null) {
-              final now = DateTime.now().millisecondsSinceEpoch;
-              final isPro = dealer['proMode'] == true && ((dealer['proModeExpire'] ?? 0) as num) > now;
-              setS(() { foundDealer = dealer; canSend = isPro; isChecking = false; dealerStatus = isPro ? _lang.get('cl_pro_aktif') : _lang.get('cl_tiada_pro'); });
-            } else {
+            final rows = await _sb
+                .from('branches')
+                .select('nama_kedai, phone, shop_code, tenants!inner(id, nama_kedai, config, expire_date, active)')
+                .eq('shop_code', code)
+                .limit(1);
+            if (rows.isEmpty) {
               setS(() { foundDealer = null; canSend = false; isChecking = false; dealerStatus = _lang.get('cl_kod_tiada'); });
+              return;
             }
+            final b = rows.first;
+            final t = b['tenants'] as Map?;
+            final config = (t?['config'] is Map) ? Map<String, dynamic>.from(t!['config']) : <String, dynamic>{};
+            final proMode = config['pro_mode'] == true || config['proMode'] == true;
+            final expireRaw = config['pro_mode_expire'] ?? config['proModeExpire'];
+            bool notExpired = true;
+            if (expireRaw != null) {
+              final ms = expireRaw is int ? expireRaw : (expireRaw is String ? (DateTime.tryParse(expireRaw)?.millisecondsSinceEpoch ?? 0) : 0);
+              notExpired = ms > DateTime.now().millisecondsSinceEpoch;
+            }
+            final isPro = proMode && notExpired && (t?['active'] == true);
+            setS(() {
+              foundDealer = {
+                'tenantId': t?['id'],
+                'namaKedai': b['nama_kedai'] ?? t?['nama_kedai'] ?? '',
+                'phone': b['phone'] ?? '',
+                'shopID': b['shop_code'] ?? code,
+              };
+              canSend = isPro;
+              isChecking = false;
+              dealerStatus = isPro ? _lang.get('cl_pro_aktif') : _lang.get('cl_tiada_pro');
+            });
           } catch (e) {
             setS(() { dealerStatus = 'Ralat semak: $e'; canSend = false; isChecking = false; });
           }
@@ -168,7 +260,7 @@ class _CollabScreenState extends State<CollabScreen> {
             ]),
             const SizedBox(height: 16),
 
-            // ── STEP 1: Cari Tiket ──
+            // STEP 1: Cari Tiket
             Text(_lang.get('cl_cari_siri_hint'), style: const TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.w900)),
             const SizedBox(height: 6),
             TextField(controller: searchCtrl, textCapitalization: TextCapitalization.characters,
@@ -198,7 +290,7 @@ class _CollabScreenState extends State<CollabScreen> {
             ],
             const SizedBox(height: 16),
 
-            // ── STEP 2: Kod Dealer ──
+            // STEP 2: Kod Dealer
             Container(padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.blue.withValues(alpha: 0.15))),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -220,7 +312,6 @@ class _CollabScreenState extends State<CollabScreen> {
                   child: Text(dealerStatus, style: TextStyle(color: canSend ? AppColors.green : AppColors.red, fontSize: 10, fontWeight: FontWeight.w900))),
                 if (foundDealer != null) ...[const SizedBox(height: 8), _mini('Kedai', foundDealer!['namaKedai'] ?? '-'), _mini('Tel', foundDealer!['phone'] ?? '-')],
 
-                // ── Senarai Kedai Tersimpan ──
                 if (_savedDealers.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Text(_lang.get('cl_kedai_tersimpan'), style: const TextStyle(color: AppColors.textMuted, fontSize: 9, fontWeight: FontWeight.w900)),
@@ -264,12 +355,10 @@ class _CollabScreenState extends State<CollabScreen> {
               ])),
             const SizedBox(height: 12),
 
-            // ── STEP 3: Kurier & Catatan ──
             Row(children: [Expanded(child: _lbl('Kurier', kurierCtrl, 'Cth: J&T')), const SizedBox(width: 8), Expanded(child: _lbl('Tracking No', trackCtrl, 'No Track'))]),
             _lbl('Catatan / Arahan Kerja', catatanCtrl, 'Cth: Tolong repair board...'),
             const SizedBox(height: 16),
 
-            // ── SUBMIT BUTTON ──
             SizedBox(width: double.infinity, child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: (canSend && foundTicket != null && !isSending) ? AppColors.primary : AppColors.textDim,
@@ -277,7 +366,6 @@ class _CollabScreenState extends State<CollabScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
               onPressed: isSending ? null : () async {
-                // Validation
                 if (foundTicket == null) {
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lang.get('cl_sila_cari_siri')), backgroundColor: AppColors.red));
                   return;
@@ -296,39 +384,46 @@ class _CollabScreenState extends State<CollabScreen> {
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lang.get('cl_tak_boleh_hantar')), backgroundColor: AppColors.red));
                   return;
                 }
+                if (_tenantId == null || _branchId == null) return;
 
                 setS(() => isSending = true);
                 try {
                   String shopName = _shopID;
-                  try { final sDoc = await _db.collection('shops_$_ownerID').doc(_shopID).get(); if (sDoc.exists) shopName = sDoc.data()?['shopName'] ?? _shopID; } catch (_) {}
+                  try {
+                    final r = await _sb.from('branches').select('nama_kedai').eq('id', _branchId!).maybeSingle();
+                    if (r != null) shopName = (r['nama_kedai'] ?? _shopID).toString();
+                  } catch (_) {}
 
                   final payload = {
-                    'siri': siri,
-                    'sender': _shopID,
                     'sender_name': shopName,
-                    'receiver': rx,
                     'kurier': kurierCtrl.text.trim(),
                     'hantar': trackCtrl.text.trim(),
                     'terima': '',
                     'catatan': catatanCtrl.text.trim(),
-                    'namaCust': foundTicket!['nama'] ?? '',
-                    'model': foundTicket!['model'] ?? '',
-                    'kerosakan': foundTicket!['kerosakan'] ?? '',
                     'password': foundTicket!['password'] ?? '',
                     'catatan_pro': '',
                     'kurier_return': '',
-                    'harga': 0,
                     'kos': 0,
                     'payment_status': 'UNPAID',
                     'cara_bayaran': 'CASH',
-                    'status': 'PENDING',
-                    'timestamp': DateTime.now().millisecondsSinceEpoch,
-                    'timestamp_update': DateTime.now().millisecondsSinceEpoch,
                   };
 
-                  await _db.collection('collab_global_network').doc(siri).set(payload);
+                  await _sb.from('collab_tasks').insert({
+                    'owner_tenant_id': _tenantId,
+                    'poster_branch_id': _branchId,
+                    'poster_shop_id': _shopID,
+                    'poster_name': shopName,
+                    'receiver_shop_id': rx,
+                    'siri': siri,
+                    'nama': foundTicket!['nama'] ?? '',
+                    'tel': foundTicket!['tel'] ?? '',
+                    'model': foundTicket!['model'] ?? '',
+                    'kerosakan': foundTicket!['kerosakan'] ?? '',
+                    'harga': 0,
+                    'status': 'PENDING',
+                    'payload': payload,
+                  });
 
-                  // Auto simpan kedai ke buku jika belum ada
                   await _saveDealerToBook(rx, foundDealer!['namaKedai'] ?? '', foundDealer!['phone'] ?? '');
 
                   if (ctx.mounted) Navigator.pop(ctx);
@@ -385,14 +480,14 @@ class _CollabScreenState extends State<CollabScreen> {
 
   Future<void> _archiveItem(Map<String, dynamic> d) async {
     try {
-      await _db.collection('collab_global_network').doc(d['key']).update({'archived': true});
+      await _sb.from('collab_tasks').update({'archived': true}).eq('id', d['key']);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lang.get('cl_arkib_berjaya')), backgroundColor: AppColors.primary));
     } catch (_) {}
   }
 
   Future<void> _restoreItem(Map<String, dynamic> d) async {
     try {
-      await _db.collection('collab_global_network').doc(d['key']).update({'archived': false});
+      await _sb.from('collab_tasks').update({'archived': false}).eq('id', d['key']);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lang.get('cl_pulih_berjaya')), backgroundColor: AppColors.blue));
     } catch (_) {}
   }
@@ -460,7 +555,6 @@ class _CollabScreenState extends State<CollabScreen> {
             ]),
             const SizedBox(height: 10),
             Row(children: [
-              // ── Dropdown Status Filter ──
               if (!_showArchive) ...[
                 Expanded(child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -479,7 +573,6 @@ class _CollabScreenState extends State<CollabScreen> {
                   )))),
                 const SizedBox(width: 8),
               ],
-              // ── Butang Arkib / Kembali ──
               GestureDetector(
                 onTap: () => setState(() { _showArchive = !_showArchive; }),
                 child: Container(padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
@@ -505,9 +598,8 @@ class _CollabScreenState extends State<CollabScreen> {
           : ListView.builder(padding: const EdgeInsets.all(12), itemCount: displayList.length, itemBuilder: (_, i) {
               final d = displayList[i];
               if (_showArchive) return _buildCard(d, isArchive: true);
-              // ── Slide to archive ──
               return Dismissible(
-                key: Key(d['key'] ?? '$i'),
+                key: Key('${d['key'] ?? i}'),
                 direction: DismissDirection.endToStart,
                 background: Container(
                   margin: const EdgeInsets.only(bottom: 12),

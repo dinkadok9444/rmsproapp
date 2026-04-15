@@ -1,324 +1,203 @@
-/* Supervisor > DASHBOARD tab
-   Port of sv_dashboard_tab.dart (Flutter).
-   Bilingual (MS / EN) via localStorage.rms_lang ('ms' default).
-*/
-(function () {
+/* sv_dashboard.js — Supervisor Dashboard tab. Mirror sv_dashboard_tab.dart.
+   Segment: Job Repair vs Jualan Telefon. Filter: Semua / Hari Ini / Minggu / Bulan / Tahun / Custom. */
+(async function () {
   'use strict';
-  if (!document.body.classList.contains('supervisor-page')) return;
+  const ctx = await window.requireAuth();
+  if (!ctx) return;
+  const branchId = ctx.current_branch_id;
+  if (!branchId) return;
 
-  // ---------- i18n ----------
-  const DICT = {
-    ms: {
-      'dash.title': 'DASHBOARD',
-      'dash.sub': 'Statistik jualan & job',
-      'dash.segRepair': 'Job Repair',
-      'dash.segPhone': 'Jualan Telefon',
-      'dash.fAll': 'Semua',
-      'dash.fToday': 'Hari Ini',
-      'dash.fWeek': 'Minggu Ini',
-      'dash.fMonth': 'Bulan Ini',
-      'dash.fYear': 'Tahun Ini',
-      'dash.fCustom': 'Pilih Tarikh',
-      'dash.totalJobs': 'JUMLAH JOB',
-      'dash.inProgress': 'In Progress',
-      'dash.waitingPart': 'Waiting Part',
-      'dash.readyPickup': 'Ready To Pickup',
-      'dash.completed': 'Completed',
-      'dash.cancel': 'Cancel',
-      'dash.reject': 'Reject',
-      'dash.salesToday': 'JUALAN HARI INI',
-      'dash.unit': 'unit',
-      'dash.profit': 'Profit',
-      'dash.totalSales': 'Jumlah Jualan',
-      'dash.totalSell': 'Jumlah Jual',
-      'dash.totalCost': 'Jumlah Kos',
-      'dash.totalProfit': 'Jumlah Profit',
-    },
-    en: {
-      'dash.title': 'DASHBOARD',
-      'dash.sub': 'Sales & job statistics',
-      'dash.segRepair': 'Job Repair',
-      'dash.segPhone': 'Phone Sales',
-      'dash.fAll': 'All',
-      'dash.fToday': 'Today',
-      'dash.fWeek': 'This Week',
-      'dash.fMonth': 'This Month',
-      'dash.fYear': 'This Year',
-      'dash.fCustom': 'Pick Date',
-      'dash.totalJobs': 'TOTAL JOBS',
-      'dash.inProgress': 'In Progress',
-      'dash.waitingPart': 'Waiting Part',
-      'dash.readyPickup': 'Ready To Pickup',
-      'dash.completed': 'Completed',
-      'dash.cancel': 'Cancel',
-      'dash.reject': 'Reject',
-      'dash.salesToday': 'SALES TODAY',
-      'dash.unit': 'unit',
-      'dash.profit': 'Profit',
-      'dash.totalSales': 'Total Sales',
-      'dash.totalSell': 'Total Revenue',
-      'dash.totalCost': 'Total Cost',
-      'dash.totalProfit': 'Total Profit',
-    },
-  };
-  const lang = (localStorage.getItem('rms_lang') || 'ms') === 'en' ? 'en' : 'ms';
-  const t = (k) => (DICT[lang] && DICT[lang][k]) || DICT.ms[k] || k;
-  document.querySelectorAll('#svDash [data-i18n]').forEach((el) => {
-    el.textContent = t(el.dataset.i18n);
-  });
-
-  // ---------- shell ----------
-  const shell = window.SupervisorShell;
-  if (!shell) return;
-  const ownerID = shell.ownerID;
-  const shopID = shell.shopID;
-  const db = window.db;
-
-  // ---------- state ----------
-  let segment = 0;           // 0 = repair, 1 = phone
-  let filter = 'SEMUA';
-  let customStart = null;    // Date
-  let customEnd = null;      // Date
-  let repairDocs = [];
-  let phoneDocs = [];
-  let phoneEnabled = true;
-
-  // ---------- helpers ----------
   const $ = (id) => document.getElementById(id);
-  const body = $('svDashBody');
+  const fmtRM = (n) => 'RM ' + (Number(n) || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  function fmtMoney(n) {
-    return 'RM' + (Number(n) || 0).toFixed(2);
-  }
-  function fmtDate(d) {
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    return `${dd}/${mm}/${d.getFullYear()}`;
-  }
+  let seg = 0; // 0=Repair, 1=Phone
+  let filter = 'SEMUA';
+  let rangeFrom = null, rangeTo = null;
 
-  function extractDate(data) {
-    const ts = data.timestamp;
-    if (typeof ts === 'number' && ts > 0) return new Date(ts);
-    const tk = data.tarikh;
-    if (typeof tk === 'string' && tk) {
-      const d = new Date(tk);
-      if (!isNaN(d)) return d;
-    }
-    return null;
-  }
-
-  function isInRange(data) {
-    if (filter === 'SEMUA') return true;
-    const d = extractDate(data);
-    if (!d) return false;
+  function rangeForFilter() {
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    switch (filter) {
-      case 'HARI_INI':
-        return d.getFullYear() === now.getFullYear() &&
-               d.getMonth() === now.getMonth() &&
-               d.getDate() === now.getDate();
-      case 'MINGGU_INI': {
-        const dow = today.getDay() === 0 ? 7 : today.getDay(); // Mon=1..Sun=7
-        const weekStart = new Date(today); weekStart.setDate(today.getDate() - (dow - 1));
-        const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 7);
-        return d >= weekStart && d < weekEnd;
-      }
-      case 'BULAN_INI':
-        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-      case 'TAHUN_INI':
-        return d.getFullYear() === now.getFullYear();
-      case 'CUSTOM': {
-        if (!customStart || !customEnd) return true;
-        const s = new Date(customStart.getFullYear(), customStart.getMonth(), customStart.getDate());
-        const e = new Date(customEnd.getFullYear(), customEnd.getMonth(), customEnd.getDate(), 23, 59, 59);
-        return d >= s && d <= e;
-      }
-      default:
-        return true;
+    const start = new Date(now); start.setHours(0, 0, 0, 0);
+    if (filter === 'HARI_INI') return { from: start, to: null };
+    if (filter === 'MINGGU_INI') {
+      const d = new Date(start); const day = d.getDay() || 7; d.setDate(d.getDate() - (day - 1));
+      return { from: d, to: null };
     }
-  }
-
-  // ---------- render ----------
-  function totalCard(total, label, icon, c1, c2) {
-    return `
-      <div class="sv-total" style="background:linear-gradient(135deg,${c1},${c2});box-shadow:0 4px 12px ${c1}55;">
-        <div class="sv-total__ico"><i class="${icon}"></i></div>
-        <div class="sv-total__info">
-          <div class="sv-total__label">${label}</div>
-          <div class="sv-total__num">${total}</div>
-        </div>
-      </div>`;
-  }
-
-  function statCard(label, count, icon, color, bg) {
-    return `
-      <div class="sv-card">
-        <div class="sv-card__ico" style="background:${bg};color:${color};"><i class="${icon}"></i></div>
-        <div class="sv-card__num" style="color:${color};">${count}</div>
-        <div class="sv-card__label">${label.toUpperCase()}</div>
-      </div>`;
-  }
-
-  function amountCard(label, amount, icon, color, bg) {
-    return `
-      <div class="sv-card">
-        <div class="sv-card__ico" style="background:${bg};color:${color};"><i class="${icon}"></i></div>
-        <div class="sv-card__num sv-card__num--sm" style="color:${color};">${fmtMoney(amount)}</div>
-        <div class="sv-card__label">${label.toUpperCase()}</div>
-      </div>`;
-  }
-
-  function renderRepair() {
-    let total = 0, inProg = 0, waiting = 0, ready = 0, done = 0, canc = 0, rej = 0;
-    for (const data of repairDocs) {
-      if (!isInRange(data)) continue;
-      total++;
-      const s = String(data.status || '').toUpperCase();
-      if (s === 'IN PROGRESS') inProg++;
-      else if (s === 'WAITING PART') waiting++;
-      else if (s === 'READY TO PICKUP') ready++;
-      else if (s === 'COMPLETED') done++;
-      else if (s === 'CANCEL' || s === 'CANCELLED') canc++;
-      else if (s === 'REJECT') rej++;
+    if (filter === 'BULAN_INI') return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: null };
+    if (filter === 'TAHUN_INI') return { from: new Date(now.getFullYear(), 0, 1), to: null };
+    if (filter === 'CUSTOM' && rangeFrom) {
+      const f = new Date(rangeFrom); const t = rangeTo ? new Date(rangeTo) : null;
+      if (t) t.setHours(23, 59, 59, 999);
+      return { from: f, to: t };
     }
-    body.innerHTML = `
-      ${totalCard(total, t('dash.totalJobs'), 'fas fa-screwdriver-wrench', '#6366F1', '#8B5CF6')}
-      <div class="sv-grid">
-        ${statCard(t('dash.inProgress'),  inProg,  'fas fa-spinner',             '#4CAF50', '#E8F5E9')}
-        ${statCard(t('dash.waitingPart'), waiting, 'fas fa-clock-rotate-left',   '#F59E0B', '#FFF8E1')}
-        ${statCard(t('dash.readyPickup'), ready,   'fas fa-hand-holding-heart',  '#A78BFA', '#EDE9FE')}
-        ${statCard(t('dash.completed'),   done,    'fas fa-circle-check',        '#4CAF50', '#E8F5E9')}
-        ${statCard(t('dash.cancel'),      canc,    'fas fa-ban',                 '#FFC107', '#FFF8E1')}
-        ${statCard(t('dash.reject'),      rej,     'fas fa-circle-xmark',        '#EF4444', '#FEE2E2')}
-      </div>`;
+    return { from: null, to: null };
   }
 
-  function renderPhone() {
-    let totalSales = 0, salesToday = 0;
-    let tJual = 0, tKos = 0, jualToday = 0, kosToday = 0;
-    const now = new Date();
-    for (const data of phoneDocs) {
-      const sid = String(data.shopID || '').toUpperCase();
-      if (sid !== shopID) continue;
-      if (!isInRange(data)) continue;
-      totalSales++;
-      const jual = Number(data.jual || 0);
-      const kos = Number(data.kos || 0);
-      tJual += jual; tKos += kos;
-      const ts = data.timestamp;
-      if (typeof ts === 'number') {
-        const d = new Date(ts);
-        if (d.getFullYear() === now.getFullYear() &&
-            d.getMonth() === now.getMonth() &&
-            d.getDate() === now.getDate()) {
-          salesToday++; jualToday += jual; kosToday += kos;
-        }
-      }
-    }
-    const totalProfit = tJual - tKos;
-    const profitToday = jualToday - kosToday;
-    const profitColor = totalProfit >= 0 ? '#059669' : '#EF4444';
-    const profitBg    = totalProfit >= 0 ? '#D1FAE5' : '#FEE2E2';
+  async function fetchRepair() {
+    const { from, to } = rangeForFilter();
+    let q = window.sb.from('jobs').select('id, total, harga, baki, payment_status, staff_terima, created_at, status')
+      .eq('branch_id', branchId).limit(5000);
+    if (from) q = q.gte('created_at', from.toISOString());
+    if (to) q = q.lte('created_at', to.toISOString());
+    const { data } = await q;
+    return data || [];
+  }
 
-    body.innerHTML = `
-      <div class="sv-hero">
-        <div class="sv-hero__ico"><i class="fas fa-mobile-screen-button"></i></div>
-        <div class="sv-hero__main">
-          <div class="sv-hero__label">${t('dash.salesToday')}</div>
-          <div class="sv-hero__num">${salesToday} ${t('dash.unit')}</div>
-        </div>
-        <div class="sv-hero__right">
-          <div class="sv-hero__amt">${fmtMoney(jualToday)}</div>
-          <div class="sv-hero__chip">${t('dash.profit')}: ${fmtMoney(profitToday)}</div>
-        </div>
+  async function fetchPhone() {
+    const { from, to } = rangeForFilter();
+    let q = window.sb.from('phone_sales')
+      .select('id, device_name, total_price, price_per_unit, sold_by, sold_at, customer_name, notes')
+      .eq('branch_id', branchId).is('deleted_at', null).limit(5000);
+    if (from) q = q.gte('sold_at', from.toISOString());
+    if (to) q = q.lte('sold_at', to.toISOString());
+    const { data } = await q;
+    return data || [];
+  }
+
+  function kpiCard(label, value, color) {
+    return `<div class="sv-kpi" style="background:${color}15;border-left:4px solid ${color};padding:14px;border-radius:10px;">
+      <div style="font-size:10px;color:#64748b;font-weight:800;letter-spacing:.5px;">${label}</div>
+      <div style="font-size:18px;font-weight:900;color:${color};margin-top:4px;">${value}</div></div>`;
+  }
+
+  function renderRepair(rows) {
+    const count = rows.length;
+    let sales = 0, paid = 0, outstanding = 0;
+    const staffMap = {};
+    rows.forEach((r) => {
+      const t = Number(r.total || r.harga || 0);
+      sales += t;
+      if ((r.payment_status || '').toUpperCase() === 'PAID') paid += t;
+      else outstanding += Number(r.baki || t);
+      const s = r.staff_terima || '—';
+      staffMap[s] = (staffMap[s] || 0) + 1;
+    });
+    const top = Object.entries(staffMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    return `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:14px;">
+        ${kpiCard('JUMLAH JOB', count, '#6366F1')}
+        ${kpiCard('JUALAN', fmtRM(sales), '#10b981')}
+        ${kpiCard('DIBAYAR', fmtRM(paid), '#2563eb')}
+        ${kpiCard('OUTSTANDING', fmtRM(outstanding), '#f59e0b')}
       </div>
-      <div class="sv-grid">
-        ${statCard(t('dash.totalSales'),  totalSales,   'fas fa-cart-shopping','#6366F1', '#EDE9FE')}
-        ${amountCard(t('dash.totalSell'), tJual,        'fas fa-money-bill',   '#059669', '#D1FAE5')}
-        ${amountCard(t('dash.totalCost'), tKos,         'fas fa-coins',        '#EA580C', '#FFF7ED')}
-        ${amountCard(t('dash.totalProfit'),totalProfit, 'fas fa-chart-line',   profitColor, profitBg)}
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:12px;">
+        <div style="font-weight:900;font-size:11px;color:#475569;margin-bottom:8px;">TOP STAF</div>
+        ${top.length === 0 ? '<div style="color:#94a3b8;font-size:11px;">Tiada data.</div>' :
+          top.map(([nm, c]) => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;">
+            <span>${nm}</span><strong>${c} job</strong></div>`).join('')}
+      </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;position:relative;height:240px;">
+        <canvas id="svRepairChart"></canvas>
       </div>`;
   }
 
-  function render() {
-    if (!phoneEnabled && segment === 1) segment = 0;
-    if (segment === 0) renderRepair(); else renderPhone();
+  function renderPhone(rows) {
+    const count = rows.length;
+    let sales = 0, profit = 0;
+    const devMap = {};
+    rows.forEach((r) => {
+      const t = Number(r.total_price || r.price_per_unit || 0);
+      sales += t;
+      let kos = 0;
+      try { const n = typeof r.notes === 'string' ? JSON.parse(r.notes) : r.notes; kos = Number(n?.kos || 0); } catch (_) {}
+      profit += t - kos;
+      const d = r.device_name || '—';
+      devMap[d] = (devMap[d] || 0) + 1;
+    });
+    const top = Object.entries(devMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    return `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:14px;">
+        ${kpiCard('JUMLAH UNIT', count, '#6366F1')}
+        ${kpiCard('JUALAN', fmtRM(sales), '#10b981')}
+        ${kpiCard('UNTUNG', fmtRM(profit), '#2563eb')}
+      </div>
+      <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;">
+        <div style="font-weight:900;font-size:11px;color:#475569;margin-bottom:8px;">TOP MODEL</div>
+        ${top.length === 0 ? '<div style="color:#94a3b8;font-size:11px;">Tiada data.</div>' :
+          top.map(([nm, c]) => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;">
+            <span>${nm}</span><strong>${c} unit</strong></div>`).join('')}
+      </div>`;
   }
 
-  // ---------- events ----------
-  document.querySelectorAll('#svSeg .sv-seg__btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      segment = Number(btn.dataset.seg) || 0;
-      document.querySelectorAll('#svSeg .sv-seg__btn').forEach((b) =>
-        b.classList.toggle('is-active', b === btn));
-      render();
-    });
-  });
-
-  const filterSel = $('svFilter');
-  const rangePick = $('svRangePick');
-  const rangePill = $('svRangePill');
-  const rangeText = $('svRangeText');
-  const rangeFrom = $('svRangeFrom');
-  const rangeTo   = $('svRangeTo');
-
-  filterSel.addEventListener('change', (e) => {
-    filter = e.target.value;
-    if (filter === 'CUSTOM') {
-      rangePick.classList.remove('hidden');
+  async function refresh() {
+    const body = $('svDashBody');
+    if (!body) return;
+    body.innerHTML = '<div style="padding:30px;text-align:center;color:#94a3b8;">Memuatkan...</div>';
+    if (seg === 0) {
+      const rows = await fetchRepair();
+      body.innerHTML = renderRepair(rows);
+      drawRepairChart(rows);
     } else {
-      rangePick.classList.add('hidden');
-      rangePill.classList.add('hidden');
-      customStart = null; customEnd = null;
-      render();
+      const rows = await fetchPhone();
+      body.innerHTML = renderPhone(rows);
     }
+  }
+
+  let svChart = null;
+  function drawRepairChart(rows) {
+    const cv = document.getElementById('svRepairChart');
+    if (!cv || typeof Chart === 'undefined') return;
+    if (svChart) { svChart.destroy(); svChart = null; }
+    // Bucket per day, last 14 days, count + total
+    const days = 14;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const labels = [], countArr = [], salesArr = [];
+    const buckets = {};
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today); d.setDate(today.getDate() - i);
+      const k = d.toISOString().slice(0,10);
+      labels.push(`${d.getDate()}/${d.getMonth()+1}`);
+      buckets[k] = { count: 0, sales: 0 };
+    }
+    rows.forEach((r) => {
+      const k = r.created_at ? r.created_at.slice(0,10) : null;
+      if (!k || !buckets[k]) return;
+      buckets[k].count++;
+      buckets[k].sales += Number(r.total || r.harga || 0);
+    });
+    Object.values(buckets).forEach((b) => { countArr.push(b.count); salesArr.push(b.sales); });
+    svChart = new Chart(cv.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { type: 'bar', label: 'Job', data: countArr, backgroundColor: 'rgba(99,102,241,.7)', yAxisID: 'y' },
+          { type: 'line', label: 'RM', data: salesArr, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,.15)', tension: 0.3, fill: true, yAxisID: 'y1' },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: {
+          y: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: 'Job' } },
+          y1: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: 'RM' } },
+        },
+      },
+    });
+  }
+
+  // ── Segment toggle ────────────────────────────────────────
+  document.querySelectorAll('#svSeg .sv-seg__btn').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#svSeg .sv-seg__btn').forEach((x) => x.classList.remove('is-active'));
+      b.classList.add('is-active');
+      seg = Number(b.dataset.seg);
+      refresh();
+    });
   });
 
-  function applyCustom() {
-    if (!rangeFrom.value || !rangeTo.value) return;
-    customStart = new Date(rangeFrom.value);
-    customEnd = new Date(rangeTo.value);
-    rangeText.textContent = `${fmtDate(customStart)} - ${fmtDate(customEnd)}`;
-    rangePill.classList.remove('hidden');
-    render();
-  }
-  rangeFrom.addEventListener('change', applyCustom);
-  rangeTo.addEventListener('change', applyCustom);
+  // ── Filter ────────────────────────────────────────────────
+  const fSel = $('svFilter');
+  if (fSel) fSel.addEventListener('change', (e) => {
+    filter = e.target.value;
+    const pick = $('svRangePick');
+    if (pick) pick.classList.toggle('hidden', filter !== 'CUSTOM');
+    refresh();
+  });
+  const rf = $('svRangeFrom'); if (rf) rf.addEventListener('change', (e) => { rangeFrom = e.target.value; refresh(); });
+  const rt = $('svRangeTo'); if (rt) rt.addEventListener('change', (e) => { rangeTo = e.target.value; refresh(); });
 
-  // ---------- streams ----------
-  try {
-    db.collection('repairs_' + ownerID).onSnapshot(
-      (snap) => {
-        repairDocs = snap.docs.map((d) => d.data() || {});
-        if (segment === 0) render();
-      },
-      (err) => console.warn('repairs_' + ownerID + ':', err)
-    );
-    db.collection('phone_sales_' + ownerID).onSnapshot(
-      (snap) => {
-        phoneDocs = snap.docs.map((d) => d.data() || {});
-        if (segment === 1) render();
-      },
-      (err) => console.warn('phone_sales_' + ownerID + ':', err)
-    );
-  } catch (e) { console.warn('sv_dashboard stream fail:', e); }
+  window.addEventListener('sv:dashboard:refresh', refresh);
 
-  // Respect enabledModules.phone (hide phone segment if disabled)
-  try {
-    db.collection('shops_' + ownerID).doc(shopID).onSnapshot((snap) => {
-      if (!snap.exists) return;
-      const em = snap.data().enabledModules || {};
-      phoneEnabled = em.phone !== false;
-      $('svSegPhone').style.display = phoneEnabled ? '' : 'none';
-      if (!phoneEnabled && segment === 1) {
-        segment = 0;
-        document.querySelectorAll('#svSeg .sv-seg__btn').forEach((b) =>
-          b.classList.toggle('is-active', b.dataset.seg === '0'));
-      }
-      render();
-    });
-  } catch (e) { console.warn('sv_dashboard shop snap fail:', e); }
-
-  render();
+  await refresh();
+  setInterval(refresh, 90000);
 })();

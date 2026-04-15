@@ -130,3 +130,14 @@
 }
 .cw-exp.is-ok  { color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); border: 1px solid color-mix(in srgb, var(--green) 30%, transparent); }
 .cw-exp.is-exp { color: var(--red);   background: color-mix(in srgb, var(--red) 10%, transparent);   border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); }
+
+/* ── Hygiene ── */
+.cw-result, .cw-info, .cw-group, .cw-2col, .cw-3col { box-sizing: border-box; }
+.cw-result *, .cw-info *, .cw-group * { box-sizing: border-box; }
+.cw-2col > *, .cw-3col > * { min-width: 0; }
+.cw-result__nama, .cw-result__meta, .cw-cust, .cw-info-line, .cw-cid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cw-foot > * { min-width: 0; }
+.cw-result__head > * { min-width: 0; }
+@media (max-width: 480px) {
+  .cw-3col { grid-template-columns: 1fr 1fr; }
+}

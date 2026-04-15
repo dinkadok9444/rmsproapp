@@ -55,6 +55,10 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+@media (max-width: 520px) {
+  .sup-header__switch span, .sup-header__switch { font-size: 9px; padding: 6px 8px; }
 }
 .sup-header__meta {
   display: flex;
@@ -491,7 +495,9 @@
   border-radius: 12px;
 }
 .sv-range input[type="date"] {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px 8px;
@@ -578,9 +584,11 @@
 /* ---------- Stat/Amount cards ---------- */
 .sv-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
+.sv-card { min-width: 0; }
+.sv-card__num { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sv-card {
   position: relative;
   background: linear-gradient(180deg, #ffffff, #F8FAFC);

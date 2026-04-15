@@ -60,6 +60,19 @@
       </div>
     </section>
 
+    <!-- CHART -->
+    <section class="settings-section" id="secChart">
+      <div class="settings-section__head">
+        <span class="settings-section__icon"><i class="fas fa-chart-line"></i></span>
+        <h2 class="settings-section__title">Carta Trend</h2>
+      </div>
+      <div class="settings-section__body">
+        <div style="position:relative;height:240px;">
+          <canvas id="kwChart"></canvas>
+        </div>
+      </div>
+    </section>
+
     <!-- FILTER -->
     <section class="settings-section" id="secFilter">
       <div class="settings-section__head">
@@ -113,11 +126,9 @@
       </div>
     </section>
 
-  </main>
-
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js"></script>
+  </main>  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="js/supabase-init.js"></script>
   <script src="js/kewangan.js"></script>
 </body>
 </html>

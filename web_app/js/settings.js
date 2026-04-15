@@ -1,256 +1,173 @@
-/* Settings — port lib/screens/modules/settings_screen.dart */
-(function () {
+/* settings.js — Branch settings. Mirror settings_screen.dart.
+   Load branch + tenant config, render form, save to branches.config + tenants.config. */
+(async function () {
   'use strict';
+  const ctx = await window.requireAuth();
+  if (!ctx) return;
+  const tenantId = ctx.tenant_id;
+  const branchId = ctx.current_branch_id;
 
-  const branch = localStorage.getItem('rms_current_branch');
-  if (!branch || !branch.includes('@')) { window.location.replace('index.html'); return; }
-  const [ownerID, shopID] = branch.split('@');
+  const $ = (id) => document.getElementById(id);
 
-  // ---- Color presets (sama dengan Flutter) ----
-  const COLORS = [
-    '#0D9488','#059669','#2563EB','#6366F1','#7C3AED',
-    '#DC2626','#EA580C','#CA8A04','#0891B2','#1E293B',
-  ];
-  // Template names + tema warna sama dengan settings_screen.dart:1028
-  const TEMPLATES = [
-    { id: 'tpl_1',  name: 'Standard',   color: '#FF6600' },
-    { id: 'tpl_2',  name: 'Moden',      color: '#2563EB' },
-    { id: 'tpl_3',  name: 'Klasik',     color: '#374151' },
-    { id: 'tpl_4',  name: 'Minimalis',  color: '#64748B' },
-    { id: 'tpl_5',  name: 'Komersial',  color: '#DC2626' },
-    { id: 'tpl_6',  name: 'Elegan',     color: '#92400E' },
-    { id: 'tpl_7',  name: 'Tengah',     color: '#7C3AED' },
-    { id: 'tpl_8',  name: 'Kompak',     color: '#0D9488' },
-    { id: 'tpl_9',  name: 'Korporat',   color: '#1E3A5F' },
-    { id: 'tpl_10', name: 'Kreatif',    color: '#EC4899' },
-  ];
-  let TPL_IMAGES = {}; // diisi dari config/pdf_templates
-
-  // ---- State ----
-  let original = {};
-  let current  = {};
-  let originalAdmin = {};
-  let currentAdmin  = {};
-
-  // ---- Build color & template grids ----
-  const colorGrid = document.getElementById('colorGrid');
-  colorGrid.innerHTML = COLORS.map(c => `<button class="color-chip" type="button" data-color="${c}" style="background:${c}" title="${c}"></button>`).join('');
-  colorGrid.addEventListener('click', (e) => {
-    const chip = e.target.closest('.color-chip');
-    if (!chip) return;
-    current.themeColor = chip.dataset.color;
-    refreshColor();
-    markDirty();
-    // Live update header parent
-    try { window.parent.postMessage({ type: 'theme', color: current.themeColor }, '*'); } catch (_) {}
-  });
-
-  const tplGrid = document.getElementById('tplGrid');
-  function renderTplGrid() {
-    tplGrid.innerHTML = TEMPLATES.map((t) => {
-      const img = TPL_IMAGES[t.id];
-      const inner = img
-        ? `<img src="${img}" alt="${t.name}" loading="lazy">`
-        : `<i class="fas fa-file-pdf"></i>`;
-      return `
-        <button class="tpl-chip" type="button" data-tpl="${t.id}" style="--tpl-color:${t.color}">
-          <span class="tpl-chip__check"><i class="fas fa-check"></i></span>
-          <span class="tpl-chip__img">${inner}</span>
-          <span class="tpl-chip__caption">${t.name}</span>
-        </button>`;
-    }).join('');
-    refreshTpl();
-  }
-  renderTplGrid();
-  tplGrid.addEventListener('click', (e) => {
-    const chip = e.target.closest('.tpl-chip');
-    if (!chip) return;
-    current.templatePdf = chip.dataset.tpl;
-    refreshTpl();
-    markDirty();
-  });
-
-  function refreshColor() {
-    document.querySelectorAll('.color-chip').forEach(c => c.classList.toggle('is-active', c.dataset.color === current.themeColor));
-  }
-  function refreshTpl() {
-    document.querySelectorAll('.tpl-chip').forEach(c => c.classList.toggle('is-active', c.dataset.tpl === current.templatePdf));
+  function toast(msg, err) {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:' +
+      (err ? '#dc2626' : '#0f172a') + ';color:#fff;padding:10px 18px;border-radius:10px;z-index:9999;font-weight:700;';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2400);
   }
 
-  // ---- Field bindings (current = state, dirty = save bar) ----
-  const inputs = {
-    fPhone:        'phone',
-    fStaffBox:     'staffBoxCount',
-    fNotaInvoice:  'notaInvoice',
-    fNotaQuotation:'notaQuotation',
-    fNotaClaim:    'notaClaim',
-    fNotaBooking:  'notaBooking',
-  };
-  Object.entries(inputs).forEach(([id, key]) => {
-    document.getElementById(id).addEventListener('input', (e) => {
-      current[key] = e.target.value;
-      markDirty();
+  let branch = null, tenant = null, dirty = false;
+  const HEADER_COLORS = ['#6366F1', '#2563EB', '#0EA5E9', '#14B8A6', '#10B981', '#F59E0B', '#EF4444', '#EC4899', '#8B5CF6', '#64748B'];
+  const TEMPLATES = ['Klasik', 'Moden', 'Minima', 'Warna'];
+
+  function markDirty() { dirty = true; const bar = $('saveBar'); if (bar) bar.classList.remove('is-hidden'); }
+
+  async function loadAll() {
+    const [{ data: b }, { data: t }] = await Promise.all([
+      window.sb.from('branches').select('*').eq('id', branchId).single(),
+      window.sb.from('tenants').select('*').eq('id', tenantId).single(),
+    ]);
+    branch = b || {};
+    tenant = t || {};
+    const cfg = (branch.config && typeof branch.config === 'object') ? branch.config : {};
+
+    // Shop info
+    if ($('fShopName')) $('fShopName').textContent = branch.nama_kedai || '—';
+    if ($('fSsm')) $('fSsm').textContent = cfg.ssm || '—';
+    if ($('fAddress')) $('fAddress').textContent = branch.alamat || '—';
+    if ($('fPhone')) $('fPhone').value = branch.phone || '';
+    if ($('fEmail')) $('fEmail').textContent = branch.email || '—';
+    if ($('fBranchId')) $('fBranchId').textContent = branch.shop_code || branch.id || '—';
+
+    if (branch.logo_base64 && $('logoPreview')) {
+      $('logoPreview').innerHTML = `<img src="${branch.logo_base64}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`;
+    }
+
+    // Colors
+    const headerColor = cfg.header_color || HEADER_COLORS[0];
+    if ($('colorGrid')) {
+      $('colorGrid').innerHTML = HEADER_COLORS.map((c) => `
+        <button type="button" class="color-swatch${c === headerColor ? ' is-active' : ''}" data-c="${c}"
+          style="width:36px;height:36px;border-radius:50%;border:3px solid ${c === headerColor ? '#0f172a' : 'transparent'};background:${c};cursor:pointer;margin:4px;"></button>
+      `).join('');
+      $('colorGrid').querySelectorAll('.color-swatch').forEach((b) => {
+        b.addEventListener('click', () => {
+          $('colorGrid').querySelectorAll('.color-swatch').forEach((x) => { x.classList.remove('is-active'); x.style.borderColor = 'transparent'; });
+          b.classList.add('is-active'); b.style.borderColor = '#0f172a';
+          markDirty();
+        });
+      });
+    }
+
+    const sbx = $('fStaffBox'); if (sbx) { sbx.value = String(cfg.staff_box || 1); sbx.addEventListener('change', markDirty); }
+
+    const selTpl = cfg.pdf_template || 'Klasik';
+    if ($('tplGrid')) {
+      $('tplGrid').innerHTML = TEMPLATES.map((t) => `
+        <button type="button" class="tpl-opt${t === selTpl ? ' is-active' : ''}" data-t="${t}"
+          style="padding:10px 14px;border:2px solid ${t === selTpl ? '#6366F1' : '#e2e8f0'};border-radius:10px;background:${t === selTpl ? '#6366F115' : '#fff'};cursor:pointer;font-weight:700;margin:4px;">${t}</button>
+      `).join('');
+      $('tplGrid').querySelectorAll('.tpl-opt').forEach((b) => {
+        b.addEventListener('click', () => {
+          $('tplGrid').querySelectorAll('.tpl-opt').forEach((x) => { x.classList.remove('is-active'); x.style.borderColor = '#e2e8f0'; x.style.background = '#fff'; });
+          b.classList.add('is-active'); b.style.borderColor = '#6366F1'; b.style.background = '#6366F115';
+          markDirty();
+        });
+      });
+    }
+
+    if ($('fNotaInvoice')) $('fNotaInvoice').value = cfg.nota_invoice || '';
+    if ($('fNotaQuotation')) $('fNotaQuotation').value = cfg.nota_quotation || '';
+    if ($('fNotaClaim')) $('fNotaClaim').value = cfg.nota_claim || '';
+    if ($('fNotaBooking')) $('fNotaBooking').value = cfg.nota_booking || '';
+    if ($('fLang')) $('fLang').value = cfg.lang || 'ms';
+    if ($('fSvTel')) $('fSvTel').value = cfg.admin_tel || '';
+    if ($('fSvPass')) $('fSvPass').value = cfg.admin_pass || '';
+
+    ['fPhone', 'fNotaInvoice', 'fNotaQuotation', 'fNotaClaim', 'fNotaBooking', 'fLang', 'fSvTel', 'fSvPass'].forEach((id) => {
+      const el = $(id); if (el) el.addEventListener('input', markDirty);
     });
-  });
-
-  document.getElementById('fLang').addEventListener('change', (e) => {
-    localStorage.setItem('rms_lang', e.target.value);
-    flash('Bahasa disimpan');
-  });
-
-  // Admin section bindings
-  ['fSvTel','fSvPass'].forEach(id => {
-    const key = id === 'fSvTel' ? 'svTel' : 'svPass';
-    document.getElementById(id).addEventListener('input', (e) => {
-      currentAdmin[key] = e.target.value;
-      markDirty();
-    });
-  });
-  document.getElementById('btnTogglePass').addEventListener('click', () => {
-    const i = document.getElementById('fSvPass');
-    i.type = i.type === 'password' ? 'text' : 'password';
-  });
-
-  // ---- Logo upload ----
-  const logoPreview = document.getElementById('logoPreview');
-  document.getElementById('logoFile').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 500 * 1024) { alert('Saiz logo maksimum 500KB'); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      current.logoBase64 = reader.result; // data URI
-      renderLogo(reader.result);
-      markDirty();
-      try { window.parent.postMessage({ type: 'logo', src: reader.result }, '*'); } catch (_) {}
-    };
-    reader.readAsDataURL(file);
-  });
-  document.getElementById('logoRemove').addEventListener('click', () => {
-    current.logoBase64 = '';
-    renderLogo(null);
-    markDirty();
-    try { window.parent.postMessage({ type: 'logo', src: '' }, '*'); } catch (_) {}
-  });
-  function renderLogo(src) {
-    logoPreview.innerHTML = src ? `<img src="${src}" alt="logo">` : '<i class="fas fa-image"></i>';
   }
 
-  // ---- Save bar ----
-  const saveBar = document.getElementById('saveBar');
-  function markDirty() { saveBar.classList.remove('is-hidden'); }
-  function markClean() { saveBar.classList.add('is-hidden'); }
-
-  document.getElementById('btnReset').addEventListener('click', () => {
-    current = { ...original };
-    currentAdmin = { ...originalAdmin };
-    populate();
-    markClean();
-  });
-
-  document.getElementById('btnSave').addEventListener('click', async () => {
-    const btn = document.getElementById('btnSave');
-    btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Menyimpan…';
+  const ownerID = (ctx.email || '').split('@')[0] || 'unknown';
+  const logoFile = $('logoFile');
+  if (logoFile) logoFile.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    if (!window.SupabaseStorage) { toast('Storage helper missing', true); return; }
+    const prev = $('logoPreview');
+    const prevHtml = prev ? prev.innerHTML : '';
+    if (prev) prev.innerHTML = '<div style="font-size:11px;font-weight:800;">UPLOADING...</div>';
     try {
-      const payload = {};
-      ['phone','staffBoxCount','templatePdf','notaInvoice','notaQuotation','notaClaim','notaBooking','themeColor','logoBase64']
-        .forEach(k => { if (current[k] !== original[k]) payload[k] = current[k] ?? ''; });
-      if (Object.keys(payload).length) {
-        await db.collection('shops_' + ownerID).doc(shopID).set(payload, { merge: true });
-      }
-      const adminPayload = {};
-      ['svTel','svPass'].forEach(k => { if (currentAdmin[k] !== originalAdmin[k]) adminPayload[k] = currentAdmin[k] ?? ''; });
-      if (Object.keys(adminPayload).length) {
-        await db.collection('saas_dealers').doc(ownerID).set(adminPayload, { merge: true });
-      }
-      original = { ...current };
-      originalAdmin = { ...currentAdmin };
-      flash('Tersimpan ✓');
-      markClean();
+      const blob = await window.SupabaseStorage.resizeImage(file, 1280, 0.85);
+      const shopCode = branch.shop_code || branchId || 'shop';
+      const path = `${ownerID}/${shopCode}/logo_${Date.now()}.jpg`;
+      const url = await window.SupabaseStorage.uploadFile({ bucket: 'staff_avatars', path, file: blob, contentType: 'image/jpeg' });
+      branch.logo_base64 = url; // column is text — storing URL is compat-safe
+      if (prev) prev.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`;
+      markDirty();
     } catch (err) {
-      alert('Ralat menyimpan: ' + err.message);
+      if (prev) prev.innerHTML = prevHtml;
+      toast('Upload gagal: ' + err.message, true);
     } finally {
-      btn.disabled = false;
-      btn.innerHTML = '<i class="fas fa-floppy-disk"></i> Simpan Perubahan';
+      logoFile.value = '';
+    }
+  });
+  const logoRm = $('logoRemove');
+  if (logoRm) logoRm.addEventListener('click', () => {
+    branch.logo_base64 = null;
+    $('logoPreview').innerHTML = '<i class="fas fa-image"></i>';
+    markDirty();
+  });
+
+  const btnToggle = $('btnTogglePass');
+  if (btnToggle) btnToggle.addEventListener('click', () => {
+    const inp = $('fSvPass'); if (!inp) return;
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+  });
+
+  const btnReset = $('btnReset');
+  if (btnReset) btnReset.addEventListener('click', async () => {
+    if (!confirm('Buang perubahan?')) return;
+    dirty = false; $('saveBar').classList.add('is-hidden');
+    await loadAll();
+  });
+
+  const btnSave = $('btnSave');
+  if (btnSave) btnSave.addEventListener('click', async () => {
+    btnSave.disabled = true;
+    try {
+      const headerColor = $('colorGrid') && $('colorGrid').querySelector('.color-swatch.is-active')?.dataset.c || HEADER_COLORS[0];
+      const pdfTpl = $('tplGrid') && $('tplGrid').querySelector('.tpl-opt.is-active')?.dataset.t || 'Klasik';
+      const cfg = {
+        ...(branch.config || {}),
+        header_color: headerColor,
+        staff_box: Number($('fStaffBox')?.value) || 1,
+        pdf_template: pdfTpl,
+        nota_invoice: $('fNotaInvoice')?.value || '',
+        nota_quotation: $('fNotaQuotation')?.value || '',
+        nota_claim: $('fNotaClaim')?.value || '',
+        nota_booking: $('fNotaBooking')?.value || '',
+        lang: $('fLang')?.value || 'ms',
+        admin_tel: $('fSvTel')?.value || '',
+        admin_pass: $('fSvPass')?.value || '',
+      };
+      const { error: brErr } = await window.sb.from('branches').update({
+        phone: $('fPhone')?.value || null,
+        logo_base64: branch.logo_base64 || null,
+        config: cfg,
+      }).eq('id', branchId);
+      if (brErr) throw brErr;
+      branch.config = cfg;
+      toast('Tetapan disimpan');
+      dirty = false; $('saveBar').classList.add('is-hidden');
+    } catch (e) {
+      toast('Gagal: ' + (e.message || e), true);
+    } finally {
+      btnSave.disabled = false;
     }
   });
 
-  function flash(msg) {
-    const t = document.createElement('div');
-    t.textContent = msg;
-    Object.assign(t.style, {
-      position: 'fixed', bottom: '90px', left: '50%', transform: 'translateX(-50%)',
-      background: '#0F172A', color: '#fff', padding: '10px 20px', borderRadius: '999px',
-      fontSize: '13px', fontWeight: '700', zIndex: 100, boxShadow: '0 8px 20px rgba(0,0,0,.2)'
-    });
-    document.body.appendChild(t);
-    setTimeout(() => t.remove(), 2000);
-  }
-
-  // ---- Populate from Firestore ----
-  function populate() {
-    document.getElementById('fShopName').textContent = original.shopName || original.namaKedai || '—';
-    document.getElementById('fSsm').textContent      = original.ssm || '—';
-    document.getElementById('fAddress').textContent  = original.address || original.alamat || '—';
-    document.getElementById('fEmail').textContent    = original.email || '—';
-    document.getElementById('fBranchId').textContent = branch;
-    document.getElementById('fPhone').value          = current.phone || '';
-    document.getElementById('fStaffBox').value       = String(current.staffBoxCount || '1');
-    document.getElementById('fNotaInvoice').value    = current.notaInvoice || '';
-    document.getElementById('fNotaQuotation').value  = current.notaQuotation || '';
-    document.getElementById('fNotaClaim').value      = current.notaClaim || '';
-    document.getElementById('fNotaBooking').value    = current.notaBooking || '';
-    document.getElementById('fLang').value           = localStorage.getItem('rms_lang') || 'ms';
-    document.getElementById('fSvTel').value          = currentAdmin.svTel || '';
-    document.getElementById('fSvPass').value         = currentAdmin.svPass || '';
-    renderLogo(current.logoBase64 || null);
-    refreshColor();
-    refreshTpl();
-  }
-
-  async function loadTemplateImages() {
-    try {
-      const snap = await db.collection('config').doc('pdf_templates').get();
-      if (!snap.exists) return;
-      const d = snap.data() || {};
-      TPL_IMAGES = {};
-      TEMPLATES.forEach(t => { if (d[t.id]) TPL_IMAGES[t.id] = d[t.id]; });
-      renderTplGrid();
-    } catch (e) { console.warn('pdf_templates:', e); }
-  }
-
-  async function load() {
-    loadTemplateImages(); // parallel
-    const data = {};
-    try {
-      const dealer = await db.collection('saas_dealers').doc(ownerID).get();
-      if (dealer.exists) Object.assign(data, dealer.data());
-    } catch (e) { console.warn(e); }
-    try {
-      const shop = await db.collection('shops_' + ownerID).doc(shopID).get();
-      if (shop.exists) Object.assign(data, shop.data());
-    } catch (e) { console.warn(e); }
-
-    original = {
-      phone: data.phone || '',
-      staffBoxCount: String(data.staffBoxCount || '1'),
-      templatePdf: data.templatePdf || 'tpl_1',
-      themeColor: data.themeColor || '#0D9488',
-      logoBase64: data.logoBase64 || '',
-      notaInvoice: data.notaInvoice || '',
-      notaQuotation: data.notaQuotation || '',
-      notaClaim: data.notaClaim || '',
-      notaBooking: data.notaBooking || '',
-      shopName: data.shopName, namaKedai: data.namaKedai,
-      ssm: data.ssm,
-      address: data.address, alamat: data.alamat,
-      email: data.email,
-    };
-    originalAdmin = { svTel: data.svTel || '', svPass: data.svPass || '' };
-    current = { ...original };
-    currentAdmin = { ...originalAdmin };
-    populate();
-  }
-
-  load();
+  await loadAll();
 })();

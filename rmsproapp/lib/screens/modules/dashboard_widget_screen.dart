@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../../services/supabase_client.dart';
+import '../../services/repair_service.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
@@ -20,8 +21,11 @@ class DashboardWidgetScreen extends StatefulWidget {
 
 class _DashboardWidgetScreenState extends State<DashboardWidgetScreen> {
   final _lang = AppLanguage();
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   String _ownerID = 'admin', _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
   String _filterStats = 'TODAY', _filterKew = 'TODAY';
   String _kataHariIni =
       '"Konsisten adalah kunci kejayaan. Lakukan yang terbaik hari ini."';
@@ -77,12 +81,11 @@ class _DashboardWidgetScreenState extends State<DashboardWidgetScreen> {
   }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0];
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
+    await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
     _listenRepairs();
     _listenExpenses();
     _listenJualanPantas();
@@ -91,26 +94,31 @@ class _DashboardWidgetScreenState extends State<DashboardWidgetScreen> {
     _loadQuote();
   }
 
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) return DateTime.tryParse(v)?.millisecondsSinceEpoch ?? 0;
+    return 0;
+  }
+
   // ─── LISTENERS ───
   void _listenRepairs() {
-    _subs.add(_db.collection('repairs_$_ownerID').snapshots().listen((snap) {
+    if (_branchId == null) return;
+    _subs.add(_sb
+        .from('jobs')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
       final list = <Map<String, dynamic>>[];
       final custSeen = <String>{};
       final custs = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        d['id'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) {
-          list.add(d);
-          // Build customer list for autocomplete
-          final tel = (d['tel'] ?? '').toString();
-          if (tel.isNotEmpty && tel != '-' && !custSeen.contains(tel)) {
-            custSeen.add(tel);
-            custs.add({
-              'nama': d['nama'] ?? '',
-              'tel': tel,
-            });
-          }
+      for (final r in rows) {
+        final d = Map<String, dynamic>.from(r);
+        d['timestamp'] = _tsFromIso(r['created_at']);
+        list.add(d);
+        final tel = (d['tel'] ?? '').toString();
+        if (tel.isNotEmpty && tel != '-' && !custSeen.contains(tel)) {
+          custSeen.add(tel);
+          custs.add({'nama': d['nama'] ?? '', 'tel': tel});
         }
       }
       if (mounted) {
@@ -125,16 +133,20 @@ class _DashboardWidgetScreenState extends State<DashboardWidgetScreen> {
   }
 
   void _listenExpenses() {
-    _subs.add(
-        _db.collection('expenses_$_ownerID').snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        d['id'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) {
-          list.add(d);
-        }
-      }
+    if (_branchId == null) return;
+    _subs.add(_sb
+        .from('expenses')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map((r) {
+        final d = Map<String, dynamic>.from(r);
+        d['jumlah'] = r['amount'] ?? 0;
+        d['amaun'] = r['amount'] ?? 0;
+        d['perkara'] = r['description'] ?? '';
+        d['timestamp'] = _tsFromIso(r['created_at']);
+        return d;
+      }).toList();
       if (mounted) {
         setState(() {
           _allExpenses = list;
@@ -145,18 +157,18 @@ class _DashboardWidgetScreenState extends State<DashboardWidgetScreen> {
   }
 
   void _listenJualanPantas() {
-    _subs.add(_db
-        .collection('jualan_pantas_$_ownerID')
-        .snapshots()
-        .listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        d['id'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) {
-          list.add(d);
-        }
-      }
+    if (_branchId == null) return;
+    _subs.add(_sb
+        .from('quick_sales')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map((r) {
+        final d = Map<String, dynamic>.from(r);
+        d['total'] = r['amount'] ?? 0;
+        d['timestamp'] = _tsFromIso(r['sold_at']);
+        return d;
+      }).toList();
       if (mounted) {
         setState(() {
           _allJualanPantas = list;
@@ -167,43 +179,64 @@ class _DashboardWidgetScreenState extends State<DashboardWidgetScreen> {
   }
 
   void _listenInventory() {
-    // FAST SERVICE from inventory collection
-    _subs.add(
-        _db.collection('inventory_$_ownerID').snapshots().listen((snap) {
-      final fastService = snap.docs
-          .map((d) => {'id': d.id, 'source': 'inventory', ...d.data()})
-          .where((d) => (d['qty'] ?? 0) > 0 &&
-              (d['category'] ?? '').toString().toUpperCase() == 'FAST SERVICE')
+    if (_tenantId == null) return;
+    // FAST SERVICE dari stock_parts (category='FAST SERVICE')
+    _subs.add(_sb
+        .from('stock_parts')
+        .stream(primaryKey: ['id'])
+        .eq('tenant_id', _tenantId!)
+        .listen((rows) {
+      final fastService = rows
+          .where((d) => ((d['qty'] as num?) ?? 0) > 0 && (d['category'] ?? '').toString().toUpperCase() == 'FAST SERVICE')
+          .map((d) => {
+                'id': d['id'],
+                'source': 'inventory',
+                'nama': d['part_name'] ?? '',
+                'kod': d['sku'] ?? '',
+                'jual': d['price'] ?? 0,
+                'qty': d['qty'] ?? 0,
+                'category': d['category'] ?? '',
+              })
           .toList();
       _inventory = [...fastService, ..._inventory.where((d) => d['source'] == 'accessories')];
     }));
-    // ACCESSORIES collection
-    _subs.add(
-        _db.collection('accessories_$_ownerID').snapshots().listen((snap) {
-      final acc = snap.docs
-          .map((d) => {'id': d.id, 'source': 'accessories', ...d.data()})
-          .where((d) => (d['qty'] ?? 0) > 0)
+    _subs.add(_sb
+        .from('accessories')
+        .stream(primaryKey: ['id'])
+        .eq('tenant_id', _tenantId!)
+        .listen((rows) {
+      final acc = rows
+          .where((d) => ((d['qty'] as num?) ?? 0) > 0)
+          .map((d) => {
+                'id': d['id'],
+                'source': 'accessories',
+                'nama': d['item_name'] ?? '',
+                'kod': d['sku'] ?? '',
+                'jual': d['price'] ?? 0,
+                'qty': d['qty'] ?? 0,
+              })
           .toList();
       _inventory = [..._inventory.where((d) => d['source'] != 'accessories'), ...acc];
     }));
   }
 
   Future<void> _loadStaff() async {
+    if (_branchId == null) return;
     try {
-      final snap =
-          await _db.collection('shops_$_ownerID').doc(_shopID).get();
-      if (snap.exists) {
-        final staffRaw = snap.data()?['staffList'];
-        if (staffRaw is List) {
-          _staffList = staffRaw
-              .map((s) => s is String
-                  ? s
-                  : (s['name'] ?? s['nama'] ?? '').toString())
-              .where((s) => s.isNotEmpty)
-              .toList();
-          if (_staffList.isNotEmpty && mounted) {
-            setState(() => _jpStaff = _staffList.first);
-          }
+      final row = await _sb
+          .from('branches')
+          .select('branch_staff(nama, status)')
+          .eq('id', _branchId!)
+          .maybeSingle();
+      final staffRaw = row?['branch_staff'];
+      if (staffRaw is List) {
+        _staffList = staffRaw
+            .where((s) => s is Map && (s['status'] ?? 'active') == 'active')
+            .map((s) => (s['nama'] ?? '').toString())
+            .where((s) => s.isNotEmpty)
+            .toList();
+        if (_staffList.isNotEmpty && mounted) {
+          setState(() => _jpStaff = _staffList.first);
         }
       }
     } catch (_) {}
@@ -211,11 +244,10 @@ class _DashboardWidgetScreenState extends State<DashboardWidgetScreen> {
 
   void _loadQuote() async {
     try {
-      final snap =
-          await _db.collection('system_settings').doc('pengumuman').get();
-      if (snap.exists && mounted) {
-        setState(() => _kataHariIni =
-            '"${snap.data()?['motivasi'] ?? 'Konsisten adalah kunci kejayaan.'}"');
+      final row = await _sb.from('system_settings').select('message').eq('id', 'pengumuman').maybeSingle();
+      final m = row?['message'];
+      if (m != null && mounted) {
+        setState(() => _kataHariIni = '"$m"');
       }
     } catch (_) {}
   }
@@ -403,17 +435,60 @@ class _DashboardWidgetScreenState extends State<DashboardWidgetScreen> {
       'timestamp': tarikhNow.millisecondsSinceEpoch,
     };
 
+    if (_tenantId == null || _branchId == null) {
+      _snack('Tenant/branch belum dimuatkan', err: true);
+      return;
+    }
+
     try {
-      // Save to all 3 collections simultaneously
-      await Future.wait([
-        _db.collection('jualan_pantas_$_ownerID').doc(siri).set(data),
-        _db.collection('kewangan_$_ownerID').doc(siri).set({
-          ...data,
-          'jenis': 'JUALAN PANTAS',
-          'amount': harga,
-        }),
-        _db.collection('repairs_$_ownerID').doc(siri).set(data),
-      ]);
+      // Insert ke jobs (untuk listing) + quick_sales (untuk income log)
+      final jobRow = await _sb.from('jobs').insert({
+        'tenant_id': _tenantId,
+        'branch_id': _branchId,
+        'siri': siri,
+        'receipt_no': siri,
+        'nama': data['nama'],
+        'tel': data['tel'],
+        'tel_wasap': data['tel_wasap'],
+        'model': data['model'],
+        'kerosakan': '-',
+        'jenis_servis': 'JUALAN',
+        'status': 'COMPLETED',
+        'tarikh': DateFormat('yyyy-MM-dd').format(tarikhNow),
+        'harga': harga,
+        'total': harga,
+        'baki': 0,
+        'payment_status': 'PAID',
+        'cara_bayaran': 'CASH',
+        'staff_terima': _jpStaff,
+        'staff_repair': _jpStaff,
+        'staff_serah': _jpStaff,
+        'cust_type': 'NEW CUST',
+        'catatan': '-',
+      }).select('id').single();
+      // Job items kalau ada
+      final jobId = jobRow['id'] as String;
+      if ((data['items_array'] is List) && (data['items_array'] as List).isNotEmpty) {
+        await _sb.from('job_items').insert((data['items_array'] as List).map((i) {
+          final m = Map<String, dynamic>.from(i as Map);
+          return {
+            'tenant_id': _tenantId,
+            'job_id': jobId,
+            'nama': m['nama'],
+            'qty': m['qty'],
+            'harga': m['harga'],
+          };
+        }).toList());
+      }
+      await _sb.from('quick_sales').insert({
+        'tenant_id': _tenantId,
+        'branch_id': _branchId,
+        'kind': 'JUALAN PANTAS',
+        'amount': harga,
+        'description': siri,
+        'sold_by': _jpStaff,
+        'payment_method': 'CASH',
+      });
       _snack('Jualan Disimpan! Siri: #$siri');
       if (mounted) setState(() {
         _isSavingJP = false;
@@ -516,35 +591,32 @@ class _DashboardWidgetScreenState extends State<DashboardWidgetScreen> {
     });
 
     try {
+      // Stash dalam platform_config (id=battery_db / lcd_db) jsonb {items: [...]}
       final results = await Future.wait([
-        _db.collection('database_bateri_admin').get(),
-        _db.collection('database_lcd_admin').get(),
+        _sb.from('platform_config').select('value').eq('id', 'battery_db').maybeSingle(),
+        _sb.from('platform_config').select('value').eq('id', 'lcd_db').maybeSingle(),
       ]);
 
-      final snapBateri = results[0];
-      final snapLcd = results[1];
+      final bateriItems = (results[0]?['value']?['items'] as List?) ?? [];
+      final lcdItems = (results[1]?['value']?['items'] as List?) ?? [];
       final bateri = <Map<String, dynamic>>[];
       final lcd = <Map<String, dynamic>>[];
 
-      for (final doc in snapBateri.docs) {
-        final d = doc.data();
+      for (final item in bateriItems) {
+        final d = Map<String, dynamic>.from(item as Map);
         final m = (d['model'] ?? '').toString().toLowerCase();
         final k = (d['kod'] ?? '').toString().toLowerCase();
         final i = (d['info'] ?? '').toString().toLowerCase();
-        if (m.contains(carian) ||
-            k.contains(carian) ||
-            i.contains(carian)) {
+        if (m.contains(carian) || k.contains(carian) || i.contains(carian)) {
           bateri.add(d);
         }
       }
-      for (final doc in snapLcd.docs) {
-        final d = doc.data();
+      for (final item in lcdItems) {
+        final d = Map<String, dynamic>.from(item as Map);
         final m = (d['model'] ?? '').toString().toLowerCase();
         final k = (d['kod'] ?? '').toString().toLowerCase();
         final i = (d['info'] ?? '').toString().toLowerCase();
-        if (m.contains(carian) ||
-            k.contains(carian) ||
-            i.contains(carian)) {
+        if (m.contains(carian) || k.contains(carian) || i.contains(carian)) {
           lcd.add(d);
         }
       }

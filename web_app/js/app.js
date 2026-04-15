@@ -1,5 +1,5 @@
 /* ===== RMS PRO WEB — UI SCAFFOLD =====
-   Hanya navigasi & toggle. Fungsi (Firebase, auth, dsb.) ditambah kemudian.
+   Hanya navigasi & toggle UI. Auth/DB logic di auth.js + module-specific files.
 */
 (function () {
   'use strict';

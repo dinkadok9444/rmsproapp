@@ -1,223 +1,128 @@
-/* Port dari lib/screens/modules/refund_screen.dart */
-(function () {
+/* refund.js — Supabase. Mirror refund_screen.dart. */
+(async function () {
   'use strict';
-  if (!document.getElementById('rdList')) return;
+  const ctx = await window.requireAuth();
+  if (!ctx) return;
+  const tenantId = ctx.tenant_id;
+  const branchId = ctx.current_branch_id;
 
-  let ownerID = 'admin', shopID = 'MAIN';
-  let refunds = [];
-  let repairs = [];
-  let adminPass = '';
-  let sortOrder = 'ZA';
-  let searchText = '';
-  let foundRepair = null;
-  let pendingApproveId = null;
+  const $ = (id) => document.getElementById(id);
+  const fmtRM = (n) => 'RM ' + (Number(n) || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function toast(msg) { const t = $('rdToast'); if (!t) return; t.textContent = msg; t.hidden = false; setTimeout(() => { t.hidden = true; }, 1800); }
 
-  const branch = localStorage.getItem('rms_current_branch') || '';
-  if (branch.includes('@')) {
-    const p = branch.split('@');
-    ownerID = p[0]; shopID = (p[1] || '').toUpperCase();
+  let ALL = [];
+  let searchQ = '';
+  let sort = 'ZA';
+  let foundJob = null;
+  let approveTargetId = null;
+
+  async function fetchAll() {
+    const { data, error } = await window.sb.from('refunds').select('*').eq('branch_id', branchId).order('created_at', { ascending: false }).limit(2000);
+    if (error) { console.error(error); return []; }
+    return data || [];
   }
 
-  const $ = id => document.getElementById(id);
-  const list = $('rdList'), empty = $('rdEmpty');
-  const formModal = $('rdFormModal'), approveModal = $('rdApproveModal');
-
-  // Load admin pass
-  db.collection('shops_' + ownerID).doc(shopID).get()
-    .then(doc => { if (doc.exists) adminPass = (doc.data() || {}).svPass || ''; })
-    .catch(() => {});
-
-  // Listeners
-  db.collection('refunds_' + ownerID).onSnapshot(snap => {
-    const arr = [];
-    snap.forEach(d => {
-      const v = d.data(); v.key = d.id;
-      if (String(v.shopID || '').toUpperCase() === shopID) arr.push(v);
+  function refresh() {
+    const q = searchQ.toLowerCase();
+    let rows = ALL.filter((r) => {
+      if (!q) return true;
+      return (r.siri||'').toLowerCase().includes(q) || (r.nama||'').toLowerCase().includes(q) || (r.reason||'').toLowerCase().includes(q);
     });
-    arr.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
-    refunds = arr;
-    render();
-  }, err => console.warn('refunds:', err));
-
-  db.collection('repairs_' + ownerID).onSnapshot(snap => {
-    const arr = [];
-    snap.forEach(d => arr.push(Object.assign({ id: d.id }, d.data())));
-    repairs = arr;
-  }, err => console.warn('repairs:', err));
-
-  // Filter/sort
-  function filtered() {
-    let arr = refunds.slice();
-    const q = searchText.toUpperCase().trim();
-    if (q) {
-      arr = arr.filter(d =>
-        String(d.siri || '').toUpperCase().includes(q) ||
-        String(d.reason || '').toUpperCase().includes(q) ||
-        String(d.namaCust || '').toUpperCase().includes(q)
-      );
-    }
-    arr.sort((a, b) => {
-      const ta = Number(a.timestamp || 0), tb = Number(b.timestamp || 0);
-      return sortOrder === 'AZ' ? ta - tb : tb - ta;
-    });
-    return arr;
-  }
-
-  function statusStyle(s) {
-    const u = String(s).toUpperCase();
-    if (u === 'APPROVED' || u === 'COMPLETED') return { color: 'green', icon: 'fa-circle-check' };
-    if (u === 'REJECTED') return { color: 'red', icon: 'fa-circle-xmark' };
-    return { color: 'yellow', icon: 'fa-clock' };
-  }
-
-  function render() {
-    const arr = filtered();
-    if (!refunds.length) {
-      list.innerHTML = '';
-      empty.querySelector('.lbl').textContent = 'Tiada permohonan refund.';
-      empty.classList.remove('hidden');
-      return;
-    }
-    if (!arr.length) {
-      list.innerHTML = '';
-      empty.querySelector('.lbl').textContent = 'Tiada padanan.';
-      empty.classList.remove('hidden');
-      return;
-    }
-    empty.classList.add('hidden');
-
-    list.innerHTML = arr.map(r => {
-      const status = String(r.status || 'PENDING').toUpperCase();
-      const s = statusStyle(status);
-      const amt = Number(r.amount || 0).toFixed(2);
-      const asal = Number(r.hargaAsal || 0).toFixed(2);
-      const approveBtn = status === 'PENDING'
-        ? `<button type="button" class="rd-approve" data-approve="${escapeAttr(r.key)}"><i class="fas fa-check"></i> APPROVE</button>` : '';
-      return `
-        <article class="lost-card rd-card c-${s.color}">
-          <div class="lost-card__top">
-            <div class="rd-siri">#${escapeHtml(r.siri || '-')}</div>
-            <div class="rd-status c-${s.color}"><i class="fas ${s.icon}"></i> ${status}</div>
-          </div>
-          <div class="rd-cust">${escapeHtml(r.namaCust || '-')}</div>
-          <div class="rd-info">${escapeHtml(r.model || '-')} &nbsp;•&nbsp; ${escapeHtml(r.kerosakan || '-')}</div>
-          <div class="rd-amounts">
-            <div>
-              <div class="rd-asal">Asal: RM ${asal}</div>
-              <div class="rd-date">${fmtDate(r.timestamp)}</div>
-            </div>
-            <div class="rd-amt">RM ${amt}</div>
-          </div>
-          ${approveBtn}
-        </article>
-      `;
+    rows.sort((a, b) => sort === 'AZ' ? (a.created_at||'').localeCompare(b.created_at||'') : (b.created_at||'').localeCompare(a.created_at||''));
+    $('rdEmpty').classList.toggle('hidden', rows.length > 0);
+    $('rdList').innerHTML = rows.map((r) => {
+      const st = (r.refund_status || 'PENDING').toUpperCase();
+      const stColor = st === 'APPROVED' ? '#10b981' : st === 'REJECTED' ? '#dc2626' : '#eab308';
+      return `<div class="lost-item" data-id="${r.id}">
+        <div class="lost-item__top">
+          <span class="lost-item__siri">${r.siri || '—'}</span>
+          <span class="lost-item__status" style="color:${stColor};">${st}</span>
+        </div>
+        <div class="lost-item__body">
+          <div><i class="fas fa-user"></i> ${r.nama || '—'}</div>
+          <div><i class="fas fa-money-bill"></i> ${fmtRM(r.refund_amount)}</div>
+          <div><i class="fas fa-comment"></i> ${r.reason || '-'}</div>
+        </div>
+        <div class="lost-item__actions" style="display:flex;gap:6px;margin-top:8px;">
+          ${st === 'PENDING' ? `<button class="btn-submit rd-approve" data-id="${r.id}" style="margin:0;padding:6px 10px;background:#10b981;">APPROVE</button>
+            <button class="btn-danger rd-reject" data-id="${r.id}" style="padding:6px 10px;">REJECT</button>` : ''}
+          <button class="btn-ghost rd-del" data-id="${r.id}" style="padding:6px 10px;">PADAM</button>
+        </div>
+      </div>`;
     }).join('');
+    $('rdList').querySelectorAll('.rd-approve').forEach((el) => el.addEventListener('click', (e) => { e.stopPropagation(); approveTargetId = el.dataset.id; $('rdPass').value = ''; $('rdPassErr').classList.add('hidden'); $('rdApproveModal').classList.add('is-open'); }));
+    $('rdList').querySelectorAll('.rd-reject').forEach((el) => el.addEventListener('click', async (e) => { e.stopPropagation(); const reason = prompt('Sebab reject?'); if (!reason) return; await window.sb.from('refunds').update({ refund_status: 'REJECTED', reject_reason: reason }).eq('id', el.dataset.id); toast('Ditolak'); ALL = await fetchAll(); refresh(); }));
+    $('rdList').querySelectorAll('.rd-del').forEach((el) => el.addEventListener('click', async (e) => { e.stopPropagation(); if (!confirm('Padam?')) return; await window.sb.from('refunds').delete().eq('id', el.dataset.id); toast('Dipadam'); ALL = await fetchAll(); refresh(); }));
   }
 
-  // Events
-  $('rdSearch').addEventListener('input', e => { searchText = e.target.value; render(); });
-  $('rdSort').addEventListener('change', e => { sortOrder = e.target.value; render(); });
-  $('rdNewBtn').addEventListener('click', openForm);
-  $('rdFormClose').addEventListener('click', () => formModal.classList.remove('is-open'));
-  formModal.addEventListener('click', e => { if (e.target === formModal) formModal.classList.remove('is-open'); });
-  $('rdSearchBtn').addEventListener('click', doSearchSiri);
-  $('rdSubmit').addEventListener('click', submitForm);
-
-  list.addEventListener('click', e => {
-    const b = e.target.closest('[data-approve]');
-    if (!b) return;
-    if (!adminPass) return toast('Sila set kata laluan admin di Tetapan', true);
-    pendingApproveId = b.dataset.approve;
-    $('rdPass').value = '';
-    $('rdPassErr').classList.add('hidden');
-    approveModal.classList.add('is-open');
-  });
-  $('rdApproveCancel').addEventListener('click', () => { pendingApproveId = null; approveModal.classList.remove('is-open'); });
-  approveModal.addEventListener('click', e => { if (e.target === approveModal) approveModal.classList.remove('is-open'); });
-  $('rdApproveOk').addEventListener('click', async () => {
-    if ($('rdPass').value.trim() !== adminPass) {
-      $('rdPassErr').classList.remove('hidden');
-      return;
-    }
-    try {
-      await db.collection('refunds_' + ownerID).doc(pendingApproveId).update({ status: 'COMPLETED' });
-      toast('Refund diluluskan');
-    } catch (e) { toast('Ralat: ' + e.message, true); }
-    pendingApproveId = null;
-    approveModal.classList.remove('is-open');
-  });
-
-  function openForm() {
-    foundRepair = null;
+  $('rdNewBtn').addEventListener('click', () => {
+    foundJob = null;
+    ['rdSiri','rdAmount','rdReason','rdAccName','rdBankName','rdAccNo'].forEach((k) => { if ($(k)) $(k).value = ''; });
     $('rdFound').classList.add('hidden');
-    ['rdSiri', 'rdAmount', 'rdReason', 'rdAccName', 'rdBankName', 'rdAccNo'].forEach(id => $(id).value = '');
-    $('rdMethod').value = 'TRANSFER';
-    $('rdSpeed').value = 'SEGERA';
-    formModal.classList.add('is-open');
-  }
+    $('rdFormModal').classList.add('is-open');
+  });
+  $('rdFormClose').addEventListener('click', () => $('rdFormModal').classList.remove('is-open'));
 
-  function doSearchSiri() {
-    const val = $('rdSiri').value.trim().toUpperCase();
-    if (!val) return;
-    const found = repairs.find(r => String(r.siri || '').toUpperCase() === val);
-    if (!found) {
-      foundRepair = null;
-      $('rdFound').classList.add('hidden');
-      return toast(`Siri [${val}] tidak dijumpai`, true);
-    }
-    foundRepair = found;
-    $('rdFoundNama').textContent = found.nama || '-';
-    $('rdFoundHarga').textContent = String(found.total ?? found.harga ?? 0);
-    $('rdFoundModel').textContent = found.model || '-';
-    $('rdFoundKero').textContent = found.kerosakan || '-';
+  $('rdSearchBtn').addEventListener('click', async () => {
+    const siri = $('rdSiri').value.trim();
+    if (!siri) return;
+    const { data } = await window.sb.from('jobs').select('*').eq('branch_id', branchId).eq('siri', siri).limit(1);
+    if (!data || !data.length) { toast('Tidak jumpa'); $('rdFound').classList.add('hidden'); return; }
+    foundJob = data[0];
+    $('rdFoundNama').textContent = foundJob.nama || '-';
+    $('rdFoundHarga').textContent = fmtRM(foundJob.total);
+    $('rdFoundModel').textContent = foundJob.model || '-';
+    $('rdFoundKero').textContent = foundJob.kerosakan || '-';
     $('rdFound').classList.remove('hidden');
-  }
+    $('rdAmount').value = foundJob.total || '';
+  });
 
-  async function submitForm() {
-    if (!foundRepair) return toast('Sila cari siri dahulu', true);
-    const amount = parseFloat($('rdAmount').value);
-    const reason = $('rdReason').value.trim();
-    if (isNaN(amount) || !reason) return toast('Sila isi amaun dan sebab', true);
-    const data = {
-      shopID,
-      siri: $('rdSiri').value.trim().toUpperCase(),
-      namaCust: foundRepair.nama || '-',
-      model: foundRepair.model || '-',
-      kerosakan: foundRepair.kerosakan || '-',
-      hargaAsal: Number(foundRepair.total ?? foundRepair.harga ?? 0),
-      amount,
-      reason,
-      method: $('rdMethod').value,
+  $('rdSubmit').addEventListener('click', async () => {
+    if (!foundJob) { toast('Cari siri dulu'); return; }
+    const amt = Number($('rdAmount').value);
+    if (!amt) { toast('Amaun wajib'); return; }
+    const payload = {
+      tenant_id: tenantId, branch_id: branchId,
+      siri: foundJob.siri, nama: foundJob.nama, job_id: foundJob.id,
+      refund_amount: amt,
+      refund_status: 'PENDING',
+      reason: $('rdReason').value.trim(),
+      payment_method: $('rdMethod').value,
       speed: $('rdSpeed').value,
-      accName: $('rdAccName').value.trim(),
-      bankName: $('rdBankName').value.trim(),
-      accNo: $('rdAccNo').value.trim(),
-      status: 'PENDING',
-      timestamp: Date.now(),
+      bank_name: $('rdBankName').value.trim(),
+      account_name: $('rdAccName').value.trim(),
+      account_no: $('rdAccNo').value.trim(),
     };
-    try {
-      await db.collection('refunds_' + ownerID).add(data);
-      toast('Permohonan refund dihantar');
-      formModal.classList.remove('is-open');
-    } catch (e) { toast('Ralat: ' + e.message, true); }
-  }
+    const { error } = await window.sb.from('refunds').insert(payload);
+    if (error) { toast('Gagal: ' + error.message); return; }
+    toast('Dihantar');
+    $('rdFormModal').classList.remove('is-open');
+    ALL = await fetchAll(); refresh();
+  });
 
-  function fmtDate(ts) {
-    if (typeof ts !== 'number') return '-';
-    const d = new Date(ts);
-    const p = n => String(n).padStart(2, '0');
-    return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(-2)}`;
-  }
-  function toast(msg, isErr) {
-    const t = $('rdToast');
-    t.textContent = msg;
-    t.style.background = isErr ? '#DC2626' : '#0F172A';
-    t.hidden = false;
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => t.hidden = true, 2200);
-  }
-  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  function escapeAttr(s) { return escapeHtml(s); }
+  $('rdApproveCancel').addEventListener('click', () => $('rdApproveModal').classList.remove('is-open'));
+  $('rdApproveOk').addEventListener('click', async () => {
+    const pass = $('rdPass').value;
+    if (pass !== '1234') { $('rdPassErr').classList.remove('hidden'); return; }
+    if (!approveTargetId) return;
+    const { error } = await window.sb.from('refunds').update({
+      refund_status: 'APPROVED',
+      processed_by: ctx.nama || ctx.email,
+      processed_at: new Date().toISOString(),
+    }).eq('id', approveTargetId);
+    if (error) { toast('Gagal: ' + error.message); return; }
+    toast('Diluluskan');
+    $('rdApproveModal').classList.remove('is-open');
+    ALL = await fetchAll(); refresh();
+  });
 
-  render();
+  $('rdSearch').addEventListener('input', (e) => { searchQ = e.target.value; refresh(); });
+  $('rdSort').addEventListener('change', (e) => { sort = e.target.value; refresh(); });
+
+  window.sb.channel('refunds-' + branchId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'refunds', filter: `branch_id=eq.${branchId}` }, async () => { ALL = await fetchAll(); refresh(); })
+    .subscribe();
+
+  ALL = await fetchAll();
+  refresh();
 })();

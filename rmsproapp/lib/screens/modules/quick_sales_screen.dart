@@ -2,16 +2,17 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../../services/supabase_storage.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:flutter_nfc_kit/flutter_nfc_kit.dart';
 import '../../theme/app_theme.dart';
 import '../../services/printer_service.dart';
+import '../../services/supabase_client.dart';
+import '../../services/repair_service.dart';
 
 class QuickSalesScreen extends StatefulWidget {
   final Map<String, dynamic>? enabledModules;
@@ -21,8 +22,11 @@ class QuickSalesScreen extends StatefulWidget {
 }
 
 class _QuickSalesScreenState extends State<QuickSalesScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   String _ownerID = 'admin', _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
 
   String _staff = '';
   String _caraBayaran = 'CASH';
@@ -121,12 +125,12 @@ class _QuickSalesScreenState extends State<QuickSalesScreen> {
   }
 
   Future<void> _init() async {
+    await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
     final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0];
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
     _autoPrint = prefs.getBool('pos_auto_print') ?? true;
     _autoDrawer = prefs.getBool('pos_auto_drawer') ?? true;
     _qrImageUrl = prefs.getString('pos_qr_image_$_ownerID') ?? '';
@@ -151,92 +155,130 @@ class _QuickSalesScreenState extends State<QuickSalesScreen> {
   }
 
   void _listenProducts() {
-    // Accessories
-    _subs.add(_db.collection('accessories_$_ownerID').snapshots().listen((snap) {
+    if (_tenantId == null) return;
+    // Accessories (map item_name→nama, price→harga, sku→kod)
+    _subs.add(_sb
+        .from('accessories')
+        .stream(primaryKey: ['id'])
+        .eq('tenant_id', _tenantId!)
+        .listen((rows) {
       if (!mounted) return;
-      final items = snap.docs
-          .map((d) => {'id': d.id, 'source': 'accessories', 'category': 'ACCESSORIES', ...d.data()})
-          .where((d) => (d['qty'] ?? 0) > 0)
+      final items = rows
+          .where((d) => ((d['qty'] as num?) ?? 0) > 0)
+          .map((d) => {
+                'id': d['id'],
+                'source': 'accessories',
+                'category': d['category'] ?? 'ACCESSORIES',
+                'nama': d['item_name'] ?? '',
+                'kod': d['sku'] ?? '',
+                'harga': d['price'] ?? 0,
+                'qty': d['qty'] ?? 0,
+                ...d,
+              })
           .toList();
       setState(() {
         _products = [..._products.where((d) => d['source'] != 'accessories'), ...items];
       });
     }));
-    // Sparepart (inventory)
-    _subs.add(_db.collection('inventory_$_ownerID').snapshots().listen((snap) {
+    // Sparepart (stock_parts)
+    _subs.add(_sb
+        .from('stock_parts')
+        .stream(primaryKey: ['id'])
+        .eq('tenant_id', _tenantId!)
+        .listen((rows) {
       if (!mounted) return;
-      final items = snap.docs
-          .map((d) => {'id': d.id, 'source': 'sparepart', ...d.data()})
-          .where((d) => (d['qty'] ?? 0) > 0)
+      final items = rows
+          .where((d) => ((d['qty'] as num?) ?? 0) > 0)
+          .map((d) => {
+                'id': d['id'],
+                'source': 'sparepart',
+                'category': d['category'] ?? 'SPAREPART',
+                'nama': d['part_name'] ?? '',
+                'kod': d['sku'] ?? '',
+                'harga': d['price'] ?? 0,
+                'qty': d['qty'] ?? 0,
+                ...d,
+              })
           .toList();
       setState(() {
         _products = [..._products.where((d) => d['source'] != 'sparepart'), ...items];
       });
     }));
-    // Telefon (phone stock) — only if JualTelefon enabled
+    // Telefon (phone_stock) — only if JualTelefon enabled
     final em = widget.enabledModules;
     final phoneEnabled = em == null || em.isEmpty || em['JualTelefon'] != false;
-    if (phoneEnabled) {
-      _subs.add(_db.collection('phone_stock_$_ownerID').snapshots().listen((snap) {
+    if (phoneEnabled && _branchId != null) {
+      _subs.add(_sb
+          .from('phone_stock')
+          .stream(primaryKey: ['id'])
+          .eq('branch_id', _branchId!)
+          .listen((rows) {
         if (!mounted) return;
-        final items = snap.docs
-            .map((d) => {'id': d.id, 'source': 'telefon', 'category': 'TELEFON', ...d.data()})
-            .where((d) {
-              final shopId = (d['shopID'] ?? '').toString().toUpperCase();
-              final status = (d['status'] ?? '').toString().toUpperCase();
-              return shopId == _shopID && status != 'SOLD';
-            })
+        final items = rows
+            .where((d) => (d['status'] ?? '').toString().toUpperCase() != 'SOLD')
+            .map((d) => {
+                  'id': d['id'],
+                  'source': 'telefon',
+                  'category': 'TELEFON',
+                  'nama': d['device_name'] ?? '',
+                  'harga': d['price'] ?? 0,
+                  'qty': d['qty'] ?? 0,
+                  ...d,
+                })
             .toList();
         setState(() {
           _products = [..._products.where((d) => d['source'] != 'telefon'), ...items];
         });
       }));
     } else {
-      // Ensure no telefon items are in list
       _products = _products.where((d) => d['source'] != 'telefon').toList();
     }
   }
 
   void _listenCustomers() {
-    _subs.add(_db.collection('repairs_$_ownerID').snapshots().listen((snap) {
-      final custSeen = <String>{};
+    if (_tenantId == null) return;
+    _subs.add(_sb
+        .from('customers')
+        .stream(primaryKey: ['id'])
+        .eq('tenant_id', _tenantId!)
+        .order('last_visit_at', ascending: false)
+        .listen((rows) {
       final custs = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) {
-          final tel = (d['tel'] ?? '').toString();
-          if (tel.isNotEmpty && tel != '-' && !custSeen.contains(tel)) {
-            custSeen.add(tel);
-            custs.add({'nama': d['nama'] ?? '', 'tel': tel});
-          }
-        }
+      final seen = <String>{};
+      for (final d in rows) {
+        final tel = (d['tel'] ?? '').toString();
+        if (tel.isEmpty || tel == '-' || seen.contains(tel)) continue;
+        seen.add(tel);
+        custs.add({'nama': d['nama'] ?? '', 'tel': tel});
       }
       if (mounted) setState(() => _existingCustomers = custs);
     }));
   }
 
   Future<void> _loadStaff() async {
+    if (_branchId == null) return;
     try {
-      final snap = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-      if (snap.exists) {
-        final data = snap.data() ?? {};
-        // Staff list
-        final staffRaw = data['staffList'];
-        if (staffRaw is List) {
-          _staffList = staffRaw
-              .map((s) => s is String ? s : (s['name'] ?? s['nama'] ?? '').toString())
-              .where((s) => s.isNotEmpty)
-              .toList();
-          if (_staffList.isNotEmpty && mounted) setState(() => _staff = _staffList.first);
-        }
-        // Shop info for receipt
-        _shopInfo = {
-          'shopName': data['shopName'] ?? data['namaKedai'] ?? 'RMS PRO',
-          'address': data['address'] ?? data['alamat'] ?? '',
-          'phone': data['phone'] ?? data['ownerContact'] ?? '-',
-          'notaInvoice': _notaKaki,
-        };
+      final row = await _sb
+          .from('branches')
+          .select('nama_kedai, alamat, phone, email, branch_staff(nama, status)')
+          .eq('id', _branchId!)
+          .maybeSingle();
+      if (row == null) return;
+      final staffRaw = row['branch_staff'];
+      if (staffRaw is List) {
+        _staffList = staffRaw
+            .where((s) => s is Map && (s['status'] ?? 'active') == 'active')
+            .map((s) => (s['nama'] ?? '').toString())
+            .where((s) => s.isNotEmpty)
+            .toList();
+        if (_staffList.isNotEmpty && mounted) setState(() => _staff = _staffList.first);
       }
+      _shopInfo = {
+        'shopName': row['nama_kedai'] ?? 'RMS PRO',
+        'address': row['alamat'] ?? '',
+        'phone': row['phone'] ?? '-',
+        'notaInvoice': _notaKaki,
+      };
     } catch (_) {}
   }
 
@@ -640,8 +682,14 @@ class _QuickSalesScreenState extends State<QuickSalesScreen> {
       'tarikh': DateFormat("yyyy-MM-dd HH:mm").format(DateTime.now()),
     };
 
+    if (_tenantId == null) return;
     try {
-      await _db.collection('saved_bills_$_ownerID').doc(siri).set(data);
+      await _sb.from('saved_bills').upsert({
+        'tenant_id': _tenantId,
+        'branch_id': _branchId,
+        'siri': siri,
+        'payload': data,
+      }, onConflict: 'tenant_id,siri');
       _snack('Bil disimpan: $siri');
       _resetAll();
     } catch (e) {
@@ -672,16 +720,27 @@ class _QuickSalesScreenState extends State<QuickSalesScreen> {
             ]),
             const SizedBox(height: 12),
             Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _db.collection('saved_bills_$_ownerID')
-                    .where('shopID', isEqualTo: _shopID)
-                    .snapshots(),
+              child: StreamBuilder<List<Map<String, dynamic>>>(
+                stream: _branchId == null
+                    ? const Stream.empty()
+                    : _sb
+                        .from('saved_bills')
+                        .stream(primaryKey: ['id'])
+                        .eq('branch_id', _branchId!)
+                        .order('created_at', ascending: false),
                 builder: (ctx, snap) {
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator(color: Colors.purple));
                   }
-                  final docs = (snap.data?.docs ?? [])
-                    ..sort((a, b) => ((b.data() as Map)['timestamp'] ?? 0).compareTo((a.data() as Map)['timestamp'] ?? 0));
+                  final docs = (snap.data ?? []).map((r) {
+                    final payload = r['payload'];
+                    final m = payload is Map
+                        ? Map<String, dynamic>.from(payload)
+                        : <String, dynamic>{};
+                    m['_id'] = r['id'];
+                    m['_siri'] = r['siri'];
+                    return m;
+                  }).toList();
                   if (docs.isEmpty) {
                     return const Center(
                       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -696,7 +755,7 @@ class _QuickSalesScreenState extends State<QuickSalesScreen> {
                     itemCount: docs.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (_, i) {
-                      final d = docs[i].data() as Map<String, dynamic>;
+                      final d = docs[i];
                       final total = (d['total'] as num?)?.toDouble() ?? 0;
                       final cart = (d['cart'] as List?) ?? [];
                       final itemCount = cart.fold<int>(0, (s, c) => s + ((c['qty'] as int?) ?? 1));
@@ -727,7 +786,7 @@ class _QuickSalesScreenState extends State<QuickSalesScreen> {
                                 child: OutlinedButton.icon(
                                   onPressed: () {
                                     Navigator.pop(ctx);
-                                    _loadSavedBill(d, docs[i].id);
+                                    _loadSavedBill(d, d['_id'].toString());
                                   },
                                   icon: const FaIcon(FontAwesomeIcons.folderOpen, size: 11, color: Colors.purple),
                                   label: const Text('BUKA', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.purple)),
@@ -741,7 +800,7 @@ class _QuickSalesScreenState extends State<QuickSalesScreen> {
                               SizedBox(
                                 width: 46, height: 36,
                                 child: OutlinedButton(
-                                  onPressed: () => _deleteSavedBill(docs[i].id),
+                                  onPressed: () => _deleteSavedBill(docs[i]['_id'].toString()),
                                   style: OutlinedButton.styleFrom(
                                     side: const BorderSide(color: AppColors.red),
                                     padding: EdgeInsets.zero,
@@ -787,13 +846,13 @@ class _QuickSalesScreenState extends State<QuickSalesScreen> {
       if ((d['staff'] ?? '').toString().isNotEmpty) _staff = d['staff'];
       _checkoutStep = 0;
     });
-    _db.collection('saved_bills_$_ownerID').doc(docId).delete().catchError((_) {});
+    _sb.from('saved_bills').delete().eq('id', docId).then((_) {}, onError: (_) {});
     _snack('Bil dibuka semula');
   }
 
   Future<void> _deleteSavedBill(String docId) async {
     try {
-      await _db.collection('saved_bills_$_ownerID').doc(docId).delete();
+      await _sb.from('saved_bills').delete().eq('id', docId);
       _snack('Bil dipadam');
     } catch (e) {
       _snack('Gagal padam: $e', err: true);
@@ -839,12 +898,68 @@ class _QuickSalesScreenState extends State<QuickSalesScreen> {
       'status': 'COMPLETED', 'timestamp': tarikhNow.millisecondsSinceEpoch,
     };
 
+    if (_tenantId == null || _branchId == null) {
+      _snack('Tenant/branch belum dimuatkan', err: true);
+      setState(() => _isSaving = false);
+      return;
+    }
+
     try {
-      await Future.wait([
-        _db.collection('jualan_pantas_$_ownerID').doc(siri).set(data),
-        _db.collection('kewangan_$_ownerID').doc(siri).set({...data, 'jenis': 'JUALAN PANTAS', 'amount': _cartTotal}),
-        _db.collection('repairs_$_ownerID').doc(siri).set(data),
-      ]);
+      // 1. Insert ke `jobs` (source of truth utk listing, jenis_servis='JUALAN')
+      final jobRow = await _sb.from('jobs').insert({
+        'tenant_id': _tenantId,
+        'branch_id': _branchId,
+        'siri': siri,
+        'receipt_no': siri,
+        'nama': custName,
+        'tel': custTel,
+        'tel_wasap': custTel,
+        'model': itemNames.length > 50 ? '${itemNames.substring(0, 50)}...' : itemNames,
+        'kerosakan': '-',
+        'jenis_servis': 'JUALAN',
+        'status': 'COMPLETED',
+        'tarikh': DateFormat("yyyy-MM-dd").format(tarikhNow),
+        'harga': _cartTotal,
+        'deposit': 0,
+        'diskaun': 0,
+        'tambahan': 0,
+        'total': _cartTotal,
+        'baki': 0,
+        'payment_status': 'PAID',
+        'cara_bayaran': _caraBayaran,
+        'device_password': '-',
+        'cust_type': _custType == 'ONLINE' ? 'ONLINE' : (custName == _custType ? _custType : 'NEW CUST'),
+        'staff_terima': _staff,
+        'staff_repair': _staff,
+        'staff_serah': _staff,
+        'catatan': '-',
+      }).select('id').single();
+      final jobId = jobRow['id'] as String;
+
+      // 2. Insert job_items
+      if (itemsArray.isNotEmpty) {
+        await _sb.from('job_items').insert(itemsArray
+            .map((i) => {
+                  'tenant_id': _tenantId,
+                  'job_id': jobId,
+                  'nama': i['nama'],
+                  'qty': i['qty'],
+                  'harga': i['harga'],
+                })
+            .toList());
+      }
+
+      // 3. Insert quick_sales (income log) — gabung jualan_pantas + kewangan
+      await _sb.from('quick_sales').insert({
+        'tenant_id': _tenantId,
+        'branch_id': _branchId,
+        'kind': 'JUALAN PANTAS',
+        'amount': _cartTotal,
+        'description': siri,
+        'sold_by': _staff,
+        'payment_method': _caraBayaran,
+        'sold_at': tarikhNow.toIso8601String(),
+      });
 
       if (_autoPrint) {
         final printer = PrinterService();
@@ -1612,9 +1727,11 @@ class _QuickSalesScreenState extends State<QuickSalesScreen> {
       final picked = await picker.pickImage(source: ImageSource.gallery, maxWidth: 800, imageQuality: 80);
       if (picked == null) return;
       _snack('Uploading...');
-      final ref = FirebaseStorage.instance.ref().child('pos_settings/$_ownerID/qr_${DateTime.now().millisecondsSinceEpoch}.jpg');
-      await ref.putFile(File(picked.path));
-      final url = await ref.getDownloadURL();
+      final url = await SupabaseStorageHelper().uploadFile(
+        bucket: 'pos_settings',
+        path: '$_ownerID/qr_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        file: File(picked.path),
+      );
       setState(() => _qrImageUrl = url);
       setSheet(() {});
       _saveSettings();

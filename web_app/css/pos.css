@@ -4,6 +4,7 @@
   display: flex; flex-direction: column;
   min-height: 100vh;
 }
+.pos-page, .pos-page *, .pos-page *::before, .pos-page *::after { box-sizing: border-box; }
 
 /* Top bar */
 .pos-top {
@@ -12,6 +13,7 @@
   border-bottom: 1px solid var(--border);
   padding: 10px var(--sp-4);
   display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3);
+  flex-wrap: wrap;
 }
 .pos-top > * { max-width: none; }
 .pos-top {
@@ -20,7 +22,10 @@
 .pos-top__left {
   display: inline-flex; align-items: center; gap: 8px;
   color: var(--red); font-weight: 900; font-size: var(--fs-md);
+  min-width: 0; flex: 1 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.pos-top__right { flex-wrap: wrap; }
 .pos-top__left i { color: var(--red); }
 .pos-top__shop {
   margin-left: 8px;
@@ -196,7 +201,8 @@
   background: var(--red-light); color: var(--red);
   border-radius: 6px; font-size: 10px;
 }
-.pos-ci__row { display: grid; grid-template-columns: auto 1fr 1fr auto; gap: 6px; align-items: end; }
+.pos-ci__row { display: grid; grid-template-columns: auto minmax(0,1fr) minmax(0,1fr) auto; gap: 6px; align-items: end; }
+.pos-ci__nama { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .pos-qty {
   display: inline-flex; align-items: center;
@@ -325,7 +331,9 @@
 
 /* History */
 .pos-hist-modal { max-width: 640px; }
-.pos-hist-filter { display: flex; gap: 8px; align-items: center; }
+.pos-hist-filter { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pos-hist-row__main, .pos-hist-row__top { min-width: 0; }
+.pos-hist-row__siri { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pos-hist-summary {
   display: flex; justify-content: space-between; align-items: center;
   padding: 10px 14px;

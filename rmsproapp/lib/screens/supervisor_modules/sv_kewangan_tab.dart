@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 
 class SvKewanganTab extends StatefulWidget {
   final String ownerID, shopID;
@@ -18,7 +19,9 @@ class SvKewanganTab extends StatefulWidget {
 }
 
 class _SvKewanganTabState extends State<SvKewanganTab> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _branchId;
   String _filterTime = 'TODAY';
   DateTime? _customStart, _customEnd;
   String _activeSection = ''; // '', 'JUALAN', 'EXPENSE', 'KASAR', 'BERSIH'
@@ -33,38 +36,38 @@ class _SvKewanganTabState extends State<SvKewanganTab> {
   @override
   void initState() {
     super.initState();
-    _listenAll();
+    _init();
   }
 
   @override
   void dispose() {
-    for (final s in _subs) s.cancel();
+    for (final s in _subs) {
+      s.cancel();
+    }
     super.dispose();
   }
 
-  int _dapatkanMasaSah(dynamic ts) {
-    if (ts == null) return 0;
-    if (ts is Timestamp) return ts.millisecondsSinceEpoch;
-    if (ts is int) {
-      if (ts > 0 && ts < 10000000000) return ts * 1000;
-      return ts;
-    }
-    if (ts is double) return ts.toInt();
-    if (ts is String) {
-      final p = DateTime.tryParse(ts);
-      if (p != null) return p.millisecondsSinceEpoch;
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
     }
     return 0;
   }
 
-  void _listenAll() {
+  int _dapatkanMasaSah(dynamic ts) => _tsFromIso(ts);
+
+  Future<void> _init() async {
+    await _repairService.init();
+    _branchId = _repairService.branchId;
+    if (_branchId == null) return;
+
     // Repairs (PAID, bukan jualan)
     _subs.add(
-      _db.collection('repairs_${widget.ownerID}').snapshots().listen((snap) {
+      _sb.from('jobs').stream(primaryKey: ['id']).eq('branch_id', _branchId!).listen((rows) {
         final list = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != widget.shopID) continue;
+        for (final d in rows) {
           if ((d['payment_status'] ?? '').toString().toUpperCase() != 'PAID') continue;
           final nama = (d['nama'] ?? '').toString().toUpperCase();
           final jenis = (d['jenis_servis'] ?? '').toString().toUpperCase();
@@ -73,7 +76,7 @@ class _SvKewanganTabState extends State<SvKewanganTab> {
             'label': d['nama'] ?? '-',
             'sublabel': '#${d['siri'] ?? '-'}',
             'jumlah': double.tryParse(d['total']?.toString() ?? '0') ?? 0,
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
+            'timestamp': _tsFromIso(d['created_at']),
             'jenis': 'REPAIR',
           });
         }
@@ -81,19 +84,17 @@ class _SvKewanganTabState extends State<SvKewanganTab> {
       }),
     );
 
-    // Jualan Pantas (PAID)
+    // Jualan Pantas → quick_sales kind=JUALAN PANTAS
     _subs.add(
-      _db.collection('jualan_pantas_${widget.ownerID}').snapshots().listen((snap) {
+      _sb.from('quick_sales').stream(primaryKey: ['id']).eq('branch_id', _branchId!).listen((rows) {
         final list = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != widget.shopID) continue;
-          if ((d['payment_status'] ?? '').toString().toUpperCase() != 'PAID') continue;
+        for (final d in rows) {
+          if ((d['kind'] ?? '').toString().toUpperCase() != 'JUALAN PANTAS') continue;
           list.add({
-            'label': d['nama'] ?? 'JUALAN PANTAS',
-            'sublabel': '#${d['siri'] ?? '-'}',
-            'jumlah': double.tryParse(d['total']?.toString() ?? '0') ?? 0,
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
+            'label': d['description'] ?? 'JUALAN PANTAS',
+            'sublabel': '#${d['description'] ?? '-'}',
+            'jumlah': double.tryParse(d['amount']?.toString() ?? '0') ?? 0,
+            'timestamp': _tsFromIso(d['created_at']),
             'jenis': 'JUALAN PANTAS',
           });
         }
@@ -103,17 +104,16 @@ class _SvKewanganTabState extends State<SvKewanganTab> {
 
     // Phone Sales (SOLD)
     _subs.add(
-      _db.collection('phone_sales_${widget.ownerID}').snapshots().listen((snap) {
+      _sb.from('phone_sales').stream(primaryKey: ['id']).eq('branch_id', _branchId!).listen((rows) {
         final list = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != widget.shopID) continue;
+        for (final d in rows) {
+          final notes = (d['notes'] is Map) ? Map<String, dynamic>.from(d['notes']) : <String, dynamic>{};
           list.add({
-            'label': d['nama'] ?? 'TELEFON',
-            'sublabel': d['imei'] ?? '-',
-            'jumlah': (d['jual'] as num?)?.toDouble() ?? 0,
-            'kos': (d['kos'] as num?)?.toDouble() ?? 0,
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
+            'label': d['device_name'] ?? notes['nama'] ?? 'TELEFON',
+            'sublabel': notes['imei'] ?? '-',
+            'jumlah': (d['sold_price'] as num?)?.toDouble() ?? ((notes['jual'] ?? 0) as num).toDouble(),
+            'kos': ((notes['kos'] ?? 0) as num).toDouble(),
+            'timestamp': _tsFromIso(d['sold_at'] ?? d['created_at']),
             'jenis': 'TELEFON',
           });
         }
@@ -123,16 +123,14 @@ class _SvKewanganTabState extends State<SvKewanganTab> {
 
     // Expenses
     _subs.add(
-      _db.collection('expenses_${widget.ownerID}').snapshots().listen((snap) {
+      _sb.from('expenses').stream(primaryKey: ['id']).eq('branch_id', _branchId!).listen((rows) {
         final list = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != widget.shopID) continue;
+        for (final d in rows) {
           list.add({
-            'label': d['perkara'] ?? '-',
-            'sublabel': d['staff'] ?? '-',
-            'jumlah': (d['jumlah'] as num?)?.toDouble() ?? 0,
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
+            'label': d['description'] ?? '-',
+            'sublabel': d['paid_by'] ?? '-',
+            'jumlah': (d['amount'] as num?)?.toDouble() ?? 0,
+            'timestamp': _tsFromIso(d['created_at']),
             'jenis': 'EXPENSE',
           });
         }

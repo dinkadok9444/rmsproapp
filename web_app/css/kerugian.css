@@ -194,6 +194,21 @@
 }
 .lost-modal__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
+/* ── Hygiene ── */
+.lost-header, .lost-list, .lost-card, .lost-modal, .lost-modal__actions, .lost-searchrow, .lost-search, .lost-summary { box-sizing: border-box; }
+.lost-modal *, .lost-header *, .lost-card * { box-sizing: border-box; }
+.lost-search input { min-width: 0; }
+.lost-card__top > *, .lost-card__foot > * { min-width: 0; }
+.lost-card__note { overflow-wrap: anywhere; }
+.lost-card__jenis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.lost-input { box-sizing: border-box; }
+.lost-chips::-webkit-scrollbar { height: 4px; }
+
+@media (max-width: 520px) {
+  .lost-searchrow { flex-wrap: wrap; }
+  .lost-select { width: 100%; }
+}
+
 /* Toast */
 .lost-toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);

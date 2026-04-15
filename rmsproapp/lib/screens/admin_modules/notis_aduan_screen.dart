@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
+import '../../services/supabase_client.dart';
 
 class NotisAduanScreen extends StatefulWidget {
   const NotisAduanScreen({super.key});
@@ -11,7 +11,7 @@ class NotisAduanScreen extends StatefulWidget {
 }
 
 class _NotisAduanScreenState extends State<NotisAduanScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
   List<Map<String, dynamic>> _aduan = [];
   bool _isLoading = true;
 
@@ -24,14 +24,18 @@ class _NotisAduanScreenState extends State<NotisAduanScreen> {
   Future<void> _loadAduan() async {
     setState(() => _isLoading = true);
     try {
-      final snap = await _db
-          .collection('aduan_sistem')
-          .orderBy('timestamp', descending: true)
-          .get();
-      _aduan = snap.docs
-          .map((d) => {'id': d.id, ...d.data()})
-          .where((d) => (d['status'] ?? '') != 'DELETED')
-          .toList();
+      final rows = await _sb
+          .from('system_complaints')
+          .select()
+          .order('created_at', ascending: false);
+      _aduan = rows.map<Map<String, dynamic>>((r) => {
+        'id': r['id'],
+        'tajuk': r['subject'] ?? '',
+        'keterangan': r['description'] ?? '',
+        'namaPengirim': r['assigned_to'] ?? '',
+        'status': r['status'] ?? 'OPEN',
+        'timestamp': r['created_at'],
+      }).where((d) => (d['status'] ?? '') != 'DELETED').toList();
     } catch (e) {
       if (mounted) _snack('Ralat: $e', err: true);
     } finally {
@@ -50,7 +54,7 @@ class _NotisAduanScreenState extends State<NotisAduanScreen> {
 
   Future<void> _markSelesai(String id) async {
     try {
-      await _db.collection('aduan_sistem').doc(id).update({'status': 'SELESAI'});
+      await _sb.from('system_complaints').update({'status': 'SELESAI'}).eq('id', id);
       _snack('Aduan ditanda selesai');
       _loadAduan();
     } catch (e) {
@@ -85,7 +89,7 @@ class _NotisAduanScreenState extends State<NotisAduanScreen> {
     );
     if (confirm != true) return;
     try {
-      await _db.collection('aduan_sistem').doc(id).update({'status': 'DELETED'});
+      await _sb.from('system_complaints').update({'status': 'DELETED'}).eq('id', id);
       _snack('Aduan dipadam');
       _loadAduan();
     } catch (e) {
@@ -96,10 +100,10 @@ class _NotisAduanScreenState extends State<NotisAduanScreen> {
   String _formatTimestamp(dynamic ts) {
     if (ts == null) return '-';
     DateTime? dt;
-    if (ts is Timestamp) {
-      dt = ts.toDate();
-    } else if (ts is int) {
+    if (ts is int) {
       dt = DateTime.fromMillisecondsSinceEpoch(ts);
+    } else if (ts is String && ts.isNotEmpty) {
+      dt = DateTime.tryParse(ts);
     }
     if (dt == null) return '-';
     return DateFormat('dd/MM/yy HH:mm').format(dt);

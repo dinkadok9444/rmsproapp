@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
+import '../../services/supabase_client.dart';
 
 class RekodJualanScreen extends StatefulWidget {
   const RekodJualanScreen({super.key});
@@ -13,7 +13,7 @@ class RekodJualanScreen extends StatefulWidget {
 
 class _RekodJualanScreenState extends State<RekodJualanScreen>
     with SingleTickerProviderStateMixin {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
   final _searchCtrl = TextEditingController();
 
   late TabController _tabCtrl;
@@ -61,9 +61,9 @@ class _RekodJualanScreenState extends State<RekodJualanScreen>
 
   DateTime? _parseTimestamp(dynamic ts) {
     if (ts == null) return null;
-    if (ts is Timestamp) return ts.toDate();
     if (ts is int) return DateTime.fromMillisecondsSinceEpoch(ts);
     if (ts is double) return DateTime.fromMillisecondsSinceEpoch(ts.toInt());
+    if (ts is String && ts.isNotEmpty) return DateTime.tryParse(ts);
     return null;
   }
 
@@ -116,8 +116,21 @@ class _RekodJualanScreenState extends State<RekodJualanScreen>
   Future<void> _loadSaasData() async {
     setState(() => _isLoadingSaas = true);
     try {
-      final snap = await _db.collection('saas_dealers').get();
-      _dealers = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+      final rows = await _sb.from('tenants').select();
+      _dealers = rows.map<Map<String, dynamic>>((r) {
+        final config = (r['config'] is Map) ? Map<String, dynamic>.from(r['config']) : <String, dynamic>{};
+        return {
+          'id': r['id'],
+          'ownerID': r['owner_id'],
+          'namaKedai': r['nama_kedai'] ?? '',
+          'ownerName': config['ownerName'] ?? '',
+          'ownerPhone': config['ownerContact'] ?? '',
+          'phone': config['ownerContact'] ?? '',
+          'package': config['package'] ?? config['planType'] ?? '1',
+          'createdAt': r['created_at'],
+          'joinDate': r['created_at'],
+        };
+      }).toList();
       _dealers.sort((a, b) {
         final da = _parseTimestamp(a['createdAt'] ?? a['joinDate']);
         final db = _parseTimestamp(b['createdAt'] ?? b['joinDate']);
@@ -164,22 +177,24 @@ class _RekodJualanScreenState extends State<RekodJualanScreen>
   Future<void> _loadDealerSales() async {
     setState(() => _isLoadingSales = true);
     try {
-      // Read pre-aggregated totals from saas_dealers (maintained by
-      // Cloud Function onRepairWrite). No N+1 scan across tenants.
-      final snap = await _db
-          .collection('saas_dealers')
-          .orderBy('totalSales', descending: true)
-          .limit(100)
-          .get();
+      // Read pre-aggregated totals from tenants (total_sales, ticket_count).
+      final rows = await _sb
+          .from('tenants')
+          .select()
+          .order('total_sales', ascending: false)
+          .limit(100);
 
-      _dealerSales = snap.docs.map((d) {
-        final data = d.data();
+      _dealerSales = rows.map<Map<String, dynamic>>((r) {
+        final config = (r['config'] is Map) ? Map<String, dynamic>.from(r['config']) : <String, dynamic>{};
         return {
-          'id': d.id,
-          ...data,
-          'ticketCount': data['ticketCount'] ?? 0,
-          'totalSales':
-              (data['totalSales'] as num?)?.toDouble() ?? 0.0,
+          'id': r['id'],
+          'ownerID': r['owner_id'],
+          'namaKedai': r['nama_kedai'] ?? '',
+          'ownerName': config['ownerName'] ?? '',
+          'ticketCount': r['ticket_count'] ?? 0,
+          'totalSales': (r['total_sales'] as num?)?.toDouble() ?? 0.0,
+          'createdAt': r['created_at'],
+          'joinDate': r['created_at'],
         };
       }).toList();
 

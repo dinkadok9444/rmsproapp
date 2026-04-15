@@ -1,350 +1,162 @@
-/* Kewangan — port lib/screens/modules/kewangan_screen.dart (read-only subset) */
-(function () {
+/* kewangan.js — Supabase. Mirror kewangan_screen.dart. Aggregate jobs/quick_sales/phone_sales/expenses. */
+(async function () {
   'use strict';
-  const branch = localStorage.getItem('rms_current_branch');
-  if (!branch || !branch.includes('@')) { window.location.replace('index.html'); return; }
-  const [ownerRaw, shopRaw] = branch.split('@');
-  const ownerID = (ownerRaw || '').toLowerCase();
-  const shopID = (shopRaw || '').toUpperCase();
+  const ctx = await window.requireAuth();
+  if (!ctx) return;
+  const branchId = ctx.current_branch_id;
 
-  const $ = id => document.getElementById(id);
-  const state = {
-    segment: 0, // 0 kewangan, 1 phone sales
-    filterTime: 'TODAY',
-    filterSort: 'DESC',
-    search: '',
-    phoneType: 'CUSTOMER',
-    sources: {},          // key => array of records
-    phoneSales: [],
+  const $ = (id) => document.getElementById(id);
+  const fmtRM = (n) => 'RM ' + (Number(n) || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDT = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   };
 
-  // ---- helpers ----
-  const fmtMoney = n => 'RM ' + (Number(n) || 0).toFixed(2);
-  function tsMs(v) {
-    if (v == null) return 0;
-    if (typeof v === 'number') return v;
-    if (typeof v === 'string') {
-      const n = Number(v);
-      if (!Number.isNaN(n)) return n;
-      const d = Date.parse(v); return Number.isNaN(d) ? 0 : d;
+  let segment = 0; // 0=kewangan, 1=jualan telefon
+  let DATA = { JOBS: [], QS: [], PS: [], EXP: [] };
+  let filters = { time: 'TODAY', sort: 'DESC', search: '', phoneType: 'CUSTOMER' };
+
+  async function fetchAll() {
+    const [j, qs, ps, ex] = await Promise.all([
+      window.sb.from('jobs').select('id,siri,nama,total,payment_status,status,created_at').eq('branch_id', branchId).order('created_at', { ascending: false }).limit(5000),
+      window.sb.from('quick_sales').select('*').eq('branch_id', branchId).order('sold_at', { ascending: false }).limit(5000),
+      window.sb.from('phone_sales').select('*').eq('branch_id', branchId).is('deleted_at', null).order('sold_at', { ascending: false }).limit(5000),
+      window.sb.from('expenses').select('*').eq('branch_id', branchId).order('created_at', { ascending: false }).limit(5000),
+    ]);
+    DATA.JOBS = j.data || [];
+    DATA.QS = qs.data || [];
+    DATA.PS = ps.data || [];
+    DATA.EXP = ex.data || [];
+  }
+
+  function inTime(iso) {
+    if (filters.time === 'ALL' || !iso) return filters.time === 'ALL';
+    const d = new Date(iso); const now = new Date();
+    if (filters.time === 'TODAY') return d.toDateString() === now.toDateString();
+    if (filters.time === 'WEEK') { const delta = (now - d) / 86400000; return delta >= 0 && delta < 7; }
+    if (filters.time === 'MONTH') return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    if (filters.time === 'YEAR') return d.getFullYear() === now.getFullYear();
+    return true;
+  }
+
+  function buildRows() {
+    if (segment === 1) {
+      // phone sales
+      return DATA.PS.filter((s) => inTime(s.sold_at)).map((s) => ({
+        id: s.id, kind: 'PHONE', ts: s.sold_at,
+        label: s.device_name || '—', sub: (s.customer_name || '') + ' · ' + (s.customer_phone || ''),
+        amount: Number(s.total_price) || 0, sign: 1, _raw: s,
+      }));
     }
-    if (v && typeof v.toMillis === 'function') return v.toMillis();
-    if (v && v.seconds != null) return v.seconds * 1000;
-    return 0;
-  }
-  function fmtDate(ms) {
-    if (!ms) return '-';
-    const d = new Date(ms);
-    const pad = n => String(n).padStart(2, '0');
-    return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-  function esc(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-      .replace(/"/g,'&quot;');
-  }
-  function num(v) { return Number(v) || 0; }
-
-  function timeRange() {
-    const now = new Date();
-    const start = new Date(now);
-    start.setHours(0,0,0,0);
-    switch (state.filterTime) {
-      case 'TODAY': return [start.getTime(), Number.MAX_SAFE_INTEGER];
-      case 'WEEK': {
-        const dow = start.getDay(); // 0 Sun
-        const diff = (dow + 6) % 7; // Monday start
-        start.setDate(start.getDate() - diff);
-        return [start.getTime(), Number.MAX_SAFE_INTEGER];
-      }
-      case 'MONTH': {
-        start.setDate(1); return [start.getTime(), Number.MAX_SAFE_INTEGER];
-      }
-      case 'YEAR': {
-        start.setMonth(0, 1); return [start.getTime(), Number.MAX_SAFE_INTEGER];
-      }
-      case 'ALL': return [0, Number.MAX_SAFE_INTEGER];
-    }
-    return [0, Number.MAX_SAFE_INTEGER];
+    // kewangan combined
+    const jobRows = DATA.JOBS.filter((j) => (j.payment_status || '').toUpperCase() === 'PAID' && inTime(j.created_at)).map((j) => ({
+      id: j.id, kind: 'REPAIR', ts: j.created_at, label: j.siri || '—', sub: j.nama || '', amount: Number(j.total) || 0, sign: 1,
+    }));
+    const qsRows = DATA.QS.filter((q) => inTime(q.sold_at)).map((q) => ({
+      id: q.id, kind: 'QUICK', ts: q.sold_at, label: q.description || q.kind || '—', sub: q.sold_by || '', amount: Number(q.amount) || 0, sign: 1,
+    }));
+    const psRows = DATA.PS.filter((s) => inTime(s.sold_at)).map((s) => ({
+      id: s.id, kind: 'PHONE', ts: s.sold_at, label: s.device_name || '—', sub: s.customer_name || '', amount: Number(s.total_price) || 0, sign: 1,
+    }));
+    const exRows = DATA.EXP.filter((e) => inTime(e.created_at)).map((e) => ({
+      id: e.id, kind: 'EXPENSE', ts: e.created_at, label: e.description || '—', sub: e.paid_by || '', amount: Number(e.amount) || 0, sign: -1,
+    }));
+    return [...jobRows, ...qsRows, ...psRows, ...exRows];
   }
 
-  // ---- data merge ----
-  function mergeRecords(key, recs) {
-    state.sources[key] = recs;
-    render();
-  }
+  function refresh() {
+    document.querySelectorAll('.kw-phone-only').forEach((el) => { el.hidden = segment !== 1; });
+    let rows = buildRows();
+    const q = (filters.search || '').toLowerCase();
+    if (q) rows = rows.filter((r) => [(r.label||''),(r.sub||'')].join(' ').toLowerCase().includes(q));
+    rows.sort((a, b) => filters.sort === 'ASC' ? (a.ts||'').localeCompare(b.ts||'') : (b.ts||'').localeCompare(a.ts||''));
 
-  function allRecords() {
-    const arr = [];
-    for (const k in state.sources) arr.push(...state.sources[k]);
-    return arr;
-  }
+    const sales = rows.filter((r) => r.sign > 0).reduce((s, r) => s + r.amount, 0);
+    const expense = rows.filter((r) => r.sign < 0).reduce((s, r) => s + r.amount, 0);
+    $('stSales').textContent = fmtRM(sales);
+    $('stExpense').textContent = fmtRM(expense);
+    $('stNet').textContent = fmtRM(sales - expense);
+    $('stCount').textContent = rows.length;
 
-  // ---- listeners ----
-  db.collection('repairs_' + ownerID).onSnapshot(snap => {
-    const out = [];
-    snap.forEach(doc => {
-      const d = doc.data() || {};
-      if (String(d.shopID || '').toUpperCase() !== shopID) return;
-      if (String(d.payment_status || '').toUpperCase() !== 'PAID') return;
-      const nama = String(d.nama || '').toUpperCase();
-      const jenis = String(d.jenis_servis || '').toUpperCase();
-      if (nama === 'JUALAN PANTAS' || jenis === 'JUALAN') return;
-      out.push({
-        docId: doc.id, siri: d.siri || doc.id,
-        jenis: 'RETAIL', jenisLabel: 'SALES REPAIR',
-        nama: d.nama || '-', tel: d.tel || '-',
-        item: d.model || d.kerosakan || '-',
-        jumlah: num(d.total),
-        cara: d.cara_bayaran || 'CASH',
-        staff: d.staff_repair || d.staff_terima || '-',
-        timestamp: tsMs(d.paid_at || d.timestamp),
-        isExpense: false,
-      });
-    });
-    mergeRecords('REPAIR', out);
-  }, err => console.warn('repairs:', err));
-
-  const receiverCode = `${ownerID}@${shopID}`.toLowerCase();
-  db.collection('collab_global_network')
-    .where('receiver', '==', receiverCode)
-    .onSnapshot(snap => {
-      const out = [];
-      snap.forEach(doc => {
-        const d = doc.data() || {};
-        if (String(d.payment_status || '').toUpperCase() !== 'PAID') return;
-        out.push({
-          docId: doc.id, siri: d.siri || doc.id,
-          jenis: 'PRO_ONLINE', jenisLabel: 'PRO DEALER',
-          nama: d.namaCust || d.nama || '-',
-          tel: d.telCust || d.tel || '-',
-          item: d.model || d.kerosakan || '-',
-          jumlah: num(d.total),
-          cara: d.cara_bayaran || 'ONLINE',
-          staff: d.staff_repair || d.sender || '-',
-          timestamp: tsMs(d.timestamp),
-          isExpense: false,
-        });
-      });
-      mergeRecords('COLLAB', out);
-    }, err => console.warn('collab:', err));
-
-  db.collection('pro_walkin_' + ownerID).onSnapshot(snap => {
-    const out = [];
-    snap.forEach(doc => {
-      const d = doc.data() || {};
-      if (String(d.shopID || '').toUpperCase() !== shopID) return;
-      if (String(d.payment_status || '').toUpperCase() !== 'PAID') return;
-      out.push({
-        docId: doc.id, siri: d.siri || doc.id,
-        jenis: 'PRO_OFFLINE', jenisLabel: 'PRO DEALER',
-        nama: d.namaCust || d.nama || '-',
-        tel: d.telCust || d.tel || '-',
-        item: d.model || d.kerosakan || '-',
-        jumlah: num(d.total),
-        cara: d.cara_bayaran || 'CASH',
-        staff: d.staff_repair || d.staff_terima || '-',
-        timestamp: tsMs(d.timestamp),
-        isExpense: false,
-      });
-    });
-    mergeRecords('PRO_WALKIN', out);
-  }, err => console.warn('pro_walkin:', err));
-
-  db.collection('expenses_' + ownerID).onSnapshot(snap => {
-    const out = [];
-    snap.forEach(doc => {
-      const d = doc.data() || {};
-      if (String(d.shopID || '').toUpperCase() !== shopID) return;
-      if (d.archived === true) return;
-      out.push({
-        docId: doc.id, siri: doc.id,
-        jenis: 'EXPENSE', jenisLabel: 'DUIT KELUAR',
-        nama: d.perkara || '-', tel: '-',
-        item: d.perkara || '-',
-        jumlah: num(d.jumlah ?? d.amaun),
-        cara: '-',
-        staff: d.staff || d.staf || '-',
-        timestamp: tsMs(d.timestamp),
-        isExpense: true,
-      });
-    });
-    mergeRecords('EXPENSE', out);
-  }, err => console.warn('expenses:', err));
-
-  db.collection('jualan_pantas_' + ownerID).onSnapshot(snap => {
-    const out = [];
-    snap.forEach(doc => {
-      const d = doc.data() || {};
-      if (String(d.shopID || '').toUpperCase() !== shopID) return;
-      if (String(d.payment_status || '').toUpperCase() !== 'PAID') return;
-      if (String(d.nama || '').toUpperCase() === 'JUALAN TELEFON') return;
-      out.push({
-        docId: doc.id, siri: d.siri || doc.id,
-        jenis: 'PANTAS', jenisLabel: 'QUICK SALES',
-        nama: d.nama || 'QUICK SALES', tel: d.tel || '-',
-        item: d.item || d.model || d.perkara || '-',
-        jumlah: num(d.total),
-        cara: d.cara_bayaran || 'CASH',
-        staff: d.staff || d.staff_terima || '-',
-        timestamp: tsMs(d.timestamp),
-        isExpense: false,
-      });
-    });
-    mergeRecords('PANTAS', out);
-  }, err => console.warn('jualan_pantas:', err));
-
-  db.collection('phone_sales_' + ownerID).onSnapshot(snap => {
-    const out = [];
-    snap.forEach(doc => {
-      const d = doc.data() || {};
-      if (String(d.shopID || '').toUpperCase() !== shopID) return;
-      out.push({
-        docId: doc.id,
-        kod: d.kod || '-',
-        nama: d.nama || '-',
-        imei: d.imei || '-',
-        warna: d.warna || '-',
-        storage: d.storage || '-',
-        jual: num(d.jual),
-        siri: d.siri || '-',
-        staffJual: d.staffJual || d.staffName || '-',
-        timestamp: tsMs(d.timestamp),
-        saleType: String(d.saleType || 'CUSTOMER').toUpperCase(),
-        custName: d.custName || '-',
-        custPhone: d.custPhone || '-',
-        dealerName: d.dealerName || '',
-        dealerKedai: d.dealerKedai || '',
-      });
-    });
-    out.sort((a,b) => (b.timestamp||0) - (a.timestamp||0));
-    state.phoneSales = out;
-    render();
-  }, err => console.warn('phone_sales:', err));
-
-  // ---- render ----
-  function render() {
-    const phoneOnlyRow = document.querySelector('.kw-phone-only');
-    if (phoneOnlyRow) phoneOnlyRow.hidden = state.segment !== 1;
-    $('listTitle').textContent = state.segment === 1 ? 'Senarai Jualan Telefon' : 'Senarai Rekod';
-
-    if (state.segment === 1) return renderPhoneSales();
-    renderKewangan();
-  }
-
-  function renderKewangan() {
-    let arr = allRecords();
-    const [tStart, tEnd] = timeRange();
-    arr = arr.filter(r => r.timestamp >= tStart && r.timestamp <= tEnd);
-    const q = state.search.toLowerCase().trim();
-    if (q) {
-      arr = arr.filter(r =>
-        String(r.nama).toLowerCase().includes(q) ||
-        String(r.siri).toLowerCase().includes(q) ||
-        String(r.item).toLowerCase().includes(q) ||
-        String(r.staff).toLowerCase().includes(q)
-      );
-    }
-    arr.sort((a,b) => state.filterSort === 'DESC'
-      ? (b.timestamp||0) - (a.timestamp||0)
-      : (a.timestamp||0) - (b.timestamp||0));
-
-    // stats
-    let sales = 0, expense = 0;
-    arr.forEach(r => { if (r.isExpense) expense += r.jumlah; else sales += r.jumlah; });
-    $('stSales').textContent = fmtMoney(sales);
-    $('stExpense').textContent = fmtMoney(expense);
-    $('stNet').textContent = fmtMoney(sales - expense);
-    $('stCount').textContent = arr.length;
-
-    const list = $('kwList');
-    $('kwEmpty').hidden = arr.length > 0;
-    list.innerHTML = arr.map(r => {
-      const cls = r.isExpense ? 'kw-item--expense'
-        : (r.jenis === 'PRO_ONLINE' || r.jenis === 'PRO_OFFLINE') ? 'kw-item--pro'
-        : r.jenis === 'PANTAS' ? 'kw-item--pantas' : '';
-      const icon = r.isExpense ? 'fa-money-bill-transfer'
-        : r.jenis === 'PANTAS' ? 'fa-bolt'
-        : (r.jenis === 'PRO_ONLINE' || r.jenis === 'PRO_OFFLINE') ? 'fa-handshake'
-        : 'fa-screwdriver-wrench';
-      const sign = r.isExpense ? '-' : '+';
-      return `
-        <div class="kw-item ${cls}">
-          <div class="kw-item__badge"><i class="fas ${icon}"></i></div>
-          <div class="kw-item__main">
-            <div class="kw-item__title">${esc(r.nama)} — ${esc(r.item)}</div>
-            <div class="kw-item__sub">#${esc(r.siri)} • ${esc(r.jenisLabel)}</div>
-            <div class="kw-item__meta">
-              <span><i class="fas fa-user"></i> ${esc(r.staff)}</span>
-              <span><i class="fas fa-credit-card"></i> ${esc(r.cara)}</span>
-              <span><i class="fas fa-clock"></i> ${fmtDate(r.timestamp)}</span>
-            </div>
-          </div>
-          <div class="kw-item__amount">${sign} ${fmtMoney(r.jumlah)}</div>
-        </div>`;
+    $('kwEmpty').hidden = rows.length > 0;
+    $('kwList').innerHTML = rows.map((r) => {
+      const color = r.sign < 0 ? '#dc2626' : '#10b981';
+      const sign = r.sign < 0 ? '-' : '+';
+      return `<div class="kw-card">
+        <div class="kw-card__hd">
+          <span class="kw-card__label">${r.label}</span>
+          <span class="kw-card__amt" style="color:${color};">${sign}${fmtRM(r.amount)}</span>
+        </div>
+        <div class="kw-card__meta">
+          <span>${r.kind}</span>
+          <span>${r.sub || ''}</span>
+          <span>${fmtDT(r.ts)}</span>
+        </div>
+      </div>`;
     }).join('');
+    $('listTitle').textContent = segment === 1 ? 'Senarai Jualan Telefon' : 'Senarai Rekod';
+    drawChart(rows);
   }
 
-  function renderPhoneSales() {
-    let arr = state.phoneSales.filter(d => (d.saleType || 'CUSTOMER') === state.phoneType);
-    const [tStart, tEnd] = timeRange();
-    arr = arr.filter(r => r.timestamp >= tStart && r.timestamp <= tEnd);
-    const q = state.search.toLowerCase().trim();
-    if (q) {
-      arr = arr.filter(r =>
-        String(r.nama).toLowerCase().includes(q) ||
-        String(r.imei).toLowerCase().includes(q) ||
-        String(r.kod).toLowerCase().includes(q) ||
-        String(r.custName).toLowerCase().includes(q) ||
-        String(r.dealerName).toLowerCase().includes(q)
-      );
+  let chart = null;
+  function drawChart(rows) {
+    const cv = document.getElementById('kwChart');
+    if (!cv || typeof Chart === 'undefined') return;
+
+    // Bucket per day (last 14 days)
+    const days = 14;
+    const buckets = {};
+    const labels = [];
+    const today = new Date(); today.setHours(0,0,0,0);
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today); d.setDate(today.getDate() - i);
+      const k = d.toISOString().slice(0,10);
+      labels.push(`${d.getDate()}/${d.getMonth()+1}`);
+      buckets[k] = { sales: 0, expense: 0 };
     }
-    arr.sort((a,b) => state.filterSort === 'DESC'
-      ? (b.timestamp||0) - (a.timestamp||0)
-      : (a.timestamp||0) - (b.timestamp||0));
+    rows.forEach((r) => {
+      const k = r.ts ? r.ts.slice(0,10) : null;
+      if (!k || !buckets[k]) return;
+      if (r.sign > 0) buckets[k].sales += r.amount;
+      else buckets[k].expense += r.amount;
+    });
+    const sales = Object.values(buckets).map((b) => b.sales);
+    const expense = Object.values(buckets).map((b) => b.expense);
 
-    let total = 0;
-    arr.forEach(r => total += r.jual);
-    $('stSales').textContent = fmtMoney(total);
-    $('stExpense').textContent = 'RM 0.00';
-    $('stNet').textContent = fmtMoney(total);
-    $('stCount').textContent = arr.length;
-
-    const list = $('kwList');
-    $('kwEmpty').hidden = arr.length > 0;
-    list.innerHTML = arr.map(r => {
-      const party = state.phoneType === 'DEALER'
-        ? `${esc(r.dealerName || '-')} (${esc(r.dealerKedai || '-')})`
-        : `${esc(r.custName || '-')} • ${esc(r.custPhone || '-')}`;
-      return `
-        <div class="kw-item kw-item--phone">
-          <div class="kw-item__badge"><i class="fas fa-mobile-screen"></i></div>
-          <div class="kw-item__main">
-            <div class="kw-item__title">${esc(r.nama)} — ${esc(r.warna)} ${esc(r.storage)}</div>
-            <div class="kw-item__sub">IMEI: ${esc(r.imei)} • Kod: ${esc(r.kod)}</div>
-            <div class="kw-item__meta">
-              <span><i class="fas fa-user"></i> ${esc(r.staffJual)}</span>
-              <span><i class="fas fa-user-tag"></i> ${party}</span>
-              <span><i class="fas fa-clock"></i> ${fmtDate(r.timestamp)}</span>
-            </div>
-          </div>
-          <div class="kw-item__amount">+ ${fmtMoney(r.jual)}</div>
-        </div>`;
-    }).join('');
+    if (chart) { chart.data.labels = labels; chart.data.datasets[0].data = sales; chart.data.datasets[1].data = expense; chart.update('none'); return; }
+    chart = new Chart(cv.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Jualan', data: sales, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,.15)', tension: 0.3, fill: true },
+          { label: 'Belanja', data: expense, borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,.12)', tension: 0.3, fill: true },
+        ],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true } } },
+    });
   }
 
-  // ---- events ----
-  $('kwSegment').addEventListener('click', e => {
-    const b = e.target.closest('.kw-seg-btn');
-    if (!b) return;
-    state.segment = Number(b.dataset.seg);
-    document.querySelectorAll('.kw-seg-btn').forEach(x => x.classList.toggle('is-active', x === b));
-    render();
+  document.querySelectorAll('.kw-seg-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.kw-seg-btn').forEach((b) => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      segment = Number(btn.dataset.seg);
+      refresh();
+    });
   });
-  $('fTime').addEventListener('change', e => { state.filterTime = e.target.value; render(); });
-  $('fSort').addEventListener('change', e => { state.filterSort = e.target.value; render(); });
-  $('fSearch').addEventListener('input', e => { state.search = e.target.value; render(); });
-  $('fPhoneType').addEventListener('change', e => { state.phoneType = e.target.value; render(); });
 
-  render();
+  $('fTime').addEventListener('change', (e) => { filters.time = e.target.value; refresh(); });
+  $('fSort').addEventListener('change', (e) => { filters.sort = e.target.value; refresh(); });
+  $('fSearch').addEventListener('input', (e) => { filters.search = e.target.value; refresh(); });
+  $('fPhoneType') && $('fPhoneType').addEventListener('change', (e) => { filters.phoneType = e.target.value; refresh(); });
+
+  ['jobs','quick_sales','phone_sales','expenses'].forEach((table) => {
+    window.sb.channel('kw-' + table + '-' + branchId)
+      .on('postgres_changes', { event: '*', schema: 'public', table, filter: `branch_id=eq.${branchId}` }, async () => { await fetchAll(); refresh(); }).subscribe();
+  });
+
+  await fetchAll();
+  refresh();
 })();

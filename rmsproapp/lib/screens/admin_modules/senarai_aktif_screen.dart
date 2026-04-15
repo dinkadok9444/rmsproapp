@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
+import '../../services/supabase_client.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SenaraiAktifScreen extends StatefulWidget {
   const SenaraiAktifScreen({super.key});
@@ -12,7 +13,7 @@ class SenaraiAktifScreen extends StatefulWidget {
 }
 
 class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final SupabaseClient _sb = SupabaseService.client;
   List<Map<String, dynamic>> _dealers = [];
   List<Map<String, dynamic>> _filtered = [];
   bool _isLoading = true;
@@ -22,7 +23,7 @@ class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
   int _currentPage = 0;
   static const int _pageSize = 20;
   static const int _fetchBatch = 200;
-  DocumentSnapshot? _lastCursor;
+  int _offset = 0;
   bool _hasMore = true;
   bool _isLoadingMore = false;
   final _searchController = TextEditingController();
@@ -43,29 +44,49 @@ class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
     setState(() {
       _isLoading = true;
       _dealers = [];
-      _lastCursor = null;
+      _offset = 0;
       _hasMore = true;
     });
     await _fetchMore();
     if (mounted) setState(() => _isLoading = false);
   }
 
+  Map<String, dynamic> _tenantToUi(Map<String, dynamic> r) {
+    final config = (r['config'] is Map) ? Map<String, dynamic>.from(r['config']) : <String, dynamic>{};
+    return {
+      'id': r['id'],
+      'ownerID': r['owner_id'],
+      'namaKedai': r['nama_kedai'] ?? '',
+      'ownerName': config['ownerName'] ?? '',
+      'ownerContact': config['ownerContact'] ?? '',
+      'phone': config['ownerContact'] ?? '',
+      'email': config['email'] ?? '',
+      'negeri': config['negeri'] ?? '',
+      'daerah': config['daerah'] ?? '',
+      'alamat': config['alamat'] ?? '',
+      'status': r['status'] ?? 'Aktif',
+      'expireDate': r['expire_date'],
+      'createdAt': r['created_at'],
+      'enabledModules': config['enabledModules'] ?? {},
+      'singleStaffMode': r['single_staff_mode'] == true,
+    };
+  }
+
   Future<void> _fetchMore() async {
     if (!_hasMore || _isLoadingMore) return;
     _isLoadingMore = true;
     try {
-      Query<Map<String, dynamic>> q = _db
-          .collection('saas_dealers')
-          .orderBy('createdAt', descending: true)
-          .limit(_fetchBatch);
-      if (_lastCursor != null) q = q.startAfterDocument(_lastCursor!);
-      final snap = await q.get();
-      if (snap.docs.isEmpty) {
+      final rows = await _sb
+          .from('tenants')
+          .select()
+          .order('created_at', ascending: false)
+          .range(_offset, _offset + _fetchBatch - 1);
+      if (rows.isEmpty) {
         _hasMore = false;
       } else {
-        _lastCursor = snap.docs.last;
-        _dealers.addAll(snap.docs.map((d) => {'id': d.id, ...d.data()}));
-        if (snap.docs.length < _fetchBatch) _hasMore = false;
+        _dealers.addAll(rows.map<Map<String, dynamic>>(_tenantToUi));
+        _offset += rows.length;
+        if (rows.length < _fetchBatch) _hasMore = false;
       }
       _applyFilter();
     } catch (e) {
@@ -129,9 +150,12 @@ class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
 
   int _toMillis(dynamic ts) {
     if (ts == null) return 0;
-    if (ts is Timestamp) return ts.millisecondsSinceEpoch;
     if (ts is int) return ts;
     if (ts is double) return ts.toInt();
+    if (ts is String && ts.isNotEmpty) {
+      final dt = DateTime.tryParse(ts);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
     return 0;
   }
 
@@ -156,12 +180,12 @@ class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
   String _kiraBakiHari(dynamic expireTimestamp) {
     if (expireTimestamp == null) return '-';
     DateTime? expire;
-    if (expireTimestamp is Timestamp) {
-      expire = expireTimestamp.toDate();
-    } else if (expireTimestamp is int) {
+    if (expireTimestamp is int) {
       expire = DateTime.fromMillisecondsSinceEpoch(expireTimestamp);
     } else if (expireTimestamp is double) {
       expire = DateTime.fromMillisecondsSinceEpoch(expireTimestamp.toInt());
+    } else if (expireTimestamp is String && expireTimestamp.isNotEmpty) {
+      expire = DateTime.tryParse(expireTimestamp);
     }
     if (expire == null) return '-';
     final beza = expire.difference(DateTime.now()).inDays;
@@ -173,12 +197,12 @@ class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
   Color _warnaExpiry(dynamic expireTimestamp) {
     if (expireTimestamp == null) return AppColors.textDim;
     DateTime? expire;
-    if (expireTimestamp is Timestamp) {
-      expire = expireTimestamp.toDate();
-    } else if (expireTimestamp is int) {
+    if (expireTimestamp is int) {
       expire = DateTime.fromMillisecondsSinceEpoch(expireTimestamp);
     } else if (expireTimestamp is double) {
       expire = DateTime.fromMillisecondsSinceEpoch(expireTimestamp.toInt());
+    } else if (expireTimestamp is String && expireTimestamp.isNotEmpty) {
+      expire = DateTime.tryParse(expireTimestamp);
     }
     if (expire == null) return AppColors.textDim;
     final beza = expire.difference(DateTime.now()).inDays;
@@ -189,12 +213,12 @@ class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
   String _formatTarikh(dynamic ts) {
     if (ts == null) return '-';
     DateTime? d;
-    if (ts is Timestamp) {
-      d = ts.toDate();
-    } else if (ts is int) {
+    if (ts is int) {
       d = DateTime.fromMillisecondsSinceEpoch(ts);
     } else if (ts is double) {
       d = DateTime.fromMillisecondsSinceEpoch(ts.toInt());
+    } else if (ts is String && ts.isNotEmpty) {
+      d = DateTime.tryParse(ts);
     }
     if (d == null) return '-';
     return DateFormat('dd MMM yyyy').format(d);
@@ -207,7 +231,7 @@ class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
       backgroundColor: Colors.transparent,
       builder: (_) => _DealerDetailSheet(
         dealer: dealer,
-        db: _db,
+        sb: _sb,
         onUpdated: _loadDealers,
       ),
     );
@@ -644,7 +668,7 @@ class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
     );
     if (confirm != true) return;
     try {
-      await _db.collection('saas_dealers').doc(id).update({'status': newStatus});
+      await _sb.from('tenants').update({'status': newStatus}).eq('id', id);
       await _loadDealers();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -694,7 +718,7 @@ class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
     );
     if (confirm != true) return;
     try {
-      await _db.collection('saas_dealers').doc(id).delete();
+      await _sb.from('tenants').delete().eq('id', id);
       await _loadDealers();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -768,12 +792,12 @@ class _SenaraiAktifScreenState extends State<SenaraiAktifScreen> {
 
 class _DealerDetailSheet extends StatefulWidget {
   final Map<String, dynamic> dealer;
-  final FirebaseFirestore db;
+  final SupabaseClient sb;
   final VoidCallback onUpdated;
 
   const _DealerDetailSheet({
     required this.dealer,
-    required this.db,
+    required this.sb,
     required this.onUpdated,
   });
 
@@ -806,13 +830,18 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
   Future<void> _loadShopExtras() async {
     try {
       if (_dealerID.isEmpty || _shopID.isEmpty) return;
-      final snap = await widget.db.collection('shops_$_dealerID').doc(_shopID).get();
-      if (!snap.exists) return;
-      final data = snap.data() ?? {};
+      final branch = await widget.sb
+          .from('branches')
+          .select('extras')
+          .eq('tenant_id', _dealerID)
+          .eq('shop_code', _shopID)
+          .maybeSingle();
+      if (branch == null) return;
+      final extras = (branch['extras'] is Map) ? Map<String, dynamic>.from(branch['extras']) : <String, dynamic>{};
       if (!mounted) return;
       setState(() {
-        _d['svTel'] = data['svTel'] ?? _d['svTel'];
-        _d['svPass'] = data['svPass'] ?? _d['svPass'];
+        _d['svTel'] = extras['svTel'] ?? _d['svTel'];
+        _d['svPass'] = extras['svPass'] ?? _d['svPass'];
       });
     } catch (_) {}
   }
@@ -855,9 +884,9 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
         'username': _dealerID,
         'password': _passCtrl.text.trim(),
       };
-      await widget.db.collection('saas_dealers').doc(_dealerID).update(update);
+      await _updateTenantMerged(update);
       try {
-        await widget.db.collection('shops_$_dealerID').doc(_shopID).update(update);
+        await _updateBranchMerged(update);
       } catch (_) {}
       setState(() {
         _d.addAll(update);
@@ -880,21 +909,82 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
     }
   }
 
-  String get _dealerID => _d['id'] ?? '';
+  String get _dealerID => (_d['id'] ?? '').toString(); // tenant UUID
   String get _shopID {
     final s = (_d['shopID'] ?? '').toString();
     return (s.isEmpty || s == '-') ? 'MAIN' : s;
   }
 
+  // Split update map: some keys go to tenant columns, rest merge into config jsonb
+  Future<void> _updateTenantMerged(Map<String, dynamic> update) async {
+    final tenantColumns = <String, dynamic>{};
+    final configPatch = <String, dynamic>{};
+    const columnKeys = {
+      'status': 'status',
+      'addonGallery': 'addon_gallery',
+      'galleryExpire': 'gallery_expire',
+      'proMode': null,
+      'proModeExpire': null,
+      'singleStaffMode': 'single_staff_mode',
+      'expireDate': 'expire_date',
+    };
+    for (final e in update.entries) {
+      if (columnKeys.containsKey(e.key) && columnKeys[e.key] != null) {
+        tenantColumns[columnKeys[e.key]!] = e.value;
+      } else {
+        configPatch[e.key] = e.value;
+      }
+    }
+    if (_dealerID.isEmpty) return;
+    final existing = await widget.sb.from('tenants').select('config').eq('id', _dealerID).maybeSingle();
+    final config = (existing?['config'] is Map) ? Map<String, dynamic>.from(existing!['config']) : <String, dynamic>{};
+    config.addAll(configPatch);
+    final patch = <String, dynamic>{'config': config};
+    patch.addAll(tenantColumns);
+    await widget.sb.from('tenants').update(patch).eq('id', _dealerID);
+  }
+
+  // Update branch row — split columns vs extras
+  Future<void> _updateBranchMerged(Map<String, dynamic> update) async {
+    if (_dealerID.isEmpty) return;
+    final branch = await widget.sb
+        .from('branches')
+        .select('id, extras')
+        .eq('tenant_id', _dealerID)
+        .eq('shop_code', _shopID)
+        .maybeSingle();
+    if (branch == null) return;
+    final extras = (branch['extras'] is Map) ? Map<String, dynamic>.from(branch['extras']) : <String, dynamic>{};
+    final columns = <String, dynamic>{};
+    const branchCols = {
+      'phone': 'phone',
+      'email': 'email',
+      'alamat': 'alamat',
+      'logoBase64': 'logo_base64',
+      'singleStaffMode': 'single_staff_mode',
+      'expireDate': 'expire_date',
+      'enabledModules': 'enabled_modules',
+    };
+    for (final e in update.entries) {
+      if (branchCols.containsKey(e.key)) {
+        columns[branchCols[e.key]!] = e.value;
+      } else {
+        extras[e.key] = e.value;
+      }
+    }
+    columns['extras'] = extras;
+    await widget.sb.from('branches').update(columns).eq('id', branch['id']);
+  }
+
   Color _warnaStatus(dynamic ts, bool active) {
     if (!active || ts == null || ts == 0) return AppColors.textDim;
     DateTime? expire;
-    if (ts is Timestamp) {
-      expire = ts.toDate();
-    } else if (ts is int) {
+    if (ts is int) {
       expire = DateTime.fromMillisecondsSinceEpoch(ts);
     } else if (ts is double) {
       expire = DateTime.fromMillisecondsSinceEpoch(ts.toInt());
+    } else if (ts is String && ts.isNotEmpty) {
+      expire = DateTime.tryParse(ts);
     }
     if (expire == null) return AppColors.textDim;
     final beza = expire.difference(DateTime.now()).inDays;
@@ -905,12 +995,12 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
   String _formatTarikh(dynamic ts) {
     if (ts == null || ts == 0) return '-';
     DateTime? d;
-    if (ts is Timestamp) {
-      d = ts.toDate();
-    } else if (ts is int) {
+    if (ts is int) {
       d = DateTime.fromMillisecondsSinceEpoch(ts);
     } else if (ts is double) {
       d = DateTime.fromMillisecondsSinceEpoch(ts.toInt());
+    } else if (ts is String && ts.isNotEmpty) {
+      d = DateTime.tryParse(ts);
     }
     if (d == null) return '-';
     return DateFormat('dd MMM yyyy').format(d);
@@ -972,8 +1062,8 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
     }
 
     try {
-      await widget.db.collection('saas_dealers').doc(_dealerID).update(updateSaaS);
-      await widget.db.collection('shops_$_dealerID').doc(_shopID).update(updateShop);
+      await _updateTenantMerged(updateSaaS);
+      await _updateBranchMerged(updateShop);
 
       setState(() {
         _d.addAll(updateSaaS);
@@ -1038,26 +1128,15 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
         }
       }
       current[id] = value;
-      // 1) Update dealer doc
-      await widget.db.collection('saas_dealers').doc(_dealerID).set(
-            {'enabledModules': current},
-            SetOptions(merge: true),
-          );
-      // 2) Update ALL shops under this dealer (so every branch sees the change)
+      // 1) Update tenant config
+      await _updateTenantMerged({'enabledModules': current});
+      // 2) Update ALL branches under this tenant
       try {
-        final shopsSnap = await widget.db.collection('shops_$_dealerID').get();
-        final batch = widget.db.batch();
-        for (final d in shopsSnap.docs) {
-          batch.set(d.reference, {'enabledModules': current}, SetOptions(merge: true));
-        }
-        await batch.commit();
+        await widget.sb.from('branches').update({'enabled_modules': current}).eq('tenant_id', _dealerID);
       } catch (_) {
-        // fallback: at least update the current known shop
+        // fallback: update current shop only
         try {
-          await widget.db.collection('shops_$_dealerID').doc(_shopID).set(
-                {'enabledModules': current},
-                SetOptions(merge: true),
-              );
+          await _updateBranchMerged({'enabledModules': current});
         } catch (_) {}
       }
       setState(() => _d['enabledModules'] = current);
@@ -1084,8 +1163,8 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
   Future<void> _kemaskiniModPekerja(bool isSingle) async {
     setState(() => _isSaving = true);
     try {
-      await widget.db.collection('saas_dealers').doc(_dealerID).update({'singleStaffMode': isSingle});
-      await widget.db.collection('shops_$_dealerID').doc(_shopID).update({'singleStaffMode': isSingle});
+      await _updateTenantMerged({'singleStaffMode': isSingle});
+      await _updateBranchMerged({'singleStaffMode': isSingle});
 
       setState(() {
         _d['singleStaffMode'] = isSingle;
@@ -1115,12 +1194,13 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
     DateTime initialDate = DateTime.now().add(const Duration(days: 30));
     final currentExpire = _d['expireDate'];
     if (currentExpire != null) {
-      if (currentExpire is Timestamp) {
-        initialDate = currentExpire.toDate();
-      } else if (currentExpire is int && currentExpire > 0) {
+      if (currentExpire is int && currentExpire > 0) {
         initialDate = DateTime.fromMillisecondsSinceEpoch(currentExpire);
       } else if (currentExpire is double && currentExpire > 0) {
         initialDate = DateTime.fromMillisecondsSinceEpoch(currentExpire.toInt());
+      } else if (currentExpire is String && currentExpire.isNotEmpty) {
+        final dt = DateTime.tryParse(currentExpire);
+        if (dt != null) initialDate = dt;
       }
     }
 
@@ -1147,8 +1227,8 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
     setState(() => _isSaving = true);
     try {
       final expireMs = picked.millisecondsSinceEpoch;
-      await widget.db.collection('saas_dealers').doc(_dealerID).update({'expireDate': expireMs});
-      await widget.db.collection('shops_$_dealerID').doc(_shopID).update({'expireDate': expireMs});
+      await _updateTenantMerged({'expireDate': DateTime.fromMillisecondsSinceEpoch(expireMs).toIso8601String()});
+      await _updateBranchMerged({'expireDate': DateTime.fromMillisecondsSinceEpoch(expireMs).toIso8601String()});
 
       setState(() {
         _d['expireDate'] = expireMs;
@@ -1214,7 +1294,7 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
 
     setState(() => _isSaving = true);
     try {
-      await widget.db.collection('saas_dealers').doc(_dealerID).update({'status': newStatus});
+      await widget.sb.from('tenants').update({'status': newStatus}).eq('id', _dealerID);
       setState(() {
         _d['status'] = newStatus;
       });
@@ -1300,7 +1380,7 @@ class _DealerDetailSheetState extends State<_DealerDetailSheet> {
 
     setState(() => _isSaving = true);
     try {
-      await widget.db.collection('saas_dealers').doc(_dealerID).delete();
+      await widget.sb.from('tenants').delete().eq('id', _dealerID);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

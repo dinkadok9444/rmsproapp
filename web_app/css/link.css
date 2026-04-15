@@ -11,12 +11,15 @@
   border-radius: 16px;
   padding: var(--sp-4);
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: var(--sp-3);
   align-items: center;
   box-shadow: 0 1px 3px rgba(0,0,0,.04);
   box-sizing: border-box;
 }
+.link-banner > div,
+.domain-card__info,
+.link-card__head { min-width: 0; }
 .link-banner { border-color: transparent; color: #fff;
   background: linear-gradient(135deg, #0EA5E9, #3B82F6); }
 .link-list { display: grid; gap: var(--sp-4); width: 100%; }
@@ -102,7 +105,10 @@
 .link-modal__row { margin-bottom: var(--sp-3); }
 .link-modal__row > .set-label { display: block; margin-bottom: 6px; }
 
-.theme-swatch-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
+.theme-swatch-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 520px) {
+  .theme-swatch-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
 .theme-swatch {
   aspect-ratio: 1;
   border-radius: 6px;

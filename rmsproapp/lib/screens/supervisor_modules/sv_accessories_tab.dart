@@ -4,14 +4,15 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../../services/supabase_storage.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../theme/app_theme.dart';
 import '../../services/printer_service.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 
 class SvAccessoriesTab extends StatefulWidget {
   final String ownerID, shopID;
@@ -21,8 +22,11 @@ class SvAccessoriesTab extends StatefulWidget {
 }
 
 class _SvAccessoriesTabState extends State<SvAccessoriesTab> {
-  final _db = FirebaseFirestore.instance;
-  final _storage = FirebaseStorage.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _tenantId;
+  String? _branchId;
+  final _storage = SupabaseStorageHelper();
   final _searchCtrl = TextEditingController();
   final _printer = PrinterService();
   final _picker = ImagePicker();
@@ -43,6 +47,22 @@ class _SvAccessoriesTabState extends State<SvAccessoriesTab> {
   @override
   void initState() {
     super.initState();
+    _init();
+  }
+
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
+    return 0;
+  }
+
+  Future<void> _init() async {
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
     _listen();
   }
 
@@ -60,12 +80,23 @@ class _SvAccessoriesTabState extends State<SvAccessoriesTab> {
   }
 
   void _listen() {
-    _sub = _db
-        .collection('accessories_${widget.ownerID}')
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .listen((snap) {
-      final list = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    if (_branchId == null) return;
+    _sub = _sb
+        .from('accessories')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map<Map<String, dynamic>>((r) => {
+        'id': r['id'],
+        'kod': r['sku'] ?? '',
+        'nama': r['item_name'] ?? '',
+        'kos': r['cost'] ?? 0,
+        'jual': r['price'] ?? 0,
+        'qty': r['qty'] ?? 0,
+        'status': r['status'] ?? 'AVAILABLE',
+        'timestamp': _tsFromIso(r['created_at']),
+      }).toList();
+      list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
       if (mounted) setState(() { _inventory = list; _filter(); });
     });
   }
@@ -168,9 +199,11 @@ class _SvAccessoriesTabState extends State<SvAccessoriesTab> {
 
   Future<String?> _uploadImage(File file, String kod) async {
     final ts = DateTime.now().millisecondsSinceEpoch;
-    final ref = _storage.ref().child('accessories/${widget.ownerID}/${kod}_$ts.jpg');
-    final task = await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
-    return await task.ref.getDownloadURL();
+    return await _storage.uploadFile(
+      bucket: 'accessories',
+      path: '${widget.ownerID}/${kod}_$ts.jpg',
+      file: file,
+    );
   }
 
   // ═══════════════════════════════════════
@@ -308,21 +341,18 @@ class _SvAccessoriesTabState extends State<SvAccessoriesTab> {
                         imageUrl = await _uploadImage(pickedImage!, _kodCtrl.text.trim());
                       }
 
-                      await _db.collection('accessories_${widget.ownerID}').add({
-                        'kod': _kodCtrl.text.trim().toUpperCase(),
-                        'nama': _namaCtrl.text.trim().toUpperCase(),
-                        'kos': double.tryParse(_kosCtrl.text) ?? 0,
-                        'jual': double.tryParse(_jualCtrl.text) ?? 0,
+                      if (_tenantId == null || _branchId == null) return;
+                      await _sb.from('accessories').insert({
+                        'tenant_id': _tenantId,
+                        'branch_id': _branchId,
+                        'sku': _kodCtrl.text.trim().toUpperCase(),
+                        'item_name': _namaCtrl.text.trim().toUpperCase(),
+                        'cost': double.tryParse(_kosCtrl.text) ?? 0,
+                        'price': double.tryParse(_jualCtrl.text) ?? 0,
                         'qty': 1,
-                        'supplier': '',
-                        'tarikh_masuk': _tarikhMasukCtrl.text.trim(),
-                        'tkh_jual': '',
-                        'no_siri_jual': '',
-                        'imageUrl': imageUrl ?? '',
                         'status': 'AVAILABLE',
-                        'timestamp': DateTime.now().millisecondsSinceEpoch,
-                        'shopID': widget.shopID,
                       });
+                      if (imageUrl != null) {/* image URL disimpan Firebase Storage */}
                       if (ctx.mounted) Navigator.pop(ctx);
                       _snack('Accessories berjaya ditambah');
                     },
@@ -413,11 +443,11 @@ class _SvAccessoriesTabState extends State<SvAccessoriesTab> {
                       label: 'KEMASKINI',
                       color: _accentColor,
                       onTap: () async {
-                        await _db.collection('accessories_${widget.ownerID}').doc(docId).update({
-                          'nama': namaCtrl.text.trim().toUpperCase(),
-                          'kos': double.tryParse(kosCtrl.text) ?? 0,
-                          'jual': double.tryParse(jualCtrl.text) ?? 0,
-                        });
+                        await _sb.from('accessories').update({
+                          'item_name': namaCtrl.text.trim().toUpperCase(),
+                          'cost': double.tryParse(kosCtrl.text) ?? 0,
+                          'price': double.tryParse(jualCtrl.text) ?? 0,
+                        }).eq('id', docId);
                         if (ctx.mounted) Navigator.pop(ctx);
                         _snack('Accessories berjaya dikemaskini');
                       },
@@ -448,18 +478,23 @@ class _SvAccessoriesTabState extends State<SvAccessoriesTab> {
                   _actionBtn(FontAwesomeIcons.arrowsRotate, 'REVERSE', AppColors.red, () async {
                     final siri = reverseSiriCtrl.text.trim().toUpperCase();
                     if (siri.isEmpty) { _snack('Sila isi No. Siri', err: true); return; }
-                    if ((item['no_siri_jual'] ?? '').toString().toUpperCase() == siri) {
+                    try {
+                      final usage = await _sb.from('accessory_usage').select('id, qty').eq('accessory_id', docId).eq('siri', siri).limit(1);
+                      if (usage.isEmpty) {
+                        _snack('No. Siri tidak sepadan dengan item ini', err: true);
+                        return;
+                      }
+                      final usedQty = (usage.first['qty'] ?? 1) as int;
                       final currentQty = (item['qty'] ?? 0) as int;
-                      await _db.collection('accessories_${widget.ownerID}').doc(docId).update({
-                        'qty': currentQty + 1,
+                      await _sb.from('accessories').update({
+                        'qty': currentQty + usedQty,
                         'status': 'AVAILABLE',
-                        'no_siri_jual': '',
-                        'tkh_jual': '',
-                      });
+                      }).eq('id', docId);
+                      await _sb.from('accessory_usage').delete().eq('id', usage.first['id']);
                       if (ctx.mounted) Navigator.pop(ctx);
                       _snack('Stok berjaya di-reverse dari job $siri');
-                    } else {
-                      _snack('No. Siri tidak sepadan dengan item ini', err: true);
+                    } catch (e) {
+                      _snack('Gagal reverse: $e', err: true);
                     }
                   }),
                 ]),
@@ -491,7 +526,7 @@ class _SvAccessoriesTabState extends State<SvAccessoriesTab> {
                         ),
                       );
                       if (confirm == true) {
-                        await _db.collection('accessories_${widget.ownerID}').doc(docId).delete();
+                        await _sb.from('accessories').delete().eq('id', docId);
                         if (ctx.mounted) Navigator.pop(ctx);
                         _snack('Item berjaya dipadam');
                       }
@@ -553,12 +588,27 @@ class _SvAccessoriesTabState extends State<SvAccessoriesTab> {
   // ═══════════════════════════════════════
 
   Future<List<Map<String, dynamic>>> _loadUsedHistory() async {
-    final snap = await _db.collection('acc_usage_${widget.ownerID}')
-        .where('status', isEqualTo: 'USED')
-        .get();
-    final list = snap.docs.map((d) => {'_id': d.id, ...d.data()}).toList();
-    list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
-    return list.take(50).toList();
+    if (_branchId == null) return [];
+    try {
+      final rows = await _sb
+          .from('accessory_usage')
+          .select('*, accessories(sku, item_name)')
+          .eq('branch_id', _branchId!)
+          .order('created_at', ascending: false)
+          .limit(50);
+      return rows.map<Map<String, dynamic>>((r) {
+        final part = (r['accessories'] is Map) ? Map<String, dynamic>.from(r['accessories']) : <String, dynamic>{};
+        return {
+          '_id': r['id'],
+          'kod': part['sku'] ?? '',
+          'nama': part['item_name'] ?? '',
+          'jual': r['price'] ?? 0,
+          'tarikh': r['created_at'] ?? '',
+          'stock_doc_id': r['accessory_id'],
+          'timestamp': _tsFromIso(r['created_at']),
+        };
+      }).toList();
+    } catch (_) { return []; }
   }
 
   void _showUsedHistory() {
@@ -626,14 +676,15 @@ class _SvAccessoriesTabState extends State<SvAccessoriesTab> {
                                     onTap: () async {
                                       final stockDocId = d['stock_doc_id'] ?? '';
                                       final usageId = d['_id'] ?? '';
-                                      await _db.collection('accessories_${widget.ownerID}').doc(stockDocId).update({
-                                        'status': 'AVAILABLE',
-                                        'tkh_guna': '',
-                                      });
-                                      await _db.collection('acc_usage_${widget.ownerID}').doc(usageId).update({
-                                        'status': 'REVERSED',
-                                        'reversed_at': DateTime.now().millisecondsSinceEpoch,
-                                      });
+                                      try {
+                                        final stockRow = await _sb.from('accessories').select('qty').eq('id', stockDocId).maybeSingle();
+                                        final currentQty = ((stockRow?['qty'] ?? 0) as num).toInt();
+                                        await _sb.from('accessories').update({
+                                          'qty': currentQty + 1,
+                                          'status': 'AVAILABLE',
+                                        }).eq('id', stockDocId);
+                                      } catch (_) {}
+                                      await _sb.from('accessory_usage').delete().eq('id', usageId);
                                       setModalState(() => usedList!.removeAt(i));
                                       _snack('Accessories "${d['nama']}" di-reverse');
                                     },
@@ -734,16 +785,18 @@ class _SvAccessoriesTabState extends State<SvAccessoriesTab> {
                                       final returnDocId = r['_id'] ?? '';
                                       final rQty = (r['qty'] ?? 0) as int;
 
-                                      final stockSnap = await _db.collection('accessories_${widget.ownerID}').doc(stockDocId).get();
-                                      if (stockSnap.exists) {
-                                        final currentQty = (stockSnap.data()?['qty'] ?? 0) as int;
-                                        await _db.collection('accessories_${widget.ownerID}').doc(stockDocId).update({
-                                          'qty': currentQty + rQty,
-                                          'status': 'AVAILABLE',
-                                        });
-                                      }
+                                      try {
+                                        final stockRow = await _sb.from('accessories').select('qty').eq('id', stockDocId).maybeSingle();
+                                        if (stockRow != null) {
+                                          final currentQty = ((stockRow['qty'] ?? 0) as num).toInt();
+                                          await _sb.from('accessories').update({
+                                            'qty': currentQty + rQty,
+                                            'status': 'AVAILABLE',
+                                          }).eq('id', stockDocId);
+                                        }
+                                      } catch (_) {}
 
-                                      await _db.collection('accessories_${widget.ownerID}').doc(stockDocId).collection('returns').doc(returnDocId).delete();
+                                      await _sb.from('accessory_returns').delete().eq('id', returnDocId);
 
                                       setModalState(() => returnList!.removeAt(i));
                                       _snack('Return "${r['nama']}" di-reverse, +$rQty unit');
@@ -774,29 +827,28 @@ class _SvAccessoriesTabState extends State<SvAccessoriesTab> {
   }
 
   Future<List<Map<String, dynamic>>> _loadReturnHistory() async {
-    final List<Map<String, dynamic>> allReturns = [];
-    for (final item in _inventory) {
-      final docId = item['id'];
-      final kod = item['kod'] ?? '';
-      final nama = item['nama'] ?? '';
-      final snap = await _db
-          .collection('accessories_${widget.ownerID}')
-          .doc(docId)
-          .collection('returns')
-          .orderBy('timestamp', descending: true)
-          .get();
-      for (final d in snap.docs) {
-        allReturns.add({
-          ...d.data(),
-          '_id': d.id,
-          'kod': kod,
-          'nama': nama,
-          'stock_doc_id': docId,
-        });
-      }
-    }
-    allReturns.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
-    return allReturns.take(50).toList();
+    if (_branchId == null) return [];
+    try {
+      final rows = await _sb
+          .from('accessory_returns')
+          .select('*, accessories(sku, item_name)')
+          .eq('branch_id', _branchId!)
+          .order('created_at', ascending: false)
+          .limit(50);
+      return rows.map<Map<String, dynamic>>((r) {
+        final part = (r['accessories'] is Map) ? Map<String, dynamic>.from(r['accessories']) : <String, dynamic>{};
+        return {
+          '_id': r['id'],
+          'kod': part['sku'] ?? '',
+          'nama': part['item_name'] ?? '',
+          'qty': r['qty'] ?? 0,
+          'reason': r['reason'] ?? '',
+          'tarikh': r['created_at'] ?? '',
+          'stock_doc_id': r['accessory_id'],
+          'timestamp': _tsFromIso(r['created_at']),
+        };
+      }).toList();
+    } catch (_) { return []; }
   }
 
   // ═══════════════════════════════════════

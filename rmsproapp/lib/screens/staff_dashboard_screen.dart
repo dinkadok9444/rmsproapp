@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
+import '../services/repair_service.dart';
+import '../services/supabase_client.dart';
 import 'login_screen.dart';
 
 class StaffDashboardScreen extends StatefulWidget {
@@ -16,10 +17,13 @@ class StaffDashboardScreen extends StatefulWidget {
 }
 
 class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   final _authService = AuthService();
   final _searchCtrl = TextEditingController();
 
+  String? _tenantId;
+  String? _branchId;
   String _ownerID = '', _shopID = '', _staffName = '', _staffPhone = '';
   String _filterStatus = 'ALL';
   List<Map<String, dynamic>> _allData = [];
@@ -63,19 +67,31 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     super.dispose();
   }
 
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
+    return 0;
+  }
+
   Future<void> _init() async {
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+
     final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
     _staffName = prefs.getString('rms_staff_name') ?? 'STAF';
     _staffPhone = prefs.getString('rms_staff_phone') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0];
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
+
     try {
-      final shopDoc = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-      if (shopDoc.exists) {
-        final hex = shopDoc.data()?['themeColor'] as String?;
+      if (_branchId != null) {
+        final row = await _sb.from('branches').select('extras').eq('id', _branchId!).maybeSingle();
+        final extras = (row?['extras'] is Map) ? Map<String, dynamic>.from(row!['extras']) : <String, dynamic>{};
+        final hex = extras['themeColor'] as String?;
         if (hex != null && hex.isNotEmpty) {
           _themeColor = Color(int.parse(hex.replaceFirst('#', '0xFF')));
         }
@@ -87,15 +103,20 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
   }
 
   void _listenRepairs() {
-    _sub = _db.collection('repairs_$_ownerID').snapshots().listen((snap) {
+    if (_branchId == null) return;
+    _sub = _sb
+        .from('jobs')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
       final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) {
-          final nama = (d['nama'] ?? '').toString().toUpperCase();
-          final jenis = (d['jenis_servis'] ?? '').toString().toUpperCase();
-          if (nama != 'JUALAN PANTAS' && jenis != 'JUALAN') list.add(d);
-        }
+      for (final r in rows) {
+        final nama = (r['nama'] ?? '').toString().toUpperCase();
+        final jenis = (r['jenis_servis'] ?? '').toString().toUpperCase();
+        if (nama == 'JUALAN PANTAS' || jenis == 'JUALAN') continue;
+        final ui = Map<String, dynamic>.from(r);
+        ui['timestamp'] = _tsFromIso(r['created_at']);
+        list.add(ui);
       }
       list.sort((a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0));
       if (mounted) setState(() { _allData = list; _applyFilters(); });
@@ -104,25 +125,35 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
 
   void _listenKomisyen() {
     final cleanPhone = _staffPhone.replaceAll(RegExp(r'[\s\-()]'), '');
-    if (cleanPhone.isEmpty) return;
-    _komisyenSub = _db.collection('staff_komisyen_$_ownerID').snapshots().listen((snap) {
+    if (cleanPhone.isEmpty || _branchId == null) return;
+    _komisyenSub = _sb
+        .from('staff_commissions')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
       final list = <Map<String, dynamic>>[];
       double total = 0, paid = 0, pending = 0;
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        d['docId'] = doc.id;
-        final staffPhone = (d['staffPhone'] ?? '').toString().replaceAll(RegExp(r'[\s\-()]'), '');
-        final staffNameDoc = (d['staffName'] ?? '').toString().toUpperCase();
+      for (final r in rows) {
+        final d = <String, dynamic>{
+          'docId': r['id'],
+          'staffPhone': r['staff_phone'] ?? '',
+          'staffName': r['staff_name'] ?? '',
+          'amount': r['amount'] ?? 0,
+          'status': r['status'] ?? 'PENDING',
+          'siri': r['siri'] ?? '',
+          'kind': r['kind'] ?? '',
+          'timestamp': _tsFromIso(r['created_at']),
+        };
+        final staffPhone = d['staffPhone'].toString().replaceAll(RegExp(r'[\s\-()]'), '');
+        final staffNameDoc = d['staffName'].toString().toUpperCase();
         if (staffPhone == cleanPhone || staffNameDoc == _staffName.toUpperCase()) {
-          if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) {
-            list.add(d);
-            final amt = (d['amount'] is num) ? (d['amount'] as num).toDouble() : double.tryParse(d['amount']?.toString() ?? '0') ?? 0;
-            total += amt;
-            if ((d['status'] ?? '').toString().toUpperCase() == 'PAID') {
-              paid += amt;
-            } else {
-              pending += amt;
-            }
+          list.add(d);
+          final amt = (d['amount'] is num) ? (d['amount'] as num).toDouble() : double.tryParse(d['amount']?.toString() ?? '0') ?? 0;
+          total += amt;
+          if (d['status'].toString().toUpperCase() == 'PAID') {
+            paid += amt;
+          } else {
+            pending += amt;
           }
         }
       }
@@ -142,12 +173,39 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     if (_staffPhone.isEmpty) return;
     final cleanPhone = _staffPhone.replaceAll(RegExp(r'[\s\-()]'), '');
     try {
-      final doc = await _db.collection('global_staff').doc(cleanPhone).get();
-      if (doc.exists) {
-        _staffData = doc.data()!;
+      final row = await _sb.from('global_staff').select().eq('tel', cleanPhone).maybeSingle();
+      if (row != null) {
+        final payload = (row['payload'] is Map) ? Map<String, dynamic>.from(row['payload']) : <String, dynamic>{};
+        _staffData = {
+          'name': row['nama'] ?? '',
+          'phone': row['tel'] ?? '',
+          'role': row['role'] ?? '',
+          'pin': payload['pin'] ?? '',
+          'status': payload['status'] ?? 'active',
+        };
         _nameCtrl.text = _staffData['name'] ?? '';
         if (mounted) setState(() {});
       }
+    } catch (_) {}
+  }
+
+  Future<void> _updateJobBySiri(String siri, Map<String, dynamic> updates) async {
+    if (_branchId == null) return;
+    await _sb.from('jobs').update(updates).eq('branch_id', _branchId!).eq('siri', siri);
+  }
+
+  Future<void> _addTimeline(String siri, String status) async {
+    if (_branchId == null || _tenantId == null) return;
+    try {
+      final jobRow = await _sb.from('jobs').select('id').eq('branch_id', _branchId!).eq('siri', siri).maybeSingle();
+      if (jobRow == null) return;
+      await _sb.from('job_timeline').insert({
+        'tenant_id': _tenantId,
+        'job_id': jobRow['id'],
+        'status': status,
+        'note': DateFormat("yyyy-MM-dd'T'HH:mm").format(DateTime.now()),
+        'by_user': _staffName.toUpperCase(),
+      });
     } catch (_) {}
   }
 
@@ -248,34 +306,26 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     if (newStatus == 'COMPLETED') {
       updates['tarikh_pickup'] = now;
     }
-    // Append to status_history
-    List<Map<String, dynamic>> history = [];
-    if (job != null && job['status_history'] is List) {
-      history = (job['status_history'] as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-    }
-    history.add({'status': newStatus, 'timestamp': now});
-    updates['status_history'] = history;
-    await _db.collection('repairs_$_ownerID').doc(siri).update(updates);
+    await _updateJobBySiri(siri, updates);
+    await _addTimeline(siri, newStatus);
     _snack('Status #$siri -> $newStatus');
   }
 
   // ── Take job & go to My Job tab ──
   Future<void> _takeJob(String siri) async {
-    await _db.collection('repairs_$_ownerID').doc(siri).update({
-      'staff_repair': _staffName.toUpperCase(),
-    });
+    await _updateJobBySiri(siri, {'staff_repair': _staffName.toUpperCase()});
     try {
-      await _db.collection('staff_logs_$_ownerID').add({
-        'staff': _staffName.toUpperCase(),
-        'staffPhone': _staffPhone,
-        'action': 'AMBIL JOB',
-        'aktiviti': 'Ambil job #$siri',
-        'siri': siri,
-        'shopID': _shopID,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      });
+      if (_tenantId != null) {
+        await _sb.from('staff_logs').insert({
+          'tenant_id': _tenantId,
+          'branch_id': _branchId,
+          'staff_name': _staffName.toUpperCase(),
+          'staff_phone': _staffPhone,
+          'action': 'AMBIL JOB',
+          'aktiviti': 'Ambil job #$siri',
+          'siri': siri,
+        });
+      }
     } catch (_) {}
     _snack('Job #$siri diambil! Lihat di Job Saya.');
     // Switch to My Job tab
@@ -318,7 +368,7 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
             onPressed: () async {
               final newTel = telCtrl.text.trim();
               if (newTel.isEmpty) { _snack('Sila isi no telefon', err: true); return; }
-              await _db.collection('repairs_$_ownerID').doc(siri).update({'tel': newTel});
+              await _updateJobBySiri(siri, {'tel': newTel});
               if (ctx.mounted) Navigator.pop(ctx);
               _snack('Telefon #$siri dikemaskini');
             },
@@ -542,17 +592,9 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     setState(() => _profileLoading = true);
     final cleanPhone = _staffPhone.replaceAll(RegExp(r'[\s\-()]'), '');
     try {
-      await _db.collection('global_staff').doc(cleanPhone).update({'name': newName});
-      final shopDoc = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-      if (shopDoc.exists) {
-        final data = shopDoc.data()!;
-        final staffList = List<Map<String, dynamic>>.from(data['staffList'] ?? []);
-        for (int i = 0; i < staffList.length; i++) {
-          if (staffList[i]['phone'] == cleanPhone || staffList[i]['phone'] == _staffPhone) {
-            staffList[i]['name'] = newName;
-          }
-        }
-        await _db.collection('shops_$_ownerID').doc(_shopID).update({'staffList': staffList});
+      await _sb.from('global_staff').update({'nama': newName}).eq('tel', cleanPhone);
+      if (_branchId != null) {
+        await _sb.from('branch_staff').update({'nama': newName}).eq('branch_id', _branchId!).eq('phone', cleanPhone);
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('rms_staff_name', newName);
@@ -586,17 +628,12 @@ class _StaffDashboardScreenState extends State<StaffDashboardScreen> {
     setState(() => _profileLoading = true);
     final cleanPhone = _staffPhone.replaceAll(RegExp(r'[\s\-()]'), '');
     try {
-      await _db.collection('global_staff').doc(cleanPhone).update({'pin': newPin});
-      final shopDoc = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-      if (shopDoc.exists) {
-        final data = shopDoc.data()!;
-        final staffList = List<Map<String, dynamic>>.from(data['staffList'] ?? []);
-        for (int i = 0; i < staffList.length; i++) {
-          if (staffList[i]['phone'] == cleanPhone || staffList[i]['phone'] == _staffPhone) {
-            staffList[i]['pin'] = newPin;
-          }
-        }
-        await _db.collection('shops_$_ownerID').doc(_shopID).update({'staffList': staffList});
+      final existing = await _sb.from('global_staff').select('payload').eq('tel', cleanPhone).maybeSingle();
+      final payload = (existing?['payload'] is Map) ? Map<String, dynamic>.from(existing!['payload']) : <String, dynamic>{};
+      payload['pin'] = newPin;
+      await _sb.from('global_staff').update({'payload': payload}).eq('tel', cleanPhone);
+      if (_branchId != null) {
+        await _sb.from('branch_staff').update({'pin': newPin}).eq('branch_id', _branchId!).eq('phone', cleanPhone);
       }
       _staffData['pin'] = newPin;
       _oldPinCtrl.clear();

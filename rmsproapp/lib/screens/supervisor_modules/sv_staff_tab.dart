@@ -1,11 +1,12 @@
 import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../../services/supabase_storage.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../theme/app_theme.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 class SvStaffTab extends StatefulWidget {
   final String ownerID, shopID;
   const SvStaffTab({required this.ownerID, required this.shopID});
@@ -14,27 +15,52 @@ class SvStaffTab extends StatefulWidget {
 }
 
 class SvStaffTabState extends State<SvStaffTab> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _tenantId;
+  String? _branchId;
   List<dynamic> _staffList = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+    await _load();
   }
 
   Future<void> _load() async {
-    final snap = await _db
-        .collection('shops_${widget.ownerID}')
-        .doc(widget.shopID)
-        .get();
-    if (snap.exists && mounted) {
-      setState(() {
-        _staffList = List<dynamic>.from(snap.data()?['staffList'] ?? []);
-        _isLoading = false;
-      });
-    } else {
+    if (_branchId == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+    try {
+      final rows = await _sb
+          .from('branch_staff')
+          .select()
+          .eq('branch_id', _branchId!)
+          .order('created_at');
+      final list = rows.map((r) => {
+        'id': r['id'],
+        'name': r['nama'] ?? '',
+        'phone': r['phone'] ?? '',
+        'pin': r['pin'] ?? '',
+        'status': r['status'] ?? 'active',
+        'profileUrl': (r['payload'] is Map ? (r['payload']['profileUrl'] ?? '') : ''),
+      }).toList();
+      if (mounted) {
+        setState(() {
+          _staffList = list;
+          _isLoading = false;
+        });
+      }
+    } catch (_) {
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -157,14 +183,10 @@ class SvStaffTabState extends State<SvStaffTab> {
                   }
                   // Check if phone already used
                   try {
-                    final existing = await _db
-                        .collection('global_staff')
-                        .doc(phone)
-                        .get();
-                    if (existing.exists) {
-                      final data = existing.data()!;
-                      final existOwner = (data['ownerID'] ?? '').toString();
-                      final existShop = (data['shopID'] ?? '').toString();
+                    final existing = await _sb.from('global_staff').select().eq('tel', phone).maybeSingle();
+                    if (existing != null) {
+                      final existOwner = (existing['owner_id'] ?? '').toString();
+                      final existShop = (existing['shop_id'] ?? '').toString();
                       if (existOwner.isNotEmpty &&
                           existShop.isNotEmpty &&
                           (existOwner != widget.ownerID ||
@@ -177,24 +199,38 @@ class SvStaffTabState extends State<SvStaffTab> {
                       }
                     }
                   } catch (_) {}
-                  _staffList.add({
-                    'name': name,
-                    'phone': phone,
-                    'pin': pin,
-                    'status': 'active',
-                  });
-                  await _db
-                      .collection('shops_${widget.ownerID}')
-                      .doc(widget.shopID)
-                      .set({'staffList': _staffList}, SetOptions(merge: true));
-                  await _db.collection('global_staff').doc(phone).set({
-                    'name': name,
-                    'phone': phone,
-                    'pin': pin,
-                    'status': 'active',
-                    'ownerID': widget.ownerID,
-                    'shopID': widget.shopID,
-                  }, SetOptions(merge: true));
+                  if (_tenantId == null || _branchId == null) return;
+                  try {
+                    final inserted = await _sb.from('branch_staff').insert({
+                      'tenant_id': _tenantId,
+                      'branch_id': _branchId,
+                      'nama': name,
+                      'phone': phone,
+                      'pin': pin,
+                      'status': 'active',
+                      'role': 'staff',
+                    }).select('id').single();
+                    _staffList.add({
+                      'id': inserted['id'],
+                      'name': name,
+                      'phone': phone,
+                      'pin': pin,
+                      'status': 'active',
+                    });
+                    await _sb.from('global_staff').upsert({
+                      'tel': phone,
+                      'tenant_id': _tenantId,
+                      'branch_id': _branchId,
+                      'owner_id': widget.ownerID,
+                      'shop_id': widget.shopID,
+                      'nama': name,
+                      'role': 'staff',
+                      'payload': {'pin': pin, 'status': 'active'},
+                    });
+                  } catch (e) {
+                    _snack('Gagal tambah: $e', err: true);
+                    return;
+                  }
                   if (ctx.mounted) Navigator.pop(ctx);
                   if (mounted) {
                     setState(() {});
@@ -220,18 +256,20 @@ class SvStaffTabState extends State<SvStaffTab> {
     final s = _staffList[index];
     if (s is Map) {
       final current = (s['status'] ?? 'active').toString();
-      s['status'] = current == 'active' ? 'suspended' : 'active';
-      await _db.collection('shops_${widget.ownerID}').doc(widget.shopID).set({
-        'staffList': _staffList,
-      }, SetOptions(merge: true));
-      final phone = (s['phone'] ?? '').toString().replaceAll(
-        RegExp(r'[\s\-()]'),
-        '',
-      );
+      final newStatus = current == 'active' ? 'suspended' : 'active';
+      s['status'] = newStatus;
+      final staffId = s['id'];
+      if (staffId != null) {
+        await _sb.from('branch_staff').update({'status': newStatus}).eq('id', staffId);
+      }
+      final phone = (s['phone'] ?? '').toString().replaceAll(RegExp(r'[\s\-()]'), '');
       if (phone.isNotEmpty) {
-        await _db.collection('global_staff').doc(phone).set({
-          'status': s['status'],
-        }, SetOptions(merge: true));
+        try {
+          final existing = await _sb.from('global_staff').select('payload').eq('tel', phone).maybeSingle();
+          final payload = (existing?['payload'] is Map) ? Map<String, dynamic>.from(existing!['payload']) : <String, dynamic>{};
+          payload['status'] = newStatus;
+          await _sb.from('global_staff').update({'payload': payload}).eq('tel', phone);
+        } catch (_) {}
       }
       setState(() {});
       _snack('Staff ${s['name']} → ${s['status']}');
@@ -278,22 +316,17 @@ class SvStaffTabState extends State<SvStaffTab> {
       final phone = s is Map
           ? (s['phone'] ?? '').toString().replaceAll(RegExp(r'[\s\-()]'), '')
           : '';
+      final staffId = s is Map ? s['id'] : null;
       _staffList.removeAt(index);
-      await _db.collection('shops_${widget.ownerID}').doc(widget.shopID).set({
-        'staffList': _staffList,
-      }, SetOptions(merge: true));
+      if (staffId != null) {
+        await _sb.from('branch_staff').delete().eq('id', staffId);
+      }
       if (phone.isNotEmpty) {
-        await _db.collection('global_staff').doc(phone).delete();
-        // Padam semua log aktiviti staff ini
-        final logSnap = await _db
-            .collection('staff_logs_${widget.ownerID}')
-            .where('staffPhone', isEqualTo: phone)
-            .get();
-        final batch = _db.batch();
-        for (final doc in logSnap.docs) {
-          batch.delete(doc.reference);
-        }
-        await batch.commit();
+        await _sb.from('global_staff').delete().eq('tel', phone);
+        // Padam log aktiviti staff ini
+        try {
+          await _sb.from('staff_logs').delete().eq('staff_phone', phone);
+        } catch (_) {}
       }
       setState(() {});
       _snack('Staff $name dipadam');
@@ -341,18 +374,18 @@ class SvStaffTabState extends State<SvStaffTab> {
               Navigator.pop(ctx);
               final newPin = ctrl.text.trim();
               s['pin'] = newPin;
-              await _db
-                  .collection('shops_${widget.ownerID}')
-                  .doc(widget.shopID)
-                  .set({'staffList': _staffList}, SetOptions(merge: true));
-              final phone = (s['phone'] ?? '').toString().replaceAll(
-                RegExp(r'[\s\-()]'),
-                '',
-              );
+              final staffId = s['id'];
+              if (staffId != null) {
+                await _sb.from('branch_staff').update({'pin': newPin}).eq('id', staffId);
+              }
+              final phone = (s['phone'] ?? '').toString().replaceAll(RegExp(r'[\s\-()]'), '');
               if (phone.isNotEmpty) {
-                await _db.collection('global_staff').doc(phone).set({
-                  'pin': newPin,
-                }, SetOptions(merge: true));
+                try {
+                  final existing = await _sb.from('global_staff').select('payload').eq('tel', phone).maybeSingle();
+                  final payload = (existing?['payload'] is Map) ? Map<String, dynamic>.from(existing!['payload']) : <String, dynamic>{};
+                  payload['pin'] = newPin;
+                  await _sb.from('global_staff').update({'payload': payload}).eq('tel', phone);
+                } catch (_) {}
               }
               setState(() {});
               _snack('PIN ${s['name']} berjaya direset');
@@ -384,19 +417,26 @@ class SvStaffTabState extends State<SvStaffTab> {
 
     try {
       _snack('Sedang muat naik gambar...');
-      final ref = FirebaseStorage.instance.ref(
-        'staff_profiles/${widget.ownerID}/${widget.shopID}/$phone.jpg',
+      final url = await SupabaseStorageHelper().uploadFile(
+        bucket: 'staff_avatars',
+        path: '${widget.ownerID}/${widget.shopID}/$phone.jpg',
+        file: File(picked.path),
       );
-      await ref.putFile(File(picked.path));
-      final url = await ref.getDownloadURL();
 
       s['profileUrl'] = url;
-      await _db.collection('shops_${widget.ownerID}').doc(widget.shopID).set({
-        'staffList': _staffList,
-      }, SetOptions(merge: true));
-      await _db.collection('global_staff').doc(phone).set({
-        'profileUrl': url,
-      }, SetOptions(merge: true));
+      final staffId = s['id'];
+      if (staffId != null) {
+        final existing = await _sb.from('branch_staff').select('payload').eq('id', staffId).maybeSingle();
+        final payload = (existing?['payload'] is Map) ? Map<String, dynamic>.from(existing!['payload']) : <String, dynamic>{};
+        payload['profileUrl'] = url;
+        await _sb.from('branch_staff').update({'payload': payload}).eq('id', staffId);
+      }
+      try {
+        final existing = await _sb.from('global_staff').select('payload').eq('tel', phone).maybeSingle();
+        final payload = (existing?['payload'] is Map) ? Map<String, dynamic>.from(existing!['payload']) : <String, dynamic>{};
+        payload['profileUrl'] = url;
+        await _sb.from('global_staff').update({'payload': payload}).eq('tel', phone);
+      } catch (_) {}
       if (mounted) {
         setState(() {});
         _snack('Gambar profil berjaya dikemaskini');

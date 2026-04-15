@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
+import '../../services/supabase_client.dart';
 
 class KatakataScreen extends StatefulWidget {
   const KatakataScreen({super.key});
@@ -12,7 +12,7 @@ class KatakataScreen extends StatefulWidget {
 }
 
 class _KatakataScreenState extends State<KatakataScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
   final _motivasiCtrl = TextEditingController();
   final _solatCtrl = TextEditingController();
 
@@ -42,15 +42,26 @@ class _KatakataScreenState extends State<KatakataScreen> {
   String _formatTimestamp(dynamic ts) {
     if (ts == null) return '-';
     DateTime? d;
-    if (ts is Timestamp) {
-      d = ts.toDate();
-    } else if (ts is int) {
+    if (ts is int) {
       d = DateTime.fromMillisecondsSinceEpoch(ts);
     } else if (ts is double) {
       d = DateTime.fromMillisecondsSinceEpoch(ts.toInt());
+    } else if (ts is String && ts.isNotEmpty) {
+      d = DateTime.tryParse(ts);
     }
     if (d == null) return '-';
     return DateFormat('dd MMM yyyy, hh:mm a').format(d);
+  }
+
+  Future<Map<String, dynamic>> _readKatakata() async {
+    final row = await _sb.from('platform_config').select('value').eq('id', 'kata_kata').maybeSingle();
+    return (row?['value'] is Map) ? Map<String, dynamic>.from(row!['value']) : <String, dynamic>{};
+  }
+
+  Future<void> _writeKatakata(Map<String, dynamic> patch) async {
+    final existing = await _readKatakata();
+    existing.addAll(patch);
+    await _sb.from('platform_config').upsert({'id': 'kata_kata', 'value': existing});
   }
 
   // ═══════════════════════════════════════
@@ -60,20 +71,11 @@ class _KatakataScreenState extends State<KatakataScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final snap = await _db
-          .collection('system_settings')
-          .doc('pengumuman')
-          .get();
-
-      if (snap.exists) {
-        final data = snap.data() ?? {};
-        _motivasiCtrl.text = (data['motivasi'] ?? '').toString();
-        _solatCtrl.text = (data['nasihatSolat'] ?? '').toString();
-        _lastUpdateMotivasi =
-            _formatTimestamp(data['tarikhKemaskiniMotivasi']);
-        _lastUpdateSolat =
-            _formatTimestamp(data['tarikhKemaskiniSolat']);
-      }
+      final data = await _readKatakata();
+      _motivasiCtrl.text = (data['motivasi'] ?? '').toString();
+      _solatCtrl.text = (data['nasihatSolat'] ?? '').toString();
+      _lastUpdateMotivasi = _formatTimestamp(data['tarikhKemaskiniMotivasi']);
+      _lastUpdateSolat = _formatTimestamp(data['tarikhKemaskiniSolat']);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -93,10 +95,10 @@ class _KatakataScreenState extends State<KatakataScreen> {
     if (_motivasiCtrl.text.trim().isEmpty) return;
     setState(() => _isSavingMotivasi = true);
     try {
-      await _db.collection('system_settings').doc('pengumuman').set({
+      await _writeKatakata({
         'motivasi': _motivasiCtrl.text.trim(),
-        'tarikhKemaskiniMotivasi': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+        'tarikhKemaskiniMotivasi': DateTime.now().toIso8601String(),
+      });
 
       _lastUpdateMotivasi = DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
 
@@ -130,10 +132,10 @@ class _KatakataScreenState extends State<KatakataScreen> {
     if (_solatCtrl.text.trim().isEmpty) return;
     setState(() => _isSavingSolat = true);
     try {
-      await _db.collection('system_settings').doc('pengumuman').set({
+      await _writeKatakata({
         'nasihatSolat': _solatCtrl.text.trim(),
-        'tarikhKemaskiniSolat': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+        'tarikhKemaskiniSolat': DateTime.now().toIso8601String(),
+      });
 
       _lastUpdateSolat = DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
 

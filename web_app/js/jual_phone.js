@@ -206,7 +206,7 @@
       </button>
       <div id="jcMsg" style="margin-top:8px;font-size:12px;text-align:center;"></div>
     `;
-    $('jpCreateBg').hidden = false;
+    $('jpCreateBg').style.display = 'flex';
 
     let pickedPhone = null;
 
@@ -310,7 +310,7 @@
           payment_method: $('jcPay').value, sold_at: new Date().toISOString(),
         });
         snack('Bil ' + siri + ' disimpan');
-        $('jpCreateBg').hidden = true;
+        $('jpCreateBg').style.display = 'none';
         ROWS = await fetchRows(); render();
       } catch (e) {
         $('jcMsg').textContent = 'Gagal: ' + (e.message || e);
@@ -320,8 +320,8 @@
   }
 
   $('jpFab').addEventListener('click', openCreate);
-  $('jpCreateClose').addEventListener('click', () => { $('jpCreateBg').hidden = true; });
-  $('jpCreateBg').addEventListener('click', (e) => { if (e.target === $('jpCreateBg')) $('jpCreateBg').hidden = true; });
+  $('jpCreateClose').addEventListener('click', () => { $('jpCreateBg').style.display = 'none'; });
+  $('jpCreateBg').addEventListener('click', (e) => { if (e.target === $('jpCreateBg')) $('jpCreateBg').style.display = 'none'; });
 
   ROWS = await fetchRows();
   render();

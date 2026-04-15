@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_theme.dart';
+import '../../services/supabase_client.dart';
 
 class DatabaseUserScreen extends StatefulWidget {
   const DatabaseUserScreen({super.key});
@@ -12,7 +12,7 @@ class DatabaseUserScreen extends StatefulWidget {
 }
 
 class _DatabaseUserScreenState extends State<DatabaseUserScreen> {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
   List<Map<String, dynamic>> _users = [];
   List<Map<String, dynamic>> _filtered = [];
   bool _isLoading = true;
@@ -34,20 +34,20 @@ class _DatabaseUserScreenState extends State<DatabaseUserScreen> {
   Future<void> _load() async {
     setState(() => _isLoading = true);
     try {
-      final snap = await _db
-          .collection('saas_dealers')
-          .orderBy('createdAt', descending: true)
-          .limit(500)
-          .get();
-      _users = snap.docs.map((d) {
-        final data = d.data();
+      final rows = await _sb
+          .from('tenants')
+          .select()
+          .order('created_at', ascending: false)
+          .limit(500);
+      _users = rows.map<Map<String, dynamic>>((r) {
+        final config = (r['config'] is Map) ? Map<String, dynamic>.from(r['config']) : <String, dynamic>{};
         return {
-          'id': d.id,
-          'namaKedai': data['namaKedai'] ?? data['shopName'] ?? '-',
-          'ownerName': data['ownerName'] ?? '-',
-          'phone': data['ownerContact'] ?? data['phone'] ?? '',
-          'negeri': data['negeri'] ?? '',
-          'createdAt': _toMillis(data['createdAt']),
+          'id': r['id'],
+          'namaKedai': r['nama_kedai'] ?? '-',
+          'ownerName': config['ownerName'] ?? '-',
+          'phone': (config['ownerContact'] ?? '').toString(),
+          'negeri': config['negeri'] ?? '',
+          'createdAt': _toMillis(r['created_at']),
         };
       }).toList();
       _applyFilter();
@@ -64,9 +64,12 @@ class _DatabaseUserScreenState extends State<DatabaseUserScreen> {
 
   int _toMillis(dynamic ts) {
     if (ts == null) return 0;
-    if (ts is Timestamp) return ts.millisecondsSinceEpoch;
     if (ts is int) return ts;
     if (ts is double) return ts.toInt();
+    if (ts is String && ts.isNotEmpty) {
+      final dt = DateTime.tryParse(ts);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
     return 0;
   }
 

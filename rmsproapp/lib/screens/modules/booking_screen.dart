@@ -4,8 +4,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../../services/supabase_storage.dart';
+import '../../services/supabase_client.dart';
+import '../../services/repair_service.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -30,9 +31,12 @@ class BookingScreen extends StatefulWidget {
 
 class _BookingScreenState extends State<BookingScreen> {
   final _lang = AppLanguage();
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   final _searchCtrl = TextEditingController();
   String _ownerID = 'admin', _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
   String _sortOrder = 'desc';
   String _viewMode = 'ACTIVE';
   String? _filterDate;
@@ -49,38 +53,65 @@ class _BookingScreenState extends State<BookingScreen> {
   void dispose() { _sub?.cancel(); _searchCtrl.dispose(); super.dispose(); }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0];
-      _shopID = branch.split('@')[1].toUpperCase();
+    await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+
+    // Load branch + tenant settings
+    if (_branchId != null) {
+      try {
+        final row = await _sb
+            .from('branches')
+            .select('*, branch_staff(nama, status), tenants!inner(domain, config)')
+            .eq('id', _branchId!)
+            .maybeSingle();
+        if (row != null) {
+          _branchSettings = Map<String, dynamic>.from(row);
+          final em = row['enabled_modules'];
+          if (em is Map && em['courierList'] is List) {
+            _courierList = List<String>.from(em['courierList']);
+          }
+          final staffRaw = row['branch_staff'];
+          if (staffRaw is List) {
+            _staffList = staffRaw
+                .where((s) => s is Map && (s['status'] ?? 'active') == 'active')
+                .map((s) => (s['nama'] ?? '').toString())
+                .where((s) => s.isNotEmpty)
+                .toList();
+          }
+          final tenant = row['tenants'];
+          if (tenant is Map) {
+            final d = (tenant['domain'] ?? '').toString();
+            if (d.isNotEmpty) _domain = d;
+          }
+        }
+      } catch (_) {}
     }
-    // Load courier list & staff from shop settings
-    try {
-      final shopDoc = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-      if (shopDoc.exists) {
-        final d = shopDoc.data()!;
-        _branchSettings = d;
-        if (d['courierList'] != null) {
-          _courierList = List<String>.from(d['courierList']);
+
+    if (_branchId == null) return;
+    _sub = _sb
+        .from('bookings')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .order('created_at', ascending: false)
+        .listen((rows) {
+      final list = rows.map((r) {
+        final m = Map<String, dynamic>.from(r);
+        m['key'] = r['id'];
+        // Unpack extra fields stashed dalam notes jsonb
+        final n = r['notes'];
+        if (n is String && n.isNotEmpty) {
+          try {
+            final parsed = jsonDecode(n);
+            if (parsed is Map) m.addAll(Map<String, dynamic>.from(parsed));
+          } catch (_) {}
         }
-        if (d['staffList'] != null) {
-          _staffList = (d['staffList'] as List).map((s) => (s is Map ? s['name'] ?? s['nama'] ?? '' : s).toString()).toList();
-        }
-      }
-    } catch (_) {}
-    // Load domain
-    try {
-      final dealerSnap = await _db.collection('saas_dealers').doc(_ownerID).get();
-      if (dealerSnap.exists) _domain = dealerSnap.data()?['domain'] ?? _domain;
-    } catch (_) {}
-    // Listen bookings
-    _sub = _db.collection('bookings_$_ownerID').snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data(); d['key'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) list.add(d);
-      }
+        final c = r['created_at']?.toString();
+        m['timestamp'] = c == null ? 0 : (DateTime.tryParse(c)?.millisecondsSinceEpoch ?? 0);
+        return m;
+      }).toList();
       if (mounted) setState(() => _bookings = list);
     });
   }
@@ -169,9 +200,11 @@ class _BookingScreenState extends State<BookingScreen> {
                     final picked = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 800, imageQuality: 80);
                     if (picked == null) return;
                     _snack('Uploading QR...');
-                    final ref = FirebaseStorage.instance.ref().child('booking_settings/$_ownerID/$_shopID/qr_${DateTime.now().millisecondsSinceEpoch}.jpg');
-                    await ref.putFile(File(picked.path));
-                    final url = await ref.getDownloadURL();
+                    final url = await SupabaseStorageHelper().uploadFile(
+                      bucket: 'booking_settings',
+                      path: '$_ownerID/$_shopID/qr_${DateTime.now().millisecondsSinceEpoch}.jpg',
+                      file: File(picked.path),
+                    );
                     setS(() => currentQr = url);
                     _snack('QR berjaya dimuat naik');
                   } catch (e) {
@@ -227,12 +260,16 @@ class _BookingScreenState extends State<BookingScreen> {
               SizedBox(width: double.infinity, child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.cyan, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14)),
                 onPressed: () async {
-                  await _db.collection('shops_$_ownerID').doc(_shopID).set({
-                    'bookingQrImageUrl': currentQr,
-                    'bookingBankType': bankTypeCtrl.text.trim().toUpperCase(),
-                    'bookingBankAccName': accNameCtrl.text.trim().toUpperCase(),
-                    'bookingBankAccount': accNoCtrl.text.trim(),
-                  }, SetOptions(merge: true));
+                  if (_branchId != null) {
+                    final cur = _branchSettings['enabled_modules'];
+                    final em = cur is Map ? Map<String, dynamic>.from(cur) : <String, dynamic>{};
+                    em['bookingQrImageUrl'] = currentQr;
+                    em['bookingBankType'] = bankTypeCtrl.text.trim().toUpperCase();
+                    em['bookingBankAccName'] = accNameCtrl.text.trim().toUpperCase();
+                    em['bookingBankAccount'] = accNoCtrl.text.trim();
+                    await _sb.from('branches').update({'enabled_modules': em}).eq('id', _branchId!);
+                    _branchSettings['enabled_modules'] = em;
+                  }
                   // Update local cache
                   _branchSettings['bookingQrImageUrl'] = currentQr;
                   _branchSettings['bookingBankType'] = bankTypeCtrl.text.trim().toUpperCase();
@@ -261,9 +298,11 @@ class _BookingScreenState extends State<BookingScreen> {
       final fileBytes = await File(picked.path).readAsBytes();
       _snack('Uploading resit (${(fileBytes.length / 1024).toStringAsFixed(0)}KB)...');
 
-      final ref = FirebaseStorage.instance.ref().child('booking_resit/$_ownerID/${DateTime.now().millisecondsSinceEpoch}.jpg');
-      await ref.putData(fileBytes, SettableMetadata(contentType: 'image/jpeg'));
-      return await ref.getDownloadURL();
+      return await SupabaseStorageHelper().uploadBytes(
+        bucket: 'booking_settings',
+        path: '$_ownerID/resit_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        bytes: fileBytes,
+      );
     } catch (e) {
       _snack('Gagal upload resit: $e', err: true);
       return null;
@@ -438,10 +477,12 @@ class _BookingScreenState extends State<BookingScreen> {
                   final siri = 'BKG-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
                   final custName = namaCtrl.text.trim().toUpperCase();
                   final itemName = itemCtrl.text.trim().toUpperCase();
-                  await _db.collection('bookings_$_ownerID').add({
-                    'shopID': _shopID, 'siriBooking': siri,
-                    'nama': custName, 'tel': telCtrl.text.trim(),
-                    'item': itemName, 'staff': selectedStaff,
+                  if (_tenantId == null) return;
+                  // Stash extra fields dalam notes jsonb
+                  final extraFields = <String, dynamic>{
+                    'siriBooking': siri,
+                    'item': itemName,
+                    'staff': selectedStaff,
                     'tarikhBooking': DateFormat("yyyy-MM-dd'T'HH:mm").format(DateTime.now()),
                     'tarikhCustDatang': tarikhRepairCtrl.text.trim(),
                     'harga': double.tryParse(hargaCtrl.text) ?? 0,
@@ -452,6 +493,16 @@ class _BookingScreenState extends State<BookingScreen> {
                     'resitUrl': resitUrl,
                     'pdfUrl_INVOICE': '',
                     'pdfUrl_QUOTATION': '',
+                  };
+                  await _sb.from('bookings').insert({
+                    'tenant_id': _tenantId,
+                    'branch_id': _branchId,
+                    'nama': custName,
+                    'tel': telCtrl.text.trim(),
+                    'model': itemName,
+                    'kerosakan': itemName,
+                    'status': 'ACTIVE',
+                    'notes': jsonEncode(extraFields),
                   });
                   // Send push notification to branch devices
                   try {
@@ -557,11 +608,15 @@ class _BookingScreenState extends State<BookingScreen> {
                   SizedBox(width: double.infinity, child: ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.black, padding: const EdgeInsets.symmetric(vertical: 10)),
                     onPressed: () async {
-                      await _db.collection('bookings_$_ownerID').doc(b['key']).update({
-                        'harga': double.tryParse(hargaCtrl.text) ?? 0,
-                        'deposit': double.tryParse(depositCtrl.text) ?? 0,
-                        'baki': double.tryParse(bakiCtrl.text) ?? 0,
-                      });
+                      // Merge payment fields ke notes jsonb
+                      final cur = Map<String, dynamic>.from(b);
+                      cur['harga'] = double.tryParse(hargaCtrl.text) ?? 0;
+                      cur['deposit'] = double.tryParse(depositCtrl.text) ?? 0;
+                      cur['baki'] = double.tryParse(bakiCtrl.text) ?? 0;
+                      cur.remove('key');
+                      await _sb.from('bookings').update({
+                        'notes': jsonEncode(cur),
+                      }).eq('id', b['key']);
                       _snack('Bayaran dikemaskini');
                     },
                     icon: const FaIcon(FontAwesomeIcons.floppyDisk, size: 10),
@@ -590,7 +645,9 @@ class _BookingScreenState extends State<BookingScreen> {
                       onTap: () async {
                         final url = await _uploadResit();
                         if (url != null) {
-                          await _db.collection('bookings_$_ownerID').doc(b['key']).update({'resitUrl': url});
+                          final cur = Map<String, dynamic>.from(b)..['resitUrl'] = url;
+                          cur.remove('key');
+                          await _sb.from('bookings').update({'notes': jsonEncode(cur)}).eq('id', b['key']);
                           setS(() => currentResitUrl = url);
                           _snack('Resit berjaya dimuat naik');
                         }
@@ -654,9 +711,12 @@ class _BookingScreenState extends State<BookingScreen> {
               SizedBox(width: double.infinity, child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary.withValues(alpha: 0.2), foregroundColor: AppColors.primary, side: const BorderSide(color: AppColors.primary)),
                 onPressed: () async {
-                  await _db.collection('bookings_$_ownerID').doc(b['key']).update({
-                    'kurier': kurier, 'tracking_no': trackCtrl.text.trim().toUpperCase(), 'tracking_status': trackStatus,
-                  });
+                  final cur = Map<String, dynamic>.from(b);
+                  cur['kurier'] = kurier;
+                  cur['tracking_no'] = trackCtrl.text.trim().toUpperCase();
+                  cur['tracking_status'] = trackStatus;
+                  cur.remove('key');
+                  await _sb.from('bookings').update({'notes': jsonEncode(cur)}).eq('id', b['key']);
                   if (ctx.mounted) Navigator.pop(ctx);
                   if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lang.get('bk_tracking_dikemaskini')), backgroundColor: AppColors.green));
                 },
@@ -684,7 +744,7 @@ class _BookingScreenState extends State<BookingScreen> {
                       ],
                     ));
                     if (confirm == true) {
-                      await _db.collection('bookings_$_ownerID').doc(b['key']).delete();
+                      await _sb.from('bookings').delete().eq('id', b['key']);
                       if (ctx.mounted) Navigator.pop(ctx);
                     }
                   },
@@ -749,7 +809,13 @@ class _BookingScreenState extends State<BookingScreen> {
                   final v = newCtrl.text.trim().toUpperCase();
                   if (v.isEmpty || _courierList.contains(v)) return;
                   _courierList.add(v); newCtrl.clear();
-                  await _db.collection('shops_$_ownerID').doc(_shopID).set({'courierList': _courierList}, SetOptions(merge: true));
+                  if (_branchId != null) {
+                    final cur = _branchSettings['enabled_modules'];
+                    final em = cur is Map ? Map<String, dynamic>.from(cur) : <String, dynamic>{};
+                    em['courierList'] = _courierList;
+                    await _sb.from('branches').update({'enabled_modules': em}).eq('id', _branchId!);
+                    _branchSettings['enabled_modules'] = em;
+                  }
                   setS(() {});
                 },
                 child: const FaIcon(FontAwesomeIcons.plus, size: 12),
@@ -767,7 +833,13 @@ class _BookingScreenState extends State<BookingScreen> {
                   GestureDetector(
                     onTap: () async {
                       _courierList.remove(k);
-                      await _db.collection('shops_$_ownerID').doc(_shopID).set({'courierList': _courierList}, SetOptions(merge: true));
+                      if (_branchId != null) {
+                        final cur = _branchSettings['enabled_modules'];
+                        final em = cur is Map ? Map<String, dynamic>.from(cur) : <String, dynamic>{};
+                        em['courierList'] = _courierList;
+                        await _sb.from('branches').update({'enabled_modules': em}).eq('id', _branchId!);
+                        _branchSettings['enabled_modules'] = em;
+                      }
                       setS(() {});
                     },
                     child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -1182,7 +1254,10 @@ class _BookingScreenState extends State<BookingScreen> {
         final result = jsonDecode(response.body);
         final pdfUrl = result['pdfUrl']?.toString() ?? '';
         if (pdfUrl.isNotEmpty) {
-          await _db.collection('bookings_$_ownerID').doc(b['key']).update({'pdfUrl_$typePDF': pdfUrl});
+          final cur = Map<String, dynamic>.from(b);
+          cur['pdfUrl_$typePDF'] = pdfUrl;
+          cur.remove('key');
+          await _sb.from('bookings').update({'notes': jsonEncode(cur)}).eq('id', b['key']);
           _snack('$typePDF berjaya dijana!');
           _downloadAndOpenPDF(pdfUrl, typePDF, siri);
         } else {
@@ -1353,25 +1428,25 @@ class _BookingScreenState extends State<BookingScreen> {
           if (_viewMode == 'ACTIVE') ...[
             _actionTile(ctx, FontAwesomeIcons.boxArchive, 'Arkib', AppColors.yellow, () async {
               Navigator.pop(ctx);
-              await _db.collection('bookings_$_ownerID').doc(b['key']).update({'status': 'ARCHIVED'});
+              await _sb.from('bookings').update({'status': 'ARCHIVED'}).eq('id', b['key']);
               _snack('Booking diarkibkan');
             }),
             _actionTile(ctx, FontAwesomeIcons.trashCan, 'Padam', AppColors.red, () async {
               Navigator.pop(ctx);
-              await _db.collection('bookings_$_ownerID').doc(b['key']).update({'status': 'DELETED'});
+              await _sb.from('bookings').update({'status': 'DELETED'}).eq('id', b['key']);
               _snack('Booking dialih ke sampah');
             }),
           ],
           if (_viewMode == 'ARCHIVED')
             _actionTile(ctx, FontAwesomeIcons.arrowRotateLeft, 'Pulihkan', AppColors.primary, () async {
               Navigator.pop(ctx);
-              await _db.collection('bookings_$_ownerID').doc(b['key']).update({'status': 'ACTIVE'});
+              await _sb.from('bookings').update({'status': 'ACTIVE'}).eq('id', b['key']);
               _snack('Booking dipulihkan');
             }),
           if (_viewMode == 'DELETED') ...[
             _actionTile(ctx, FontAwesomeIcons.arrowRotateLeft, 'Pulihkan', AppColors.primary, () async {
               Navigator.pop(ctx);
-              await _db.collection('bookings_$_ownerID').doc(b['key']).update({'status': 'ACTIVE'});
+              await _sb.from('bookings').update({'status': 'ACTIVE'}).eq('id', b['key']);
               _snack('Booking dipulihkan');
             }),
             _actionTile(ctx, FontAwesomeIcons.trashCan, 'Padam Kekal', AppColors.red, () async {
@@ -1386,7 +1461,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 ],
               ));
               if (confirm == true) {
-                await _db.collection('bookings_$_ownerID').doc(b['key']).delete();
+                await _sb.from('bookings').delete().eq('id', b['key']);
                 _snack('Booking dipadam kekal');
               }
             }),

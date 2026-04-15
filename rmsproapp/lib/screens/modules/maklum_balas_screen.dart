@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
 import '../../services/app_language.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 
 class MaklumBalasScreen extends StatefulWidget {
   const MaklumBalasScreen({super.key});
@@ -14,11 +14,13 @@ class MaklumBalasScreen extends StatefulWidget {
 }
 
 class _MaklumBalasScreenState extends State<MaklumBalasScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   final _lang = AppLanguage();
   final _searchCtrl = TextEditingController();
   final _staffSearchCtrl = TextEditingController();
-  String _ownerID = 'admin', _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
   List<Map<String, dynamic>> _feedbacks = [];
   StreamSubscription? _sub;
   String _filterStar = 'Semua';
@@ -31,16 +33,34 @@ class _MaklumBalasScreenState extends State<MaklumBalasScreen> {
   @override
   void dispose() { _sub?.cancel(); _searchCtrl.dispose(); _staffSearchCtrl.dispose(); super.dispose(); }
 
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
+    return 0;
+  }
+
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) { _ownerID = branch.split('@')[0]; _shopID = branch.split('@')[1].toUpperCase(); }
-    _sub = _db.collection('feedback_$_ownerID').snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) list.add(d);
-      }
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+    if (_branchId == null) return;
+    _sub = _sb
+        .from('customer_feedback')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map<Map<String, dynamic>>((r) => {
+        'id': r['id'],
+        'siri': r['siri'] ?? '',
+        'nama': r['nama'] ?? '',
+        'tel': r['tel'] ?? '',
+        'rating': r['rating'] ?? 0,
+        'komen': r['komen'] ?? '',
+        'timestamp': _tsFromIso(r['created_at']),
+      }).toList();
       if (mounted) setState(() => _feedbacks = list);
     });
   }
@@ -77,15 +97,20 @@ class _MaklumBalasScreenState extends State<MaklumBalasScreen> {
   }
 
   Future<Map<String, String>> _lookupStaff(String siri) async {
-    if (siri.isEmpty || siri == '-') return {'terima': '-', 'repair': '-', 'serah': '-'};
+    if (siri.isEmpty || siri == '-' || _branchId == null) return {'terima': '-', 'repair': '-', 'serah': '-'};
     try {
-      final snap = await _db.collection('repairs_$_ownerID').where('siri', isEqualTo: siri).limit(1).get();
-      if (snap.docs.isNotEmpty) {
-        final d = snap.docs.first.data();
+      final rows = await _sb
+          .from('jobs')
+          .select('staff_terima, staff_repair, staff_serah')
+          .eq('branch_id', _branchId!)
+          .eq('siri', siri)
+          .limit(1);
+      if (rows.isNotEmpty) {
+        final d = rows.first;
         return {
-          'terima': d['staff_terima'] ?? d['staffTerima'] ?? '-',
-          'repair': d['staff_repair'] ?? d['staffRepair'] ?? '-',
-          'serah': d['staff_serah'] ?? d['staffSerah'] ?? '-',
+          'terima': (d['staff_terima'] ?? '-').toString(),
+          'repair': (d['staff_repair'] ?? '-').toString(),
+          'serah': (d['staff_serah'] ?? '-').toString(),
         };
       }
     } catch (_) {}

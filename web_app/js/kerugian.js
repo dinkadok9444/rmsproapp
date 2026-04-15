@@ -1,220 +1,139 @@
-/* Port dari lib/screens/modules/lost_screen.dart */
-(function () {
+/* kerugian.js — Supabase. Mirror lost_screen.dart. Table: losses. */
+(async function () {
   'use strict';
-  if (!document.getElementById('lsList')) return;
+  const ctx = await window.requireAuth();
+  if (!ctx) return;
+  const tenantId = ctx.tenant_id;
+  const branchId = ctx.current_branch_id;
 
-  const JENIS = ['Pecah Masa Repair', 'CN Tak Approve', 'Rosak / Defect', 'Hilang', 'Lain-lain'];
+  const $ = (id) => document.getElementById(id);
+  const fmtRM = (n) => 'RM ' + (Number(n) || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function toast(msg) { const t = $('lsToast'); if (!t) return; t.textContent = msg; t.hidden = false; setTimeout(() => { t.hidden = true; }, 1800); }
 
-  let ownerID = 'admin', shopID = 'MAIN';
-  let losses = [];
-  let filterJenis = 'SEMUA';
-  let sortOrder = 'ZA';
-  let searchText = '';
-  let editing = null; // existing record when editing
-  let pendingDeleteId = null;
+  let ALL = [];
+  let searchQ = '';
+  let sort = 'ZA';
+  let chipFilter = 'ALL';
+  let editingId = null;
+  let delTargetId = null;
 
-  const branch = localStorage.getItem('rms_current_branch') || '';
-  if (branch.includes('@')) {
-    const p = branch.split('@');
-    ownerID = p[0]; shopID = (p[1] || '').toUpperCase();
+  async function fetchAll() {
+    const { data, error } = await window.sb.from('losses').select('*').eq('branch_id', branchId).order('created_at', { ascending: false }).limit(2000);
+    if (error) { console.error(error); return []; }
+    return data || [];
   }
 
-  const $ = id => document.getElementById(id);
-  const list = $('lsList'), empty = $('lsEmpty'), chips = $('lsChips');
-  const formModal = $('lsFormModal'), deleteModal = $('lsDeleteModal');
+  function jenisOf(r) { return r.item_type || 'Lain-lain'; }
 
-  // Chips
-  function renderChips() {
-    const items = ['SEMUA', ...JENIS];
-    chips.innerHTML = items.map(j => {
-      const active = filterJenis.toUpperCase() === j.toUpperCase();
-      return `<button type="button" class="lost-chip ${active ? 'is-active' : ''}" data-j="${escapeAttr(j)}">${escapeHtml(j)}</button>`;
-    }).join('');
-  }
-  chips.addEventListener('click', e => {
-    const b = e.target.closest('.lost-chip');
-    if (!b) return;
-    filterJenis = b.dataset.j;
-    renderChips(); render();
-  });
-
-  // Listener
-  db.collection('losses_' + ownerID).onSnapshot(snap => {
-    const arr = [];
-    snap.forEach(d => {
-      const v = d.data(); v.key = d.id;
-      if (String(v.shopID || '').toUpperCase() === shopID) arr.push(v);
+  function refresh() {
+    const q = searchQ.toLowerCase();
+    let rows = ALL.filter((r) => {
+      if (chipFilter !== 'ALL' && jenisOf(r) !== chipFilter) return false;
+      if (!q) return true;
+      return (r.item_name||'').toLowerCase().includes(q) || (r.reason||'').toLowerCase().includes(q) || (r.siri||'').toLowerCase().includes(q) || jenisOf(r).toLowerCase().includes(q);
     });
-    arr.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
-    losses = arr;
-    render();
-  }, err => console.warn('losses:', err));
+    rows.sort((a, b) => sort === 'AZ' ? (a.created_at||'').localeCompare(b.created_at||'') : (b.created_at||'').localeCompare(a.created_at||''));
 
-  // Filter/sort
-  function filtered() {
-    let arr = losses.slice();
-    if (filterJenis !== 'SEMUA') {
-      arr = arr.filter(d => String(d.jenis || '').toUpperCase() === filterJenis.toUpperCase());
-    }
-    const q = searchText.toUpperCase().trim();
-    if (q) {
-      arr = arr.filter(d =>
-        String(d.keterangan || '').toUpperCase().includes(q) ||
-        String(d.jenis || '').toUpperCase().includes(q) ||
-        String(d.siri || '').toUpperCase().includes(q)
-      );
-    }
-    arr.sort((a, b) => {
-      const ta = Number(a.timestamp || 0), tb = Number(b.timestamp || 0);
-      return sortOrder === 'AZ' ? ta - tb : tb - ta;
-    });
-    return arr;
+    const total = ALL.reduce((s, r) => s + (Number(r.estimated_value) || 0), 0);
+    $('lsTotal').textContent = fmtRM(total);
+    $('lsCount').textContent = ALL.length + ' rekod';
+
+    // chips
+    const jenisSet = Array.from(new Set(ALL.map(jenisOf)));
+    $('lsChips').innerHTML = ['ALL', ...jenisSet].map((j) => `<button class="lost-chip${chipFilter===j?' is-active':''}" data-j="${j}">${j==='ALL'?'SEMUA':j}</button>`).join('');
+    $('lsChips').querySelectorAll('.lost-chip').forEach((el) => el.addEventListener('click', () => { chipFilter = el.dataset.j; refresh(); }));
+
+    $('lsEmpty').classList.toggle('hidden', rows.length > 0);
+    $('lsList').innerHTML = rows.map((r) => `
+      <div class="lost-item" data-id="${r.id}">
+        <div class="lost-item__top">
+          <span class="lost-item__siri">${jenisOf(r)}</span>
+          <span class="lost-item__status" style="color:#dc2626;">${fmtRM(r.estimated_value)}</span>
+        </div>
+        <div class="lost-item__body">
+          <div><i class="fas fa-box"></i> ${r.item_name || '—'}</div>
+          ${r.siri ? `<div><i class="fas fa-hashtag"></i> ${r.siri}</div>` : ''}
+          <div><i class="fas fa-comment"></i> ${r.reason || '-'}</div>
+        </div>
+      </div>`).join('');
+    $('lsList').querySelectorAll('.lost-item').forEach((el) => el.addEventListener('click', () => openEdit(ALL.find((r) => r.id === el.dataset.id))));
   }
 
-  function jenisStyle(jenis) {
-    const j = String(jenis).toUpperCase();
-    if (j.includes('PECAH')) return { color: 'red', icon: 'fa-heart-crack' };
-    if (j.includes('CN')) return { color: 'yellow', icon: 'fa-file-circle-xmark' };
-    if (j.includes('ROSAK') || j.includes('DEFECT')) return { color: 'orange', icon: 'fa-screwdriver-wrench' };
-    if (j.includes('HILANG')) return { color: 'purple', icon: 'fa-circle-question' };
-    return { color: 'muted', icon: 'fa-triangle-exclamation' };
+  function openNew() {
+    editingId = null;
+    $('lsFormTitle').textContent = 'REKOD KERUGIAN';
+    $('lsSubmitLbl').textContent = 'SIMPAN';
+    $('lsJenis').value = 'Lain-lain';
+    ['lsSiri','lsJumlah','lsKeterangan'].forEach((k) => $(k).value = '');
+    $('lsFormModal').classList.add('is-open');
+  }
+  function openEdit(row) {
+    if (!row) return;
+    editingId = row.id;
+    $('lsFormTitle').textContent = 'EDIT KERUGIAN';
+    $('lsSubmitLbl').textContent = 'KEMASKINI';
+    $('lsJenis').value = row.item_type || 'Lain-lain';
+    $('lsSiri').value = row.siri || '';
+    $('lsJumlah').value = row.estimated_value || '';
+    $('lsKeterangan').value = row.reason || '';
+    $('lsFormModal').classList.add('is-open');
   }
 
-  function render() {
-    const arr = filtered();
-    $('lsCount').textContent = `${arr.length} rekod`;
-    const total = arr.reduce((s, d) => s + Number(d.jumlah || 0), 0);
-    $('lsTotal').textContent = 'RM ' + total.toFixed(2);
+  $('lsNewBtn').addEventListener('click', openNew);
+  $('lsFormClose').addEventListener('click', () => $('lsFormModal').classList.remove('is-open'));
 
-    if (!losses.length) {
-      list.innerHTML = '';
-      empty.querySelector('.lbl').textContent = 'Tiada rekod kerugian.';
-      empty.querySelector('.sub').textContent = 'Semoga perniagaan sentiasa selamat.';
-      empty.classList.remove('hidden');
-      return;
-    }
-    if (!arr.length) {
-      list.innerHTML = '';
-      empty.querySelector('.lbl').textContent = 'Tiada padanan.';
-      empty.querySelector('.sub').textContent = '';
-      empty.classList.remove('hidden');
-      return;
-    }
-    empty.classList.add('hidden');
-
-    list.innerHTML = arr.map(r => {
-      const jenis = r.jenis || 'Lain-lain';
-      const s = jenisStyle(jenis);
-      const jumlah = Number(r.jumlah || 0).toFixed(2);
-      const siri = r.siri ? `<div class="lost-card__siri">#${escapeHtml(r.siri)}</div>` : '';
-      return `
-        <article class="lost-card c-${s.color}">
-          <div class="lost-card__top">
-            <div class="lost-card__jenis">
-              <span class="lost-card__icon"><i class="fas ${s.icon}"></i></span>
-              <span>${escapeHtml(jenis)}</span>
-            </div>
-            <div class="lost-card__amt">- RM ${jumlah}</div>
-          </div>
-          <div class="lost-card__note">${escapeHtml(r.keterangan || '-')}</div>
-          <div class="lost-card__foot">
-            <div>
-              ${siri}
-              <div class="lost-card__date">${fmtDateTime(r.timestamp)}</div>
-            </div>
-            <div class="lost-card__actions">
-              <button type="button" class="icon-btn" data-edit="${escapeAttr(r.key)}" title="Edit"><i class="fas fa-pen-to-square"></i></button>
-              <button type="button" class="icon-btn icon-btn--danger" data-del="${escapeAttr(r.key)}" title="Padam"><i class="fas fa-trash-can"></i></button>
-            </div>
-          </div>
-        </article>
-      `;
-    }).join('');
-  }
-
-  // Events
-  $('lsSearch').addEventListener('input', e => { searchText = e.target.value; render(); });
-  $('lsSort').addEventListener('change', e => { sortOrder = e.target.value; render(); });
-  $('lsNewBtn').addEventListener('click', () => openForm(null));
-  $('lsFormClose').addEventListener('click', () => formModal.classList.remove('is-open'));
-  $('lsSubmit').addEventListener('click', submitForm);
-  formModal.addEventListener('click', e => { if (e.target === formModal) formModal.classList.remove('is-open'); });
-
-  list.addEventListener('click', e => {
-    const edit = e.target.closest('[data-edit]');
-    const del = e.target.closest('[data-del]');
-    if (edit) {
-      const r = losses.find(x => x.key === edit.dataset.edit);
-      if (r) openForm(r);
-    } else if (del) {
-      pendingDeleteId = del.dataset.del;
-      deleteModal.classList.add('is-open');
-    }
-  });
-  $('lsDelCancel').addEventListener('click', () => { pendingDeleteId = null; deleteModal.classList.remove('is-open'); });
-  $('lsDelOk').addEventListener('click', async () => {
-    if (!pendingDeleteId) return;
-    try {
-      await db.collection('losses_' + ownerID).doc(pendingDeleteId).delete();
-      toast('Rekod dipadam');
-    } catch (e) { toast('Ralat: ' + e.message, true); }
-    pendingDeleteId = null;
-    deleteModal.classList.remove('is-open');
-  });
-  deleteModal.addEventListener('click', e => { if (e.target === deleteModal) deleteModal.classList.remove('is-open'); });
-
-  function openForm(existing) {
-    editing = existing;
-    $('lsFormTitle').textContent = existing ? 'KEMASKINI KERUGIAN' : 'REKOD KERUGIAN';
-    $('lsSubmitLbl').textContent = existing ? 'KEMASKINI' : 'SIMPAN';
-    $('lsJenis').value = existing ? (existing.jenis || JENIS[0]) : JENIS[0];
-    $('lsSiri').value = existing ? (existing.siri || '') : '';
-    $('lsJumlah').value = existing ? Number(existing.jumlah || 0).toFixed(2) : '';
-    $('lsKeterangan').value = existing ? (existing.keterangan || '') : '';
-    formModal.classList.add('is-open');
-  }
-
-  async function submitForm() {
-    const jumlah = parseFloat($('lsJumlah').value);
-    const keterangan = $('lsKeterangan').value.trim();
-    if (!keterangan || isNaN(jumlah)) return toast('Sila isi jumlah dan keterangan', true);
-    const data = {
-      shopID,
-      jenis: $('lsJenis').value,
-      siri: $('lsSiri').value.trim().toUpperCase(),
-      jumlah,
-      keterangan,
-      timestamp: Date.now(),
+  $('lsSubmit').addEventListener('click', async () => {
+    const jenis = $('lsJenis').value;
+    const amount = Number($('lsJumlah').value);
+    const reason = $('lsKeterangan').value.trim();
+    if (!amount) { toast('Jumlah wajib'); return; }
+    const payload = {
+      item_type: jenis,
+      item_name: jenis,
+      quantity: 1,
+      estimated_value: amount,
+      reason,
+      siri: $('lsSiri').value.trim() || null,
+      status: 'REPORTED',
     };
-    try {
-      if (editing && editing.key) {
-        await db.collection('losses_' + ownerID).doc(editing.key).update(data);
-        toast('Rekod dikemaskini');
-      } else {
-        await db.collection('losses_' + ownerID).add(data);
-        toast('Kerugian direkodkan');
-      }
-      formModal.classList.remove('is-open');
-    } catch (e) { toast('Ralat: ' + e.message, true); }
-  }
+    if (editingId) {
+      const { error } = await window.sb.from('losses').update(payload).eq('id', editingId);
+      if (error) { toast('Gagal: ' + error.message); return; }
+      toast('Dikemaskini');
+    } else {
+      payload.tenant_id = tenantId; payload.branch_id = branchId;
+      payload.reported_by = ctx.nama || ctx.email;
+      const { error } = await window.sb.from('losses').insert(payload);
+      if (error) { toast('Gagal: ' + error.message); return; }
+      toast('Direkod');
+    }
+    $('lsFormModal').classList.remove('is-open');
+    ALL = await fetchAll(); refresh();
+  });
 
-  function fmtDateTime(ts) {
-    if (typeof ts !== 'number') return '-';
-    const d = new Date(ts);
-    const p = n => String(n).padStart(2, '0');
-    return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(-2)} ${p(d.getHours())}:${p(d.getMinutes())}`;
-  }
-  function toast(msg, isErr) {
-    const t = $('lsToast');
-    t.textContent = msg;
-    t.style.background = isErr ? '#DC2626' : '#0F172A';
-    t.hidden = false;
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => t.hidden = true, 2200);
-  }
-  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  function escapeAttr(s) { return escapeHtml(s); }
+  // Long-press / right-click delete (simple: add delete btn via double-click)
+  $('lsList').addEventListener('dblclick', (e) => {
+    const item = e.target.closest('.lost-item');
+    if (!item) return;
+    delTargetId = item.dataset.id;
+    $('lsDeleteModal').classList.add('is-open');
+  });
+  $('lsDelCancel').addEventListener('click', () => $('lsDeleteModal').classList.remove('is-open'));
+  $('lsDelOk').addEventListener('click', async () => {
+    if (!delTargetId) return;
+    const { error } = await window.sb.from('losses').delete().eq('id', delTargetId);
+    if (error) { toast('Gagal: ' + error.message); return; }
+    toast('Dipadam'); $('lsDeleteModal').classList.remove('is-open');
+    ALL = await fetchAll(); refresh();
+  });
 
-  renderChips();
-  render();
+  $('lsSearch').addEventListener('input', (e) => { searchQ = e.target.value; refresh(); });
+  $('lsSort').addEventListener('change', (e) => { sort = e.target.value; refresh(); });
+
+  window.sb.channel('losses-' + branchId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'losses', filter: `branch_id=eq.${branchId}` }, async () => { ALL = await fetchAll(); refresh(); })
+    .subscribe();
+
+  ALL = await fetchAll();
+  refresh();
 })();

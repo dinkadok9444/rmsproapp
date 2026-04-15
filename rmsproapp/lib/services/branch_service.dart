@@ -1,38 +1,36 @@
 import 'dart:developer' as dev;
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/marketplace_models.dart';
+import '../models/branch_pdf_settings.dart';
+import 'supabase_client.dart';
 
 class BranchService {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
-
   String? _ownerID;
   String? _shopID;
+  String? _tenantId;
+  String? _branchId;
   Map<String, dynamic> _branchSettings = {};
   BranchPdfSettings? _pdfSettings;
 
   String? get ownerID => _ownerID;
   String? get shopID => _shopID;
+  String? get tenantId => _tenantId;
+  String? get branchId => _branchId;
   Map<String, dynamic> get branchSettings => _branchSettings;
   BranchPdfSettings? get pdfSettings => _pdfSettings;
 
   String get shopName =>
-      _branchSettings['shopName'] ?? _branchSettings['namaKedai'] ?? 'RMS PRO';
-  String get address =>
-      _branchSettings['address'] ?? _branchSettings['alamat'] ?? '-';
-  String get phone =>
-      _branchSettings['phone'] ?? _branchSettings['ownerContact'] ?? '-';
-  String get email =>
-      _branchSettings['email'] ?? _branchSettings['emel'] ?? '-';
-  String? get logoBase64 => _branchSettings['logoBase64'];
+      (_branchSettings['nama_kedai'] ?? _branchSettings['shopName'] ?? 'RMS PRO').toString();
+  String get address => (_branchSettings['alamat'] ?? '-').toString();
+  String get phone => (_branchSettings['phone'] ?? '-').toString();
+  String get email => (_branchSettings['email'] ?? '-').toString();
+  String? get logoBase64 => _branchSettings['logo_base64'] as String?;
 
   bool isModuleEnabled(String id) {
-    final raw = _branchSettings['enabledModules'];
+    final raw = _branchSettings['enabled_modules'];
     if (raw is! Map || raw.isEmpty) return true;
     return raw[id] != false;
   }
 
-  // Get effective PDF URL untuk branch ini
   String get pdfCloudRunUrl {
     if (_pdfSettings != null &&
         _pdfSettings!.useCustomPdfUrl &&
@@ -46,108 +44,96 @@ class BranchService {
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
     final currentBranch = prefs.getString('rms_current_branch');
-    if (currentBranch == null) {
-      dev.log('[BranchService] rms_current_branch is NULL — skip initialize');
+    if (currentBranch == null || !currentBranch.contains('@')) {
+      dev.log('[BranchService] rms_current_branch missing — skip initialize');
       return;
     }
 
-    dev.log('[BranchService] Initializing for branch: $currentBranch');
-
+    final parts = currentBranch.split('@');
+    _ownerID = parts[0];
+    _shopID = parts[1];
     _branchSettings = {};
     _pdfSettings = null;
 
-    final parts = currentBranch.split('@');
-    _ownerID = parts[0];
-    _shopID = parts.length > 1 ? parts[1] : '';
+    final sb = SupabaseService.client;
 
-    // 1. Baca dari saas_dealers (data owner)
+    // Resolve tenant + branch via joined query
     try {
-      final dealerSnap = await _db
-          .collection('saas_dealers')
-          .doc(_ownerID)
-          .get();
-      if (dealerSnap.exists) _branchSettings.addAll(dealerSnap.data() ?? {});
-    } catch (e) {
-      dev.log('[BranchService] Gagal baca saas_dealers: $e');
-    }
+      final row = await sb
+          .from('branches')
+          .select(
+              'id, tenant_id, nama_kedai, alamat, phone, email, logo_base64, enabled_modules, single_staff_mode, expire_date, pdf_cloud_run_url, use_custom_pdf_url, tenants!inner(owner_id, nama_kedai, addon_gallery, gallery_expire, single_staff_mode, config, status)')
+          .eq('shop_code', _shopID!)
+          .eq('tenants.owner_id', _ownerID!)
+          .maybeSingle();
 
-    // 2. Baca dari shops_{ownerID}/{shopID} (data kedai)
-    try {
-      final shopSnap = await _db
-          .collection('shops_$_ownerID')
-          .doc(_shopID)
-          .get();
-      if (shopSnap.exists) _branchSettings.addAll(shopSnap.data() ?? {});
-    } catch (e) {
-      dev.log('[BranchService] Gagal baca shops_$_ownerID: $e');
-    }
+      if (row != null) {
+        _branchId = row['id'] as String;
+        _tenantId = row['tenant_id'] as String;
 
-    // 3. Baca dari global_branches (jika ada data tambahan)
-    try {
-      final branchSnap = await _db
-          .collection('global_branches')
-          .doc(currentBranch)
-          .get();
-      if (branchSnap.exists) _branchSettings.addAll(branchSnap.data() ?? {});
-    } catch (e) {
-      dev.log('[BranchService] Gagal baca global_branches: $e');
-    }
+        // Merge tenant fields first (lower priority)
+        final tenant = row['tenants'] as Map?;
+        if (tenant != null) _branchSettings.addAll(Map<String, dynamic>.from(tenant));
 
-    // 4. Load PDF settings dari branch_pdf_settings
-    try {
-      final pdfSnap = await _db
-          .collection('branch_pdf_settings')
-          .doc(currentBranch)
-          .get();
-      if (pdfSnap.exists) {
-        _pdfSettings = BranchPdfSettings.fromMap(pdfSnap.data() ?? {});
+        // Branch overrides
+        final branchFields = Map<String, dynamic>.from(row)..remove('tenants');
+        _branchSettings.addAll(branchFields);
+
+        // PDF settings
+        _pdfSettings = BranchPdfSettings.fromMap({
+          'branch_id': currentBranch,
+          'pdf_cloud_run_url': row['pdf_cloud_run_url'],
+          'use_custom_pdf_url': row['use_custom_pdf_url'],
+        });
+
+        // Cache branch UUID in prefs untuk service lain (job_counters etc.)
+        await prefs.setString('rms_branch_id', _branchId!);
+        await prefs.setString('rms_tenant_id', _tenantId!);
       }
     } catch (e) {
-      dev.log('[BranchService] Gagal baca branch_pdf_settings: $e');
+      dev.log('[BranchService] initialize error: $e');
     }
 
     dev.log('[BranchService] PDF URL: $pdfCloudRunUrl');
   }
 
-  // Simpan tetapan PDF untuk branch ini
   Future<void> savePdfSettings({
     required String pdfCloudRunUrl,
     required bool useCustomPdfUrl,
     String? updatedBy,
   }) async {
-    final currentBranch = '$_ownerID@$_shopID';
-    if (currentBranch.isEmpty) return;
-
-    final settings = BranchPdfSettings(
-      branchId: currentBranch,
-      pdfCloudRunUrl: pdfCloudRunUrl,
-      useCustomPdfUrl: useCustomPdfUrl,
-      updatedBy: updatedBy,
-    );
-
+    if (_branchId == null) throw Exception('Branch belum initialized');
+    final sb = SupabaseService.client;
     try {
-      await _db
-          .collection('branch_pdf_settings')
-          .doc(currentBranch)
-          .set(settings.toMap());
-      _pdfSettings = settings;
+      await sb.from('branches').update({
+        'pdf_cloud_run_url': pdfCloudRunUrl,
+        'use_custom_pdf_url': useCustomPdfUrl,
+      }).eq('id', _branchId!);
+      _pdfSettings = BranchPdfSettings(
+        branchId: '$_ownerID@$_shopID',
+        pdfCloudRunUrl: pdfCloudRunUrl,
+        useCustomPdfUrl: useCustomPdfUrl,
+        updatedBy: updatedBy,
+      );
     } catch (e) {
       throw Exception('Gagal menyimpan tetapan PDF: $e');
     }
   }
 
-  // Dapatkan tetapan PDF untuk branch ini
   Future<BranchPdfSettings?> getPdfSettings() async {
-    final currentBranch = '$_ownerID@$_shopID';
-    if (currentBranch.isEmpty) return null;
-
+    if (_branchId == null) return null;
+    final sb = SupabaseService.client;
     try {
-      final snap = await _db
-          .collection('branch_pdf_settings')
-          .doc(currentBranch)
-          .get();
-      if (snap.exists) {
-        return BranchPdfSettings.fromMap(snap.data() ?? {});
+      final row = await sb
+          .from('branches')
+          .select('pdf_cloud_run_url, use_custom_pdf_url')
+          .eq('id', _branchId!)
+          .maybeSingle();
+      if (row != null) {
+        return BranchPdfSettings.fromMap({
+          'branch_id': '$_ownerID@$_shopID',
+          ...Map<String, dynamic>.from(row),
+        });
       }
     } catch (_) {}
     return null;

@@ -2,15 +2,16 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../../services/supabase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../../theme/app_theme.dart';
 import '../../services/app_language.dart';
 import '../../services/printer_service.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -19,7 +20,10 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _tenantId;
+  String? _branchId;
   String _ownerID = 'admin', _shopID = 'MAIN';
   Map<String, dynamic> _settings = {};
   bool _isLoading = true;
@@ -82,12 +86,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _init() async {
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+
     final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0];
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
 
     // Load language
     await _lang.init();
@@ -102,20 +107,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _labelLang = prefs.getString('printer_label_lang') ?? 'escpos';
     _labelSizeSaved = prefs.getString('printer_label_width') != null;
 
-    // Load admin data (saas_dealers)
+    // Load tenant data
     Map<String, dynamic> adminData = {};
     try {
-      final adminSnap = await _db
-          .collection('saas_dealers')
-          .doc(_ownerID)
-          .get();
-      if (adminSnap.exists) adminData = adminSnap.data() ?? {};
+      if (_tenantId != null) {
+        final row = await _sb.from('tenants').select().eq('id', _tenantId!).maybeSingle();
+        if (row != null) {
+          final config = (row['config'] is Map) ? Map<String, dynamic>.from(row['config']) : <String, dynamic>{};
+          adminData = {
+            ...config,
+            'namaKedai': row['nama_kedai'] ?? '',
+            'ownerName': config['ownerName'] ?? row['nama_kedai'] ?? '',
+            'email': config['email'] ?? '',
+            'pass': row['password_hash'] ?? '',
+          };
+        }
+      }
     } catch (_) {}
 
-    // Load shop data and merge
-    final snap = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-    if (snap.exists && mounted) {
-      final d = {...adminData, ...(snap.data() ?? {})};
+    // Load branch row + extras
+    Map<String, dynamic>? branchRow;
+    if (_branchId != null) {
+      try {
+        branchRow = await _sb.from('branches').select().eq('id', _branchId!).maybeSingle();
+      } catch (_) {}
+    }
+    if (branchRow != null && mounted) {
+      final extras = (branchRow['extras'] is Map) ? Map<String, dynamic>.from(branchRow['extras']) : <String, dynamic>{};
+      final d = {
+        ...adminData,
+        ...extras,
+        'phone': branchRow['phone'] ?? extras['phone'] ?? '',
+        'email': branchRow['email'] ?? extras['email'] ?? adminData['email'] ?? '',
+        'logoBase64': branchRow['logo_base64'] ?? extras['logoBase64'],
+        'singleStaffMode': branchRow['single_staff_mode'] == true,
+      };
       setState(() {
         _settings = d;
         _singleStaffMode = d['singleStaffMode'] == true;
@@ -147,13 +173,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _bookingBankAccCtrl.text = d['bookingBankAccount'] ?? '';
         _isLoading = false;
       });
-    } else {
-      if (mounted)
-        setState(() {
-          _settings = adminData;
-          _isLoading = false;
-        });
+    } else if (mounted) {
+      setState(() {
+        _settings = adminData;
+        _isLoading = false;
+      });
     }
+  }
+
+  // Merge-update helper: read branches.extras, merge fields, write back.
+  // Column-level fields (phone, email, logo_base64, single_staff_mode) passed separately.
+  Future<void> _saveBranchSettings({
+    Map<String, dynamic>? columns,
+    Map<String, dynamic>? extrasPatch,
+  }) async {
+    if (_branchId == null) return;
+    final row = await _sb.from('branches').select('extras').eq('id', _branchId!).maybeSingle();
+    final extras = (row?['extras'] is Map) ? Map<String, dynamic>.from(row!['extras']) : <String, dynamic>{};
+    if (extrasPatch != null) extras.addAll(extrasPatch);
+    final patch = <String, dynamic>{'extras': extras};
+    if (columns != null) patch.addAll(columns);
+    await _sb.from('branches').update(patch).eq('id', _branchId!);
   }
 
   void _snack(String msg, {bool err = false}) {
@@ -171,20 +211,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // SAVE SETTINGS
   // ═══════════════════════════════════════
   Future<void> _saveSettings() async {
-    await _db.collection('shops_$_ownerID').doc(_shopID).set({
-      'phone': _phoneCtrl.text.trim(),
+    final extrasPatch = <String, dynamic>{
       'staffBoxCount': _staffBoxCount,
       'templatePdf': _selectedTemplate,
       'notaInvoice': _notaInvCtrl.text,
       'notaQuotation': _notaQuoCtrl.text,
       'notaClaim': _notaClaimCtrl.text,
       'notaBooking': _notaBookingCtrl.text,
-      if (_logoBase64 != null) 'logoBase64': _logoBase64,
-      if (_selectedHeaderColor.isNotEmpty) 'themeColor': _selectedHeaderColor,
       'bookingQrImageUrl': _bookingQrImageUrl,
       'bookingBankAccName': _bookingBankNameCtrl.text.trim(),
       'bookingBankAccount': _bookingBankAccCtrl.text.trim(),
-    }, SetOptions(merge: true));
+    };
+    if (_selectedHeaderColor.isNotEmpty) extrasPatch['themeColor'] = _selectedHeaderColor;
+    final columns = <String, dynamic>{
+      'phone': _phoneCtrl.text.trim(),
+      if (_logoBase64 != null) 'logo_base64': _logoBase64,
+    };
+    await _saveBranchSettings(columns: columns, extrasPatch: extrasPatch);
     _snack(_lang.get('settings_tetapan_disimpan'));
   }
 
@@ -228,11 +271,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     // Check if phone already used by another branch
     try {
-      final existing = await _db.collection('global_staff').doc(tel).get();
-      if (existing.exists) {
-        final data = existing.data()!;
-        final existOwner = (data['ownerID'] ?? '').toString();
-        final existShop = (data['shopID'] ?? '').toString();
+      final existing = await _sb.from('global_staff').select().eq('tel', tel).maybeSingle();
+      if (existing != null) {
+        final existOwner = (existing['owner_id'] ?? '').toString();
+        final existShop = (existing['shop_id'] ?? '').toString();
         if (existOwner.isNotEmpty &&
             existShop.isNotEmpty &&
             (existOwner != _ownerID || existShop != _shopID)) {
@@ -252,23 +294,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (oldTel.isNotEmpty && oldTel != tel) {
       try {
-        await _db.collection('global_staff').doc(oldTel).delete();
+        await _sb.from('global_staff').delete().eq('tel', oldTel);
       } catch (_) {}
     }
 
-    await _db.collection('shops_$_ownerID').doc(_shopID).set({
-      'svPass': pass,
-      'svTel': tel,
-    }, SetOptions(merge: true));
-    await _db.collection('global_staff').doc(tel).set({
-      'name': 'ADMIN',
-      'phone': tel,
-      'pin': pass,
-      'status': 'active',
+    await _saveBranchSettings(extrasPatch: {'svPass': pass, 'svTel': tel});
+    await _sb.from('global_staff').upsert({
+      'tel': tel,
+      'tenant_id': _tenantId,
+      'branch_id': _branchId,
+      'owner_id': _ownerID,
+      'shop_id': _shopID,
+      'nama': 'ADMIN',
       'role': 'supervisor',
-      'ownerID': _ownerID,
-      'shopID': _shopID,
-    }, SetOptions(merge: true));
+      'payload': {'pin': pass, 'status': 'active'},
+    });
     setState(() {
       _adminPassLocked = true;
       _settings['svPass'] = pass;
@@ -306,38 +346,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
     String newPass, {
     required bool sendEmail,
   }) async {
-    final dealerRef = _db.collection('saas_dealers').doc(_ownerID);
-    final doc = await dealerRef.get();
-    if (!doc.exists) {
+    if (_tenantId == null) {
+      if (mounted) _snack('Tenant belum resolved', err: true);
+      return;
+    }
+    final row = await _sb.from('tenants').select().eq('id', _tenantId!).maybeSingle();
+    if (row == null) {
       if (mounted) _snack('System ID tidak dijumpai', err: true);
       return;
     }
 
-    await dealerRef.update({'pass': newPass, 'password': newPass});
+    await _sb.from('tenants').update({'password_hash': newPass}).eq('id', _tenantId!);
 
     if (!sendEmail) {
       if (mounted) _snack('Password berjaya ditukar');
       return;
     }
 
-    final dealerData = doc.data()!;
-    final dealerEmail = ((dealerData['email'] ??
-                dealerData['emel'] ??
-                dealerData['ownerEmail'] ??
+    final config = (row['config'] is Map) ? Map<String, dynamic>.from(row['config']) : <String, dynamic>{};
+    final dealerEmail = ((config['email'] ??
+                config['emel'] ??
+                config['ownerEmail'] ??
                 '')
             .toString())
         .trim();
-    final dealerName = (dealerData['ownerName'] ??
-            dealerData['namaKedai'] ??
+    final dealerName = (config['ownerName'] ??
+            row['nama_kedai'] ??
             _ownerID)
         .toString();
 
     if (dealerEmail.isNotEmpty && dealerEmail.contains('@')) {
-      await _db.collection('mail').add({
-        'to': dealerEmail,
-        'message': {
-          'subject': 'RMS Pro - Password Baru Anda',
-          'html': '''
+      await _sb.from('mail_queue').insert({
+        'recipient': dealerEmail,
+        'subject': 'RMS Pro - Password Baru Anda',
+        'html': '''
 <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px;">
   <h2 style="color:#00C853;text-align:center;">RMS PRO</h2>
   <hr/>
@@ -355,7 +397,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   <p style="font-size:11px;color:#bbb;text-align:center;">&copy; RMS Pro - Repair Management System</p>
 </div>
 ''',
-        },
       });
     }
 
@@ -375,15 +416,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
         .toString()
         .replaceAll(RegExp(r'[\s\-()]'), '');
 
-    await _db.collection('shops_$_ownerID').doc(_shopID).set({
-      'svPass': newPass,
-    }, SetOptions(merge: true));
+    await _saveBranchSettings(extrasPatch: {'svPass': newPass});
 
     if (svTel.isNotEmpty) {
-      await _db
-          .collection('global_staff')
-          .doc(svTel)
-          .set({'pin': newPass}, SetOptions(merge: true));
+      try {
+        final existing = await _sb.from('global_staff').select('payload').eq('tel', svTel).maybeSingle();
+        final payload = (existing?['payload'] is Map) ? Map<String, dynamic>.from(existing!['payload']) : <String, dynamic>{};
+        payload['pin'] = newPass;
+        await _sb.from('global_staff').update({'payload': payload}).eq('tel', svTel);
+      } catch (_) {}
     }
 
     if (mounted) {
@@ -399,28 +440,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
-    final dealerSnap = await _db
-        .collection('saas_dealers')
-        .doc(_ownerID)
-        .get();
-    final dealerData = dealerSnap.data() ?? {};
-    final dealerEmail = ((dealerData['email'] ??
-                dealerData['emel'] ??
-                dealerData['ownerEmail'] ??
+    if (_tenantId == null) return;
+    final tRow = await _sb.from('tenants').select().eq('id', _tenantId!).maybeSingle();
+    final config = (tRow?['config'] is Map) ? Map<String, dynamic>.from(tRow!['config']) : <String, dynamic>{};
+    final dealerEmail = ((config['email'] ??
+                config['emel'] ??
+                config['ownerEmail'] ??
                 '')
             .toString())
         .trim();
-    final dealerName = (dealerData['ownerName'] ??
-            dealerData['namaKedai'] ??
+    final dealerName = (config['ownerName'] ??
+            tRow?['nama_kedai'] ??
             _ownerID)
         .toString();
 
     if (dealerEmail.isNotEmpty && dealerEmail.contains('@')) {
-      await _db.collection('mail').add({
-        'to': dealerEmail,
-        'message': {
-          'subject': 'RMS Pro - Password Admin Sementara',
-          'html': '''
+      await _sb.from('mail_queue').insert({
+        'recipient': dealerEmail,
+        'subject': 'RMS Pro - Password Admin Sementara',
+        'html': '''
 <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px;">
   <h2 style="color:#FFA000;text-align:center;">RMS PRO - ADMIN</h2>
   <hr/>
@@ -438,7 +476,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   <p style="font-size:11px;color:#bbb;text-align:center;">&copy; RMS Pro - Repair Management System</p>
 </div>
 ''',
-        },
       });
     }
 
@@ -780,20 +817,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               return;
                             }
                           } else {
-                            final dealerRef = _db
-                                .collection('saas_dealers')
-                                .doc(_ownerID);
-                            final doc = await dealerRef.get();
-                            if (!doc.exists) {
+                            if (_tenantId == null) {
+                              setD(() {
+                                isLoading = false;
+                                error = 'Tenant belum resolved';
+                              });
+                              return;
+                            }
+                            final tRow = await _sb
+                                .from('tenants')
+                                .select('password_hash, config')
+                                .eq('id', _tenantId!)
+                                .maybeSingle();
+                            if (tRow == null) {
                               setD(() {
                                 isLoading = false;
                                 error = 'System ID tidak dijumpai';
                               });
                               return;
                             }
-                            final data = doc.data()!;
-                            currentPass = (data['pass'] ??
-                                    data['password'] ??
+                            final cfg = (tRow['config'] is Map) ? Map<String, dynamic>.from(tRow['config']) : <String, dynamic>{};
+                            currentPass = (tRow['password_hash'] ??
+                                    cfg['password'] ??
                                     '')
                                 .toString();
                           }
@@ -1004,14 +1049,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadTemplateImages() async {
     try {
-      final snap = await _db.collection('config').doc('pdf_templates').get();
-      if (snap.exists) {
-        final data = snap.data() ?? {};
+      final row = await _sb
+          .from('platform_config')
+          .select('value')
+          .eq('id', 'pdf_templates')
+          .maybeSingle();
+      if (row != null) {
+        final data = (row['value'] is Map) ? Map<String, dynamic>.from(row['value']) : <String, dynamic>{};
         _tplImages = {};
         for (int i = 0; i < 10; i++) {
           final key = 'tpl_${i + 1}';
-          if (data[key] != null && (data[key] as String).isNotEmpty) {
-            _tplImages[key] = data[key] as String;
+          final v = data[key];
+          if (v is String && v.isNotEmpty) {
+            _tplImages[key] = v;
           }
         }
       }
@@ -3332,9 +3382,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final picked = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 800, imageQuality: 80);
       if (picked == null) return;
       _snack('Uploading QR...');
-      final ref = FirebaseStorage.instance.ref().child('booking_settings/$_ownerID/$_shopID/qr_${DateTime.now().millisecondsSinceEpoch}.jpg');
-      await ref.putFile(File(picked.path));
-      final url = await ref.getDownloadURL();
+      final url = await SupabaseStorageHelper().uploadFile(
+        bucket: 'booking_settings',
+        path: '$_ownerID/$_shopID/qr_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        file: File(picked.path),
+      );
       setState(() => _bookingQrImageUrl = url);
       _saveSettings();
       _snack('QR berjaya dimuat naik');

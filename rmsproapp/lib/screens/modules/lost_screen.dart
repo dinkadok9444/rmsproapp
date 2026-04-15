@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
 import '../../services/app_language.dart';
+import '../../services/supabase_client.dart';
+import '../../services/repair_service.dart';
 
 class LostScreen extends StatefulWidget {
   const LostScreen({super.key});
@@ -15,9 +15,12 @@ class LostScreen extends StatefulWidget {
 
 class _LostScreenState extends State<LostScreen> {
   final _lang = AppLanguage();
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   final _searchCtrl = TextEditingController();
   String _ownerID = 'admin', _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
   String _sortOrder = 'ZA';
   String _filterJenis = 'SEMUA';
   List<Map<String, dynamic>> _losses = [];
@@ -31,16 +34,31 @@ class _LostScreenState extends State<LostScreen> {
   void dispose() { _sub?.cancel(); _searchCtrl.dispose(); super.dispose(); }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) { _ownerID = branch.split('@')[0]; _shopID = branch.split('@')[1].toUpperCase(); }
-    _sub = _db.collection('losses_$_ownerID').snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data(); d['key'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) list.add(d);
-      }
-      list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
+    await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+    if (_branchId == null) return;
+    _sub = _sb
+        .from('losses')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .order('created_at', ascending: false)
+        .listen((rows) {
+      final list = rows.map((r) {
+        final m = Map<String, dynamic>.from(r);
+        m['key'] = r['id'];
+        m['jenis'] = r['item_type'] ?? '';
+        m['jumlah'] = r['estimated_value'] ?? 0;
+        m['keterangan'] = r['reason'] ?? '';
+        // Extract siri from notes (format "siri:XXX")
+        final notes = (r['notes'] ?? '').toString();
+        m['siri'] = notes.startsWith('siri:') ? notes.substring(5) : '';
+        final c = r['created_at']?.toString();
+        m['timestamp'] = c == null ? 0 : (DateTime.tryParse(c)?.millisecondsSinceEpoch ?? 0);
+        return m;
+      }).toList();
       if (mounted) setState(() => _losses = list);
     });
   }
@@ -164,18 +182,20 @@ class _LostScreenState extends State<LostScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lang.get('ls_isi_jumlah')), backgroundColor: AppColors.red));
                     return;
                   }
+                  if (_tenantId == null) return;
+                  final siriText = siriCtrl.text.trim().toUpperCase();
                   final data = {
-                    'shopID': _shopID,
-                    'jenis': jenis,
-                    'siri': siriCtrl.text.trim().toUpperCase(),
-                    'jumlah': double.tryParse(jumlahCtrl.text) ?? 0,
-                    'keterangan': keteranganCtrl.text.trim(),
-                    'timestamp': DateTime.now().millisecondsSinceEpoch,
+                    'tenant_id': _tenantId,
+                    'branch_id': _branchId,
+                    'item_type': jenis,
+                    'estimated_value': double.tryParse(jumlahCtrl.text) ?? 0,
+                    'reason': keteranganCtrl.text.trim(),
+                    'notes': siriText.isEmpty ? null : 'siri:$siriText',
                   };
                   if (existing != null && existing['key'] != null) {
-                    await _db.collection('losses_$_ownerID').doc(existing['key']).update(data);
+                    await _sb.from('losses').update(data).eq('id', existing['key']);
                   } else {
-                    await _db.collection('losses_$_ownerID').add(data);
+                    await _sb.from('losses').insert(data);
                   }
                   if (ctx.mounted) Navigator.pop(ctx);
                   if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -209,7 +229,7 @@ class _LostScreenState extends State<LostScreen> {
       ],
     ));
     if (confirmed == true) {
-      await _db.collection('losses_$_ownerID').doc(docId).delete();
+      await _sb.from('losses').delete().eq('id', docId);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lang.get('ls_rekod_dipadam')), backgroundColor: AppColors.green));
     }
   }

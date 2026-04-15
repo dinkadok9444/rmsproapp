@@ -43,7 +43,8 @@
   border-radius: var(--radius, 10px);
 }
 .kw-seg-btn {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   border: 0;
   background: transparent;
   padding: 10px 12px;
@@ -58,6 +59,9 @@
   gap: 8px;
   align-items: center;
   justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .kw-seg-btn.is-active {
   background: var(--card-bg, #fff);
@@ -67,11 +71,13 @@
 
 .kw-stats {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-3);
 }
+.kw-stat { min-width: 0; }
+.kw-stat__val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (min-width: 720px) {
-  .kw-stats { grid-template-columns: repeat(4, 1fr); }
+  .kw-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 .kw-stat {
   background: var(--bg-subtle, #f8fafc);

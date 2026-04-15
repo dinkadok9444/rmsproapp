@@ -18,6 +18,33 @@
   color: var(--text-muted);
 }
 
+/* Prevent long module labels overflowing tiles */
+.module-tile { min-width: 0; }
+.module-tile__label {
+  width: 100%;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+/* Summary stats — prevent overflow of long RM values */
+.dashboard-main .jp-stat { min-width: 0; }
+.dashboard-main .jp-stat__val {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.dashboard-main .jp-stat__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Color modifiers for module tile icons */
 .bg-green   { background: var(--green); }
 .bg-blue    { background: var(--blue); }

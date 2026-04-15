@@ -5,19 +5,18 @@ import 'dart:math';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:dio/dio.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_theme.dart';
 import '../../services/app_language.dart';
 import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 
 const String _cloudRunUrl = 'https://rms-backend-94407896005.asia-southeast1.run.app';
 
@@ -29,9 +28,11 @@ class JualTelefonScreen extends StatefulWidget {
 
 class _JualTelefonScreenState extends State<JualTelefonScreen> {
   final _lang = AppLanguage();
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
   final _repairService = RepairService();
   String _ownerID = '', _shopID = '';
+  String? _tenantId;
+  String? _branchId;
   Map<String, dynamic> _branchSettings = {};
   List<Map<String, dynamic>> _sales = [];
   List<Map<String, dynamic>> _filteredSales = [];
@@ -75,50 +76,95 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
   }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0].toLowerCase(); // FIXED: toLowerCase() untuk sync dengan history
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
-    try {
-      final shopDoc = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-      if (shopDoc.exists) _branchSettings = shopDoc.data() ?? {};
-    } catch (_) {}
     await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+
+    if (_branchId != null) {
+      final row = await _sb
+          .from('branches')
+          .select('nama_kedai, alamat, phone, email, enabled_modules')
+          .eq('id', _branchId!)
+          .maybeSingle();
+      if (row != null) _branchSettings = Map<String, dynamic>.from(row);
+    }
+
     _staffList = await _repairService.getStaffList();
-    if (_ownerID.isNotEmpty) {
+    if (_tenantId != null) {
       _listenSales();
       _listenStock();
       _listenDealers();
     }
   }
 
+  Map<String, dynamic> _receiptRowToUi(Map row) {
+    final m = Map<String, dynamic>.from(row);
+    m['_id'] = row['id'];
+    m['siri'] = row['siri'];
+    m['saleType'] = row['sale_type'];
+    m['billStatus'] = row['bill_status'];
+    m['custName'] = row['cust_name'];
+    m['custPhone'] = row['cust_phone'];
+    m['custAddress'] = row['cust_address'];
+    m['phoneName'] = row['phone_name'];
+    m['items'] = row['items'];
+    m['buyPrice'] = row['buy_price'];
+    m['sellPrice'] = row['sell_price'];
+    m['paymentMethod'] = row['payment_method'];
+    m['paymentTerm'] = row['payment_term'];
+    m['warranty'] = row['warranty'];
+    m['staffName'] = row['staff_name'];
+    m['dealerId'] = row['dealer_id'];
+    m['dealerName'] = row['dealer_name'];
+    m['dealerKedai'] = row['dealer_kedai'];
+    m['dealerSSM'] = row['dealer_ssm'];
+    m['cawanganNama'] = row['cawangan_nama'];
+    m['cawanganAlamat'] = row['cawangan_alamat'];
+    m['invoiceUrl'] = row['invoice_url'];
+    final created = row['created_at']?.toString();
+    m['timestamp'] = created == null
+        ? 0
+        : (DateTime.tryParse(created)?.millisecondsSinceEpoch ?? 0);
+    final archAt = row['archived_at']?.toString();
+    m['archivedAt'] = archAt == null ? 0 : (DateTime.tryParse(archAt)?.millisecondsSinceEpoch ?? 0);
+    final delAt = row['deleted_at']?.toString();
+    m['deletedAt'] = delAt == null ? 0 : (DateTime.tryParse(delAt)?.millisecondsSinceEpoch ?? 0);
+    return m;
+  }
+
+  Map<String, dynamic> _dealerRowToUi(Map row) {
+    final m = Map<String, dynamic>.from(row);
+    m['_id'] = row['id'];
+    m['namaPemilik'] = row['nama_pemilik'];
+    m['namaKedai'] = row['nama_kedai'];
+    m['noSSM'] = row['no_ssm'];
+    m['cawangan'] = row['cawangan'] ?? [];
+    return m;
+  }
+
   void _listenDealers() {
-    _dealerSub = _db.collection('dealers_$_ownerID')
-        .where('shopID', isEqualTo: _shopID)
-        .snapshots()
-        .listen((snap) {
-      final list = snap.docs.map((d) {
-        final data = d.data();
-        data['_id'] = d.id;
-        return data;
-      }).toList();
+    if (_branchId == null) return;
+    _dealerSub = _sb
+        .from('dealers')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map(_dealerRowToUi).toList();
       if (mounted) setState(() => _savedDealers = list);
     });
   }
 
   void _listenSales() {
-    _sub = _db
-        .collection('phone_receipts_$_ownerID')
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .listen((snap) {
-      final all = snap.docs.map((d) {
-        final data = d.data();
-        data['_id'] = d.id;
-        return data;
-      }).where((d) => (d['shopID'] ?? '').toString().toUpperCase() == _shopID).toList();
+    if (_branchId == null) return;
+    _sub = _sb
+        .from('phone_receipts')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .order('created_at', ascending: false)
+        .listen((rows) {
+      final all = rows.map(_receiptRowToUi).toList();
 
       final active = <Map<String, dynamic>>[];
       final archived = <Map<String, dynamic>>[];
@@ -132,8 +178,7 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
           if (deletedAt > 0) {
             final deletedDate = DateTime.fromMillisecondsSinceEpoch(deletedAt.toInt());
             if (DateTime.now().difference(deletedDate).inDays >= 30) {
-              // Permanent delete
-              _db.collection('phone_receipts_$_ownerID').doc(d['_id']).delete();
+              _sb.from('phone_receipts').delete().eq('id', d['_id']).then((_) {}, onError: (_) {});
               continue;
             }
           }
@@ -280,62 +325,58 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
     final id = sale['_id'] as String?;
     if (id == null) return;
     try {
-      await _db.collection('phone_receipts_$_ownerID').doc(id).update({
-        'billStatus': 'ARCHIVED',
-        'archivedAt': DateTime.now().millisecondsSinceEpoch,
-      });
+      await _sb.from('phone_receipts').update({
+        'bill_status': 'ARCHIVED',
+        'archived_at': DateTime.now().toIso8601String(),
+      }).eq('id', id);
       _snack('Bill dibatalkan & diarkibkan');
     } catch (e) {
       _snack('Gagal cancel: $e', err: true);
     }
   }
 
-  // Restore from archive → active
   Future<void> _restoreFromArchive(Map<String, dynamic> sale) async {
     final id = sale['_id'] as String?;
     if (id == null) return;
     try {
-      await _db.collection('phone_receipts_$_ownerID').doc(id).update({
-        'billStatus': 'ACTIVE',
-        'archivedAt': FieldValue.delete(),
-      });
+      await _sb.from('phone_receipts').update({
+        'bill_status': 'ACTIVE',
+        'archived_at': null,
+      }).eq('id', id);
       _snack('Bill dipulihkan');
     } catch (e) {
       _snack('Gagal pulihkan: $e', err: true);
     }
   }
 
-  // Move from archive → deleted (soft delete)
   Future<void> _softDelete(Map<String, dynamic> sale) async {
     final id = sale['_id'] as String?;
     if (id == null) return;
     try {
-      await _db.collection('phone_receipts_$_ownerID').doc(id).update({
-        'billStatus': 'DELETED',
-        'deletedAt': DateTime.now().millisecondsSinceEpoch,
-      });
+      await _sb.from('phone_receipts').update({
+        'bill_status': 'DELETED',
+        'deleted_at': DateTime.now().toIso8601String(),
+      }).eq('id', id);
       _snack('Bill dipadam (boleh recover dalam 30 hari)');
     } catch (e) {
       _snack('Gagal padam: $e', err: true);
     }
   }
 
-  // Recover from deleted → archive
   Future<void> _recoverFromDeleted(Map<String, dynamic> sale) async {
     final id = sale['_id'] as String?;
     if (id == null) return;
     try {
-      await _db.collection('phone_receipts_$_ownerID').doc(id).update({
-        'billStatus': 'ARCHIVED',
-        'deletedAt': FieldValue.delete(),
-      });
+      await _sb.from('phone_receipts').update({
+        'bill_status': 'ARCHIVED',
+        'deleted_at': null,
+      }).eq('id', id);
       _snack('Bill dipulihkan ke arkib');
     } catch (e) {
       _snack('Gagal recover: $e', err: true);
     }
   }
 
-  // Permanent delete
   Future<void> _permanentDelete(Map<String, dynamic> sale) async {
     final id = sale['_id'] as String?;
     if (id == null) return;
@@ -352,7 +393,7 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
     );
     if (confirm != true) return;
     try {
-      await _db.collection('phone_receipts_$_ownerID').doc(id).delete();
+      await _sb.from('phone_receipts').delete().eq('id', id);
       _snack('Bill dipadam secara kekal');
     } catch (e) {
       _snack('Gagal padam kekal: $e', err: true);
@@ -368,16 +409,24 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
   }
 
   void _listenStock() {
-    _db.collection('phone_stock_$_ownerID').snapshots().listen((snap) {
-      final list = snap.docs.map((d) {
-        final data = d.data();
-        data['_id'] = d.id;
-        return data;
-      }).where((d) =>
-          (d['shopID'] ?? '').toString().toUpperCase() == _shopID &&
-          (d['status'] ?? '').toString().toUpperCase() != 'SOLD' &&
-          ((d['qty'] ?? 1) as num) > 0
-      ).toList();
+    if (_branchId == null) return;
+    _sb
+        .from('phone_stock')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows
+          .where((d) =>
+              (d['status'] ?? '').toString().toUpperCase() != 'SOLD' &&
+              ((d['qty'] as num?) ?? 0) > 0)
+          .map((d) {
+        final m = Map<String, dynamic>.from(d);
+        m['_id'] = d['id'];
+        m['nama'] = d['device_name'] ?? '';
+        m['jual'] = d['price'] ?? 0;
+        m['kos'] = d['cost'] ?? 0;
+        return m;
+      }).toList();
       if (mounted) setState(() => _phoneStock = list);
     });
   }
@@ -892,6 +941,9 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
                         final itemNames = <String>[];
 
                         try {
+                          if (_tenantId == null || _branchId == null) {
+                            throw Exception('Tenant/branch belum dimuatkan');
+                          }
                           for (final item in cartItems) {
                             final stockId = (item['_id'] ?? '').toString();
                             final nama = (item['nama'] ?? '-').toString();
@@ -904,92 +956,103 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
                             itemNames.add(nama);
 
                             if (stockId.isNotEmpty) {
-                              final collection = isAccessory ? 'inventory_$_ownerID' : 'phone_stock_$_ownerID';
                               if (isAccessory) {
                                 final currentQty = ((item['qty'] ?? 1) as num).toInt();
-                                if (currentQty <= 1) {
-                                  await _db.collection(collection).doc(stockId).update({'qty': 0});
-                                } else {
-                                  await _db.collection(collection).doc(stockId).update({'qty': currentQty - 1});
-                                }
+                                final newQty = currentQty <= 1 ? 0 : currentQty - 1;
+                                // Accessories dari stock_parts (sparepart) OR accessories (asesori)
+                                // Cuba stock_parts dulu; kalau tiada, accessories
+                                final hit = await _sb
+                                    .from('stock_parts')
+                                    .select('id')
+                                    .eq('id', stockId)
+                                    .maybeSingle();
+                                final table = hit != null ? 'stock_parts' : 'accessories';
+                                await _sb.from(table).update({'qty': newQty}).eq('id', stockId);
                               } else {
-                                await _db.collection(collection).doc(stockId).update({'status': 'SOLD', 'qty': 0, 'soldSiri': siri});
-                                
-                                final phoneSaleData = <String, dynamic>{
-                                  'kod': item['kod'] ?? '',
-                                  'nama': nama,
-                                  'imei': imei,
-                                  'warna': item['warna'] ?? '',
-                                  'storage': item['storage'] ?? '',
-                                  'kos': kos,
-                                  'jual': jual,
-                                  'imageUrl': item['imageUrl'] ?? '',
-                                  'tarikh_jual': DateFormat('yyyy-MM-dd').format(DateTime.now()),
-                                  'timestamp': now,
-                                  'shopID': _shopID,
-                                  'stockDocId': stockId,
-                                  'siri': siri,
-                                  'staffName': selectedStaff,
-                                  'saleType': _segment,
-                                  'custName': namaCtrl.text.trim().toUpperCase(),
-                                  'custPhone': telCtrl.text.trim(),
-                                };
-                                if (isDealer && selectedDealer != null) {
-                                  phoneSaleData['dealerName'] = selectedDealer!['namaPemilik'] ?? selectedDealer!['nama'] ?? '';
-                                  phoneSaleData['dealerKedai'] = selectedDealer!['namaKedai'] ?? '';
-                                }
-                                await _db.collection('phone_sales_$_ownerID').add(phoneSaleData);
+                                await _sb.from('phone_stock').update({
+                                  'status': 'SOLD',
+                                  'qty': 0,
+                                }).eq('id', stockId);
+
+                                await _sb.from('phone_sales').insert({
+                                  'tenant_id': _tenantId,
+                                  'branch_id': _branchId,
+                                  'phone_stock_id': stockId,
+                                  'device_name': nama,
+                                  'qty': 1,
+                                  'price_per_unit': jual,
+                                  'total_price': jual,
+                                  'customer_name': namaCtrl.text.trim().toUpperCase(),
+                                  'customer_phone': telCtrl.text.trim(),
+                                  'sold_by': selectedStaff,
+                                  'payment_method': paymentMethod,
+                                  'payment_status': 'PAID',
+                                  'notes': jsonEncode({
+                                    'imei': imei,
+                                    'kod': item['kod'] ?? '',
+                                    'warna': item['warna'] ?? '',
+                                    'storage': item['storage'] ?? '',
+                                    'kos': kos,
+                                    'siri': siri,
+                                    'saleType': _segment,
+                                    if (isDealer && selectedDealer != null) ...{
+                                      'dealerName': selectedDealer!['namaPemilik'] ?? selectedDealer!['nama'] ?? '',
+                                      'dealerKedai': selectedDealer!['namaKedai'] ?? '',
+                                    },
+                                  }),
+                                });
                               }
                             }
                           }
 
+                          final receiptItems = cartItems.map((c) => {
+                                'nama': c['nama'] ?? '',
+                                'kos': c['kos'] ?? 0,
+                                'jual': c['jual'] ?? 0,
+                                'imei': c['imei'] ?? '',
+                                'stockId': c['_id'] ?? '',
+                                'isAccessory': c['_isAccessory'] ?? false,
+                              }).toList();
+
                           final receiptData = <String, dynamic>{
+                            'tenant_id': _tenantId,
+                            'branch_id': _branchId,
                             'siri': siri,
-                            'custName': namaCtrl.text.trim().toUpperCase(),
-                            'custPhone': telCtrl.text.trim(),
-                            'custAddress': alamatCtrl.text.trim(),
-                            'phoneName': itemNames.join(', '),
-                            'items': cartItems.map((c) => {
-                              'nama': c['nama'] ?? '',
-                              'kos': c['kos'] ?? 0,
-                              'jual': c['jual'] ?? 0,
-                              'imei': c['imei'] ?? '',
-                              'stockId': c['_id'] ?? '',
-                              'isAccessory': c['_isAccessory'] ?? false,
-                            }).toList(),
-                            'buyPrice': totalBuy,
-                            'sellPrice': totalSell,
-                            'paymentMethod': paymentMethod,
-                            'shopID': _shopID,
-                            'status': 'SOLD',
-                            'staffName': selectedStaff,
-                            'timestamp': now,
-                            'saleType': _segment,
-                            'paymentTerm': paymentTerm == 'CUSTOM' ? '$customTermDays HARI' : paymentTerm,
+                            'sale_type': _segment,
+                            'bill_status': 'ACTIVE',
+                            'cust_name': namaCtrl.text.trim().toUpperCase(),
+                            'cust_phone': telCtrl.text.trim(),
+                            'cust_address': alamatCtrl.text.trim(),
+                            'phone_name': itemNames.join(', '),
+                            'items': receiptItems,
+                            'buy_price': totalBuy,
+                            'sell_price': totalSell,
+                            'payment_method': paymentMethod,
+                            'payment_term': paymentTerm == 'CUSTOM' ? '$customTermDays HARI' : paymentTerm,
                             'warranty': warranty == 'CUSTOM' ? '$customWarrantyMonths BULAN' : warranty,
+                            'staff_name': selectedStaff,
                           };
                           if (isDealer && selectedDealer != null) {
-                            receiptData['dealerId'] = selectedDealer!['_id'];
-                            receiptData['dealerName'] = selectedDealer!['namaPemilik'] ?? selectedDealer!['nama'] ?? '';
-                            receiptData['dealerKedai'] = selectedDealer!['namaKedai'] ?? '';
-                            receiptData['dealerSSM'] = selectedDealer!['noSSM'] ?? '';
+                            receiptData['dealer_id'] = selectedDealer!['_id'];
+                            receiptData['dealer_name'] = selectedDealer!['namaPemilik'] ?? selectedDealer!['nama'] ?? '';
+                            receiptData['dealer_kedai'] = selectedDealer!['namaKedai'] ?? '';
+                            receiptData['dealer_ssm'] = selectedDealer!['noSSM'] ?? '';
                             if (selectedCawangan != null) {
-                              receiptData['cawanganNama'] = selectedCawangan!['namaKedai'] ?? '';
-                              receiptData['cawanganAlamat'] = selectedCawangan!['alamatKedai'] ?? '';
+                              receiptData['cawangan_nama'] = selectedCawangan!['namaKedai'] ?? '';
+                              receiptData['cawangan_alamat'] = selectedCawangan!['alamatKedai'] ?? '';
                             }
                           }
-                          await _db.collection('phone_receipts_$_ownerID').add(receiptData);
+                          await _sb.from('phone_receipts').insert(receiptData);
 
-                          await _db.collection('jualan_pantas_$_ownerID').add({
-                            'siri': siri,
-                            'nama': 'JUALAN TELEFON',
-                            'model': itemNames.join(', '),
-                            'tel': telCtrl.text.trim(),
-                            'total': totalSell.toString(),
-                            'payment_status': 'PAID',
-                            'jenis_servis': 'JUALAN',
-                            'shopID': _shopID,
-                            'timestamp': now,
+                          // Income log — jualan_pantas → quick_sales kind='JUALAN TELEFON'
+                          await _sb.from('quick_sales').insert({
+                            'tenant_id': _tenantId,
+                            'branch_id': _branchId,
+                            'kind': 'JUALAN TELEFON',
+                            'amount': totalSell,
+                            'description': siri,
+                            'sold_by': selectedStaff,
+                            'payment_method': paymentMethod,
                           });
 
                           if (ctx.mounted) Navigator.pop(ctx);
@@ -1064,18 +1127,28 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
     List<Map<String, dynamic>> filtered = [];
     bool loading = true;
 
-    _db.collection('inventory_$_ownerID').get().then((snap) {
-      inventory = snap.docs.map((d) {
-        final data = d.data();
-        data['_id'] = d.id;
-        return data;
-      }).where((d) =>
-        (d['shopID'] ?? '').toString().toUpperCase() == _shopID &&
-        ((d['qty'] ?? 0) as num) > 0
-      ).toList();
-      filtered = List.from(inventory);
-      loading = false;
-    });
+    if (_tenantId != null) {
+      _sb
+          .from('stock_parts')
+          .select()
+          .eq('tenant_id', _tenantId!)
+          .gt('qty', 0)
+          .then((rows) {
+        inventory = (rows as List).map((r) {
+          final m = Map<String, dynamic>.from(r as Map);
+          m['_id'] = m['id'];
+          m['nama'] = m['part_name'] ?? '';
+          m['kod'] = m['sku'] ?? '';
+          m['jual'] = m['price'] ?? 0;
+          m['kos'] = m['cost'] ?? 0;
+          return m;
+        }).toList();
+        filtered = List.from(inventory);
+        loading = false;
+      }, onError: (_) {
+        loading = false;
+      });
+    }
 
     showModalBottomSheet(
       context: context,
@@ -1256,7 +1329,7 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
         final data = jsonDecode(response.body);
         final pdfUrl = (data['pdfUrl'] ?? data['url'] ?? '').toString();
         if (pdfUrl.isNotEmpty) {
-          await _db.collection('phone_receipts_$_ownerID').doc(sale['_id']).update({'invoiceUrl': pdfUrl});
+          await _sb.from('phone_receipts').update({'invoice_url': pdfUrl}).eq('id', sale['_id']);
           _snack('Invoice berjaya dijana!');
           _downloadAndOpenPDF(pdfUrl, siri.toString());
         } else {
@@ -1368,16 +1441,26 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
   }
 
   Future<void> _saveDealer(Map<String, dynamic> dealerData, StateSetter setS) async {
+    if (_tenantId == null || _branchId == null) return;
     final nama = (dealerData['namaPemilik'] ?? '').toString().trim();
+    final payload = {
+      'nama_pemilik': nama.toUpperCase(),
+      'nama_kedai': (dealerData['namaKedai'] ?? '').toString().toUpperCase(),
+      'no_ssm': dealerData['noSSM'] ?? '',
+      'phone': dealerData['telPemilik'] ?? dealerData['phone'] ?? '',
+      'alamat': dealerData['alamat'] ?? '',
+      'cawangan': dealerData['cawangan'] ?? [],
+    };
     final existing = _savedDealers.where((d) => (d['namaPemilik'] ?? '').toString().toUpperCase() == nama.toUpperCase()).toList();
     if (existing.isNotEmpty) {
-      await _db.collection('dealers_$_ownerID').doc(existing.first['_id']).update(dealerData);
+      await _sb.from('dealers').update(payload).eq('id', existing.first['_id']);
       _snack('Dealer dikemaskini');
     } else {
-      dealerData['shopID'] = _shopID;
-      dealerData['timestamp'] = DateTime.now().millisecondsSinceEpoch;
-      dealerData['cawangan'] = dealerData['cawangan'] ?? [];
-      await _db.collection('dealers_$_ownerID').add(dealerData);
+      await _sb.from('dealers').insert({
+        'tenant_id': _tenantId,
+        'branch_id': _branchId,
+        ...payload,
+      });
       _snack('Dealer disimpan');
     }
   }
@@ -1634,7 +1717,7 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
                               } else if (val == 'cawangan') {
                                 _showAddCawangan(d, setS);
                               } else if (val == 'delete') {
-                                await _db.collection('dealers_$_ownerID').doc(d['_id']).delete();
+                                await _sb.from('dealers').delete().eq('id', d['_id']);
                                 _snack('Dealer dipadam');
                                 if (ctx.mounted) setS(() {});
                               }
@@ -1667,7 +1750,7 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
                                 GestureDetector(
                                   onTap: () async {
                                     cawangan.removeAt(ci);
-                                    await _db.collection('dealers_$_ownerID').doc(d['_id']).update({'cawangan': cawangan});
+                                    await _sb.from('dealers').update({'cawangan': cawangan}).eq('id', d['_id']);
                                     _snack('Cawangan dipadam');
                                     if (ctx.mounted) setS(() {});
                                   },
@@ -2003,17 +2086,13 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
                   _snack('Sila isi nama pemilik', err: true);
                   return;
                 }
-                await _db.collection('dealers_$_ownerID').doc(dealer['_id']).update({
-                  'namaPemilik': namaPCtrl.text.trim().toUpperCase(),
-                  'telPemilik': telPCtrl.text.trim(),
-                  'namaKedai': namaKCtrl.text.trim().toUpperCase(),
-                  'alamatKedai': alamatKCtrl.text.trim(),
-                  'telKedai': telKCtrl.text.trim(),
-                  'noSSM': ssmCtrl.text.trim().toUpperCase(),
-                  'bayaran': editBayaran,
-                  'term': editTerm,
-                  'warranty': editWarranty,
-                });
+                await _sb.from('dealers').update({
+                  'nama_pemilik': namaPCtrl.text.trim().toUpperCase(),
+                  'phone': telPCtrl.text.trim(),
+                  'nama_kedai': namaKCtrl.text.trim().toUpperCase(),
+                  'alamat': alamatKCtrl.text.trim(),
+                  'no_ssm': ssmCtrl.text.trim().toUpperCase(),
+                }).eq('id', dealer['_id']);
                 _snack('Dealer dikemaskini');
                 if (dCtx.mounted) Navigator.pop(dCtx);
                 parentSetS(() {});
@@ -2070,7 +2149,7 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
                 'alamatKedai': alamatCtrl.text.trim(),
                 'telKedai': telCtrl.text.trim(),
               });
-              await _db.collection('dealers_$_ownerID').doc(dealer['_id']).update({'cawangan': cawangan});
+              await _sb.from('dealers').update({'cawangan': cawangan}).eq('id', dealer['_id']);
               _snack('Cawangan ditambah');
               if (dCtx.mounted) Navigator.pop(dCtx);
               parentSetS(() {});
@@ -2132,19 +2211,17 @@ class _JualTelefonScreenState extends State<JualTelefonScreen> {
                 final code = List.generate(6, (_) => chars[rand.nextInt(chars.length)]).join();
                 final kod = 'PH-$code';
 
-                await _db.collection('phone_stock_$_ownerID').add({
-                  'kod': kod,
-                  'nama': namaCtrl.text.trim().toUpperCase(),
-                  'imei': '',
-                  'warna': warnaCtrl.text.trim().toUpperCase(),
-                  'storage': storageCtrl.text.trim().toUpperCase(),
-                  'jual': 0,
-                  'nota': 'TRADE-IN',
-                  'tarikh_masuk': tarikhCtrl.text.trim(),
-                  'imageUrl': '',
+                if (_tenantId == null || _branchId == null) return;
+                await _sb.from('phone_stock').insert({
+                  'tenant_id': _tenantId,
+                  'branch_id': _branchId,
+                  'device_name': namaCtrl.text.trim().toUpperCase(),
+                  'qty': 1,
+                  'price': 0,
+                  'cost': 0,
+                  'condition': 'TRADE-IN',
                   'status': 'AVAILABLE',
-                  'timestamp': DateTime.now().millisecondsSinceEpoch,
-                  'shopID': _shopID,
+                  'added_by': 'trade-in: $kod ${warnaCtrl.text.trim().toUpperCase()} ${storageCtrl.text.trim().toUpperCase()} (${tarikhCtrl.text.trim()})',
                 });
 
                 if (ctx.mounted) Navigator.pop(ctx);

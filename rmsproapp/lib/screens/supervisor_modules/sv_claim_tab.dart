@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 class SvClaimTab extends StatefulWidget {
   final String ownerID, shopID;
   const SvClaimTab({required this.ownerID, required this.shopID});
@@ -12,7 +14,9 @@ class SvClaimTab extends StatefulWidget {
 }
 
 class SvClaimTabState extends State<SvClaimTab> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _branchId;
   final _searchCtrl = TextEditingController();
   String _filterStatus = 'ALL';
   List<Map<String, dynamic>> _claims = [];
@@ -21,7 +25,7 @@ class SvClaimTabState extends State<SvClaimTab> {
   @override
   void initState() {
     super.initState();
-    _listen();
+    _init();
   }
 
   @override
@@ -31,21 +35,63 @@ class SvClaimTabState extends State<SvClaimTab> {
     super.dispose();
   }
 
-  void _listen() {
-    _sub = _db
-        .collection('claims_${widget.ownerID}')
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .listen((snap) {
-          final list = <Map<String, dynamic>>[];
-          for (final doc in snap.docs) {
-            final d = doc.data();
-            d['key'] = doc.id;
-            if ((d['shopID'] ?? '').toString().toUpperCase() == widget.shopID)
-              list.add(d);
-          }
-          if (mounted) setState(() => _claims = list);
-        });
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
+    return 0;
+  }
+
+  Map<String, dynamic> _claimToUi(Map<String, dynamic> r) {
+    Map<String, dynamic> extra = {};
+    final c = r['catatan'];
+    if (c is String && c.isNotEmpty) {
+      try { extra = Map<String, dynamic>.from(jsonDecode(c) as Map); } catch (_) {}
+    }
+    return {
+      'key': r['id'],
+      'claimID': r['claim_code'] ?? '',
+      'siri': r['siri'] ?? '',
+      'nama': r['nama'] ?? extra['nama'] ?? '',
+      'claimStatus': r['claim_status'] ?? 'CLAIM WAITING APPROVAL',
+      'approvedBy': r['approved_by'] ?? extra['approvedBy'] ?? '',
+      'approvedAt': _tsFromIso(r['approved_at']) != 0 ? _tsFromIso(r['approved_at']) : (extra['approvedAt'] ?? 0),
+      'rejectedBy': extra['rejectedBy'] ?? '',
+      'rejectReason': r['reject_reason'] ?? extra['rejectReason'] ?? '',
+      'rejectedAt': extra['rejectedAt'] ?? 0,
+      'timestamp': _tsFromIso(r['created_at']),
+      ...extra,
+    };
+  }
+
+  Future<void> _init() async {
+    await _repairService.init();
+    _branchId = _repairService.branchId;
+    if (_branchId == null) return;
+    _sub = _sb
+        .from('claims')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map<Map<String, dynamic>>(_claimToUi).toList();
+      list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
+      if (mounted) setState(() => _claims = list);
+    });
+  }
+
+  Future<void> _mergeCatatan(String docId, Map<String, dynamic> newFields) async {
+    try {
+      final existing = await _sb.from('claims').select('catatan').eq('id', docId).maybeSingle();
+      Map<String, dynamic> extra = {};
+      final c = existing?['catatan'];
+      if (c is String && c.isNotEmpty) {
+        try { extra = Map<String, dynamic>.from(jsonDecode(c) as Map); } catch (_) {}
+      }
+      extra.addAll(newFields);
+      await _sb.from('claims').update({'catatan': jsonEncode(extra)}).eq('id', docId);
+    } catch (_) {}
   }
 
   List<Map<String, dynamic>> get _filtered {
@@ -125,11 +171,12 @@ class SvClaimTabState extends State<SvClaimTab> {
       ),
     );
     if (confirmed == true) {
-      await _db.collection('claims_${widget.ownerID}').doc(docId).update({
-        'claimStatus': 'CLAIM APPROVE',
-        'approvedBy': 'SUPERVISOR',
-        'approvedAt': DateTime.now().millisecondsSinceEpoch,
-      });
+      await _sb.from('claims').update({
+        'claim_status': 'CLAIM APPROVE',
+        'approved_by': 'SUPERVISOR',
+        'approved_at': DateTime.now().toIso8601String(),
+      }).eq('id', docId);
+      await _mergeCatatan(docId, {'approvedBy': 'SUPERVISOR', 'approvedAt': DateTime.now().millisecondsSinceEpoch});
       _snack('Claim diluluskan');
     }
   }
@@ -204,8 +251,11 @@ class SvClaimTabState extends State<SvClaimTab> {
       ),
     );
     if (confirmed == true) {
-      await _db.collection('claims_${widget.ownerID}').doc(docId).update({
-        'claimStatus': 'CLAIM REJECTED',
+      await _sb.from('claims').update({
+        'claim_status': 'CLAIM REJECTED',
+        'reject_reason': reasonCtrl.text.trim(),
+      }).eq('id', docId);
+      await _mergeCatatan(docId, {
         'rejectedBy': 'SUPERVISOR',
         'rejectReason': reasonCtrl.text.trim(),
         'rejectedAt': DateTime.now().millisecondsSinceEpoch,

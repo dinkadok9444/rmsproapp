@@ -1,12 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_theme.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 class SvMarketingTab extends StatefulWidget {
   final String ownerID, shopID;
   const SvMarketingTab({required this.ownerID, required this.shopID});
@@ -16,7 +18,10 @@ class SvMarketingTab extends StatefulWidget {
 
 class SvMarketingTabState extends State<SvMarketingTab>
     with SingleTickerProviderStateMixin {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _tenantId;
+  String? _branchId;
   late TabController _tabCtrl;
 
   // Voucher list
@@ -38,6 +43,22 @@ class SvMarketingTabState extends State<SvMarketingTab>
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 3, vsync: this);
+    _init();
+  }
+
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
+    return 0;
+  }
+
+  Future<void> _init() async {
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
     _listen();
   }
 
@@ -52,58 +73,76 @@ class SvMarketingTabState extends State<SvMarketingTab>
   }
 
   void _listen() {
-    // Vouchers
-    _voucherSub = _db
-        .collection('shop_vouchers_${widget.ownerID}')
-        .snapshots()
-        .listen((snap) {
-          final list = <Map<String, dynamic>>[];
-          for (final doc in snap.docs) {
-            final d = doc.data();
-            d['id'] = doc.id;
-            if ((d['shopID'] ?? '').toString().toUpperCase() == widget.shopID)
-              list.add(d);
-          }
-          list.sort(
-            (a, b) => ((b['timestamp'] ?? 0) as num).compareTo(
-              (a['timestamp'] ?? 0) as num,
-            ),
-          );
-          if (mounted) setState(() => _vouchers = list);
-        });
-    // Referrals
-    _refSub = _db.collection('referrals_${widget.ownerID}').snapshots().listen((
-      snap,
-    ) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        d['id'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == widget.shopID)
-          list.add(d);
-      }
-      list.sort(
-        (a, b) => ((b['timestamp'] ?? 0) as num).compareTo(
-          (a['timestamp'] ?? 0) as num,
-        ),
-      );
+    if (_branchId == null) return;
+
+    // Vouchers → shop_vouchers table
+    _voucherSub = _sb
+        .from('shop_vouchers')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map<Map<String, dynamic>>((r) => {
+        'id': r['id'],
+        'code': r['voucher_code'] ?? '',
+        'value': r['value'] ?? 0,
+        'limit': r['max_uses'] ?? 0,
+        'claimed': r['used_amount'] ?? 0,
+        'status': r['status'] ?? 'ACTIVE',
+        'shopID': widget.shopID,
+        'custNama': r['customer_name'] ?? '',
+        'custTel': r['customer_phone'] ?? '',
+        'siriAsal': r['origin_siri'] ?? '',
+        'expiry': r['expiry'] ?? 'LIFETIME',
+        'timestamp': _tsFromIso(r['created_at']),
+      }).toList();
+      list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
+      if (mounted) setState(() => _vouchers = list);
+    });
+
+    // Referrals → referrals table (schema stash extras in created_by jsonb string)
+    _refSub = _sb
+        .from('referrals')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map<Map<String, dynamic>>((r) {
+        Map<String, dynamic> extra = {};
+        final cb = r['created_by'];
+        if (cb is String && cb.isNotEmpty) {
+          try { extra = Map<String, dynamic>.from(jsonDecode(cb) as Map); } catch (_) {}
+        }
+        return {
+          'id': r['id'],
+          'refCode': r['code'] ?? '',
+          'nama': extra['nama'] ?? '',
+          'tel': extra['tel'] ?? '',
+          'siriAsal': extra['siriAsal'] ?? '',
+          'shopID': widget.shopID,
+          'status': r['active'] == true ? 'ACTIVE' : 'INACTIVE',
+          'bank': extra['bank'] ?? '',
+          'accNo': extra['accNo'] ?? '',
+          'commission': extra['commission'] ?? 0,
+          'timestamp': _tsFromIso(r['created_at']),
+        };
+      }).toList();
+      list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
       if (mounted) setState(() => _referrals = list);
     });
-    // Build deduplicated customer list from repairs (like DB Cust)
-    _repairsSub = _db
-        .collection('repairs_${widget.ownerID}')
-        .snapshots()
-        .listen((snap) {
+
+    // Customer list from jobs
+    _repairsSub = _sb
+        .from('jobs')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
           final all = <Map<String, dynamic>>[];
-          for (final doc in snap.docs) {
-            final d = doc.data();
-            d['id'] = doc.id;
-            if ((d['shopID'] ?? '').toString().toUpperCase() == widget.shopID) {
-              final nama = (d['nama'] ?? '').toString().toUpperCase();
-              final jenis = (d['jenis_servis'] ?? '').toString().toUpperCase();
-              if (nama == 'JUALAN PANTAS' || jenis == 'JUALAN') continue;
-              all.add(d);
-            }
+          for (final r in rows) {
+            final d = Map<String, dynamic>.from(r);
+            d['timestamp'] = _tsFromIso(r['created_at']);
+            final nama = (d['nama'] ?? '').toString().toUpperCase();
+            final jenis = (d['jenis_servis'] ?? '').toString().toUpperCase();
+            if (nama == 'JUALAN PANTAS' || jenis == 'JUALAN') continue;
+            all.add(d);
           }
           // Sort newest first
           all.sort(
@@ -854,16 +893,15 @@ class SvMarketingTabState extends State<SvMarketingTab>
                       final code = codeCtrl.text.trim().toUpperCase().isNotEmpty
                           ? codeCtrl.text.trim().toUpperCase()
                           : 'V-${Random().nextInt(999999).toString().padLeft(6, '0')}';
-                      await _db
-                          .collection('shop_vouchers_${widget.ownerID}')
-                          .doc(code)
-                          .set({
-                            'code': code,
+                      if (_tenantId == null || _branchId == null) return;
+                      await _sb.from('shop_vouchers').insert({
+                            'tenant_id': _tenantId,
+                            'branch_id': _branchId,
+                            'voucher_code': code,
                             'value': val,
-                            'limit': limit,
-                            'claimed': 0,
+                            'max_uses': limit,
+                            'used_amount': 0,
                             'status': 'ACTIVE',
-                            'shopID': widget.shopID,
                             'expiry': expiryType == 'LIFETIME'
                                 ? 'LIFETIME'
                                 : DateFormat('yyyy-MM-dd').format(expiryDate!),
@@ -1362,23 +1400,21 @@ class SvMarketingTabState extends State<SvMarketingTab>
                       }
                       final code =
                           'V-${Random().nextInt(999999).toString().padLeft(6, '0')}';
-                      await _db
-                          .collection('shop_vouchers_${widget.ownerID}')
-                          .doc(code)
-                          .set({
-                            'code': code,
+                      if (_tenantId == null || _branchId == null) return;
+                      await _sb.from('shop_vouchers').insert({
+                            'tenant_id': _tenantId,
+                            'branch_id': _branchId,
+                            'voucher_code': code,
                             'value': val,
-                            'limit': limit,
-                            'claimed': 0,
+                            'max_uses': limit,
+                            'used_amount': 0,
                             'status': 'ACTIVE',
-                            'shopID': widget.shopID,
-                            'custNama': nama,
-                            'custTel': tel,
-                            'siriAsal': siri,
+                            'customer_name': nama,
+                            'customer_phone': tel,
+                            'origin_siri': siri,
                             'expiry': expiryType == 'LIFETIME'
                                 ? 'LIFETIME'
                                 : DateFormat('yyyy-MM-dd').format(expiryDate!),
-                            'timestamp': DateTime.now().millisecondsSinceEpoch,
                           });
                       if (ctx.mounted) Navigator.pop(ctx);
                       _snack('Voucher $code dijana untuk $nama');
@@ -1403,30 +1439,38 @@ class SvMarketingTabState extends State<SvMarketingTab>
     final tel = (cust['tel'] ?? '-').toString();
     final siri = (cust['siri'] ?? '-').toString();
 
-    // Check duplicate
-    final existing = await _db
-        .collection('referrals_${widget.ownerID}')
-        .where('tel', isEqualTo: tel)
-        .where('shopID', isEqualTo: widget.shopID)
-        .get();
-    if (existing.docs.isNotEmpty) {
-      final existCode = existing.docs.first.data()['refCode'] ?? '';
-      _snack('Pelanggan ini sudah ada kod referral: $existCode', err: true);
-      return;
+    if (_tenantId == null || _branchId == null) return;
+    // Check duplicate — baca semua referrals branch, parse extras, match tel
+    final existing = await _sb
+        .from('referrals')
+        .select()
+        .eq('branch_id', _branchId!);
+    for (final r in existing) {
+      final cb = r['created_by'];
+      Map<String, dynamic> extra = {};
+      if (cb is String && cb.isNotEmpty) {
+        try { extra = Map<String, dynamic>.from(jsonDecode(cb) as Map); } catch (_) {}
+      }
+      if (extra['tel'] == tel) {
+        final existCode = r['code'] ?? '';
+        _snack('Pelanggan ini sudah ada kod referral: $existCode', err: true);
+        return;
+      }
     }
     final refCode = 'REF-${Random().nextInt(900000) + 100000}';
-    await _db.collection('referrals_${widget.ownerID}').doc(refCode).set({
-      'refCode': refCode,
-      'nama': nama,
-      'tel': tel,
-      'siriAsal': siri,
-      'shopID': widget.shopID,
-      'ownerID': widget.ownerID,
-      'status': 'ACTIVE',
-      'bank': '',
-      'accNo': '',
-      'commission': 0,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    await _sb.from('referrals').insert({
+      'tenant_id': _tenantId,
+      'branch_id': _branchId,
+      'code': refCode,
+      'active': true,
+      'created_by': jsonEncode({
+        'nama': nama,
+        'tel': tel,
+        'siriAsal': siri,
+        'bank': '',
+        'accNo': '',
+        'commission': 0,
+      }),
     });
     _snack('Referral $refCode dijana untuk $nama');
   }
@@ -1503,10 +1547,7 @@ class SvMarketingTabState extends State<SvMarketingTab>
       ),
     );
     if (ok == true) {
-      await _db
-          .collection('shop_vouchers_${widget.ownerID}')
-          .doc(code)
-          .delete();
+      await _sb.from('shop_vouchers').delete().eq('voucher_code', code).eq('branch_id', _branchId!);
       _snack('Voucher $code dipadam');
     }
   }
@@ -1538,7 +1579,7 @@ class SvMarketingTabState extends State<SvMarketingTab>
       ),
     );
     if (ok == true) {
-      await _db.collection('referrals_${widget.ownerID}').doc(code).delete();
+      await _sb.from('referrals').delete().eq('code', code).eq('branch_id', _branchId!);
       _snack('Referral $code dipadam');
     }
   }

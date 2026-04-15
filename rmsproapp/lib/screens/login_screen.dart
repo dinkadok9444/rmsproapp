@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
 import 'branch_dashboard_screen.dart';
@@ -184,89 +183,18 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: isLoading ? null : () async {
-                    final systemId = _resetEmailController.text.trim().toLowerCase();
-                    if (systemId.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Sila masukkan System ID'), backgroundColor: AppColors.red),
-                      );
-                      return;
-                    }
-                    setDialogState(() => isLoading = true);
-                    try {
-                      final doc = await FirebaseFirestore.instance.collection('saas_dealers').doc(systemId).get();
-                      if (!doc.exists) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('System ID tidak dijumpai'), backgroundColor: AppColors.red),
-                          );
-                        }
-                        setDialogState(() => isLoading = false);
-                        return;
-                      }
-
-                      // Generate new password
-                      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-                      final rand = DateTime.now().millisecondsSinceEpoch;
-                      final newPass = List.generate(8, (i) => chars[(rand + i * 7) % chars.length]).join();
-
-                      // Update both 'pass' and 'password' fields
-                      await FirebaseFirestore.instance.collection('saas_dealers').doc(systemId).update({
-                        'pass': newPass,
-                        'password': newPass,
-                      });
-
-                      // Hantar email ke dealer
-                      final dealerData = doc.data()!;
-                      final dealerEmail = ((dealerData['email'] ?? dealerData['emel'] ?? dealerData['ownerEmail'] ?? '').toString()).trim();
-                      final dealerName = (dealerData['ownerName'] ?? dealerData['namaKedai'] ?? systemId).toString();
-                      if (dealerEmail.isNotEmpty && dealerEmail.contains('@')) {
-                        await FirebaseFirestore.instance.collection('mail').add({
-                          'to': dealerEmail,
-                          'message': {
-                            'subject': 'RMS Pro - Password Baru Anda',
-                            'html': '''
-<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;padding:20px;">
-  <h2 style="color:#00C853;text-align:center;">RMS PRO</h2>
-  <hr/>
-  <p>Salam <b>$dealerName</b>,</p>
-  <p>Password akaun anda telah ditetapkan semula. Berikut adalah maklumat log masuk baru anda:</p>
-  <div style="background:#f5f5f5;padding:16px;border-radius:8px;text-align:center;margin:16px 0;">
-    <p style="margin:4px 0;font-size:13px;color:#666;">System ID</p>
-    <p style="margin:4px 0;font-size:18px;font-weight:bold;">$systemId</p>
-    <br/>
-    <p style="margin:4px 0;font-size:13px;color:#666;">Password Baru</p>
-    <p style="margin:4px 0;font-size:24px;font-weight:bold;color:#00C853;letter-spacing:2px;">$newPass</p>
-  </div>
-  <p style="font-size:12px;color:#999;">Sila tukar password anda selepas log masuk di bahagian Settings.</p>
-  <hr/>
-  <p style="font-size:11px;color:#bbb;text-align:center;">© RMS Pro - Repair Management System</p>
-</div>
-''',
-                          },
-                        });
-                      }
-
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      if (!mounted) return;
-
-                      // Show confirmation
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(dealerEmail.isNotEmpty
-                              ? 'Password baru telah dihantar ke $dealerEmail'
-                              : 'Password berjaya ditukar. Sila hubungi admin untuk dapatkan password baru.'),
-                          backgroundColor: AppColors.green,
-                          duration: const Duration(seconds: 5),
-                        ),
-                      );
-                    } catch (e) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Ralat: $e'), backgroundColor: AppColors.red),
-                        );
-                      }
-                      setDialogState(() => isLoading = false);
-                    }
+                    // TODO(fasa-lepas): wire Supabase resetPasswordForEmail via RPC service_role
+                    // (admin API tak boleh dipanggil dari client). Untuk sementara,
+                    // dealer kena hubungi admin untuk reset password.
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Sila hubungi admin untuk reset password.'),
+                        backgroundColor: AppColors.primary,
+                        duration: Duration(seconds: 4),
+                      ),
+                    );
                   },
                   child: isLoading
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))

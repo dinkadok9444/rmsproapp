@@ -420,3 +420,23 @@
 
 /* utility */
 .hidden { display: none !important; }
+
+/* ── Hygiene / overflow fixes ── */
+.bk-header, .bk-list, .bk-card, .bk-modal, .bk-section, .bk-field, .bk-row, .bk-searchrow, .bk-search { box-sizing: border-box; }
+.bk-header *, .bk-modal *, .bk-card * { box-sizing: border-box; }
+.bk-search input { min-width: 0; }
+.bk-row > * { min-width: 0; }
+.bk-card__nama, .bk-card__item, .bk-card__tel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.bk-card__row > * { min-width: 0; }
+.bk-card__harga { white-space: nowrap; }
+.bk-pay-grid > * { min-width: 0; }
+.bk-print-item__title, .bk-print-item__desc { overflow: hidden; text-overflow: ellipsis; }
+.bk-modal__head { gap: 8px; }
+.bk-modal__head > *:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 520px) {
+  .bk-pay-grid { grid-template-columns: 1fr 1fr; }
+  .bk-row { flex-wrap: wrap; }
+  .bk-row > * { flex: 1 1 140px; }
+  .bk-header__top { align-items: flex-start; }
+}

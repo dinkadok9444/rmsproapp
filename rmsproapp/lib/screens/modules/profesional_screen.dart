@@ -4,8 +4,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../../services/supabase_client.dart';
+import '../../services/repair_service.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
@@ -28,12 +29,15 @@ class ProfesionalScreen extends StatefulWidget {
 }
 
 class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTickerProviderStateMixin {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   final _searchCtrl = TextEditingController();
   final _lang = AppLanguage();
   late TabController _tabCtrl;
 
   String _ownerID = 'admin', _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
   bool _proMode = false;
   int _proModeExpire = 0;
 
@@ -80,12 +84,11 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
   }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0].toLowerCase();
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
+    await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
     _watchProMode();
     _listenOnline();
     _listenOffline();
@@ -93,16 +96,33 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
     _loadBranchSettings();
   }
 
-  // ═══════════════════════════════════════
-  // PRO MODE WATCHER
-  // ═══════════════════════════════════════
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) return DateTime.tryParse(v)?.millisecondsSinceEpoch ?? 0;
+    return 0;
+  }
+
   void _watchProMode() {
-    _proSub = _db.collection('shops_$_ownerID').doc(_shopID).snapshots().listen((snap) {
-      if (!snap.exists || !mounted) return;
-      final d = snap.data() ?? {};
+    if (_branchId == null) return;
+    _proSub = _sb
+        .from('branches')
+        .stream(primaryKey: ['id'])
+        .eq('id', _branchId!)
+        .listen((rows) {
+      if (rows.isEmpty || !mounted) return;
+      final r = rows.first;
+      final em = r['enabled_modules'];
+      final cfg = em is Map ? em : {};
       setState(() {
-        _proMode = d['proMode'] == true;
-        _proModeExpire = d['proModeExpire'] is int ? d['proModeExpire'] : 0;
+        _proMode = cfg['proMode'] == true;
+        final exp = cfg['proModeExpire'];
+        if (exp is int) {
+          _proModeExpire = exp;
+        } else if (exp is String) {
+          _proModeExpire = DateTime.tryParse(exp)?.millisecondsSinceEpoch ?? 0;
+        } else {
+          _proModeExpire = 0;
+        }
       });
     });
   }
@@ -122,14 +142,22 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
   // ONLINE TASKS (collab_global_network where receiver == shopID)
   // ═══════════════════════════════════════
   void _listenOnline() {
-    _onlineSub = _db.collection('collab_global_network').snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        d['id'] = doc.id;
-        if ((d['receiver'] ?? '').toString().toUpperCase() == _shopID) list.add(d);
-      }
-      list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
+    _onlineSub = _sb
+        .from('collab_tasks')
+        .stream(primaryKey: ['id'])
+        .order('created_at', ascending: false)
+        .listen((rows) {
+      final list = rows.where((r) => (r['poster_shop_id'] ?? '').toString().toUpperCase() == _shopID).map((r) {
+        final m = Map<String, dynamic>.from(r);
+        m['id'] = r['id'];
+        m['namaCust'] = r['nama'] ?? '';
+        m['telCust'] = r['tel'] ?? '';
+        m['sender'] = r['poster_name'] ?? '';
+        final p = r['payload'];
+        if (p is Map) m.addAll(Map<String, dynamic>.from(p));
+        m['timestamp'] = _tsFromIso(r['created_at']);
+        return m;
+      }).toList();
       if (mounted) setState(() { _onlineTasks = list; _filterOnline(); _filterByArchive(); });
     }, onError: (e) {
       debugPrint('COLLAB LISTEN ERROR: $e');
@@ -149,14 +177,22 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
   // OFFLINE TASKS (pro_walkin_{ownerID} filtered by shopID)
   // ═══════════════════════════════════════
   void _listenOffline() {
-    _offlineSub = _db.collection('pro_walkin_$_ownerID')
-        .orderBy('timestamp', descending: true)
-        .snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data(); d['id'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) list.add(d);
-      }
+    if (_branchId == null) return;
+    _offlineSub = _sb
+        .from('pro_walkin')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .order('created_at', ascending: false)
+        .listen((rows) {
+      final list = rows.map((r) {
+        final m = Map<String, dynamic>.from(r);
+        m['id'] = r['id'];
+        m['namaCust'] = r['nama'] ?? '';
+        final p = r['payload'];
+        if (p is Map) m.addAll(Map<String, dynamic>.from(p));
+        m['timestamp'] = _tsFromIso(r['created_at']);
+        return m;
+      }).toList();
       if (mounted) setState(() { _offlineTasks = list; _filterOffline(); _filterByArchive(); });
     });
   }
@@ -186,7 +222,7 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
   // ARCHIVE / UNDO
   // ═══════════════════════════════════════
   Future<void> _archiveOnline(Map<String, dynamic> task) async {
-    await _db.collection('collab_global_network').doc(task['id']).update({'archived': true});
+    await _sb.from('collab_tasks').update({'archived': true}).eq('id', task['id']);
     if (!mounted) return;
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -197,14 +233,14 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
         label: 'UNDO',
         textColor: Colors.white,
         onPressed: () async {
-          await _db.collection('collab_global_network').doc(task['id']).update({'archived': false});
+          await _sb.from('collab_tasks').update({'archived': false}).eq('id', task['id']);
         },
       ),
     ));
   }
 
   Future<void> _archiveOffline(Map<String, dynamic> task) async {
-    await _db.collection('pro_walkin_$_ownerID').doc(task['id']).update({'archived': true});
+    await _sb.from('pro_walkin').update({'archived': true}).eq('id', task['id']);
     if (!mounted) return;
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -215,7 +251,7 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
         label: 'UNDO',
         textColor: Colors.white,
         onPressed: () async {
-          await _db.collection('pro_walkin_$_ownerID').doc(task['id']).update({'archived': false});
+          await _sb.from('pro_walkin').update({'archived': false}).eq('id', task['id']);
         },
       ),
     ));
@@ -225,30 +261,46 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
   // DEALER BOOK
   // ═══════════════════════════════════════
   void _listenDealers() {
-    _dealerSub = _db.collection('pro_dealers_$_ownerID')
-        .where('shopID', isEqualTo: _shopID)
-        .snapshots()
-        .listen((snap) {
-      final list = snap.docs.map((d) {
-        final data = d.data();
-        data['_id'] = d.id;
-        return data;
+    if (_branchId == null) return;
+    _dealerSub = _sb
+        .from('pro_dealers')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map((r) {
+        final m = Map<String, dynamic>.from(r);
+        m['_id'] = r['id'];
+        m['namaPemilik'] = r['nama_pemilik'] ?? '';
+        m['namaKedai'] = r['nama_kedai'] ?? '';
+        m['noSSM'] = r['no_ssm'] ?? '';
+        final p = r['payload'];
+        if (p is Map) m.addAll(Map<String, dynamic>.from(p));
+        return m;
       }).toList();
       if (mounted) setState(() => _savedDealers = list);
     });
   }
 
   Future<void> _saveDealer(Map<String, dynamic> dealerData, StateSetter setS) async {
+    if (_tenantId == null || _branchId == null) return;
     final nama = (dealerData['namaPemilik'] ?? '').toString().trim();
+    final payload = {
+      'tenant_id': _tenantId,
+      'branch_id': _branchId,
+      'nama_pemilik': nama.toUpperCase(),
+      'nama_kedai': (dealerData['namaKedai'] ?? '').toString().toUpperCase(),
+      'no_ssm': dealerData['noSSM'] ?? '',
+      'phone': dealerData['telPemilik'] ?? dealerData['phone'] ?? '',
+      'alamat': dealerData['alamat'] ?? '',
+      'cawangan': dealerData['cawangan'] ?? [],
+      'payload': jsonEncode(dealerData),
+    };
     final existing = _savedDealers.where((d) => (d['namaPemilik'] ?? '').toString().toUpperCase() == nama.toUpperCase()).toList();
     if (existing.isNotEmpty) {
-      await _db.collection('pro_dealers_$_ownerID').doc(existing.first['_id']).update(dealerData);
+      await _sb.from('pro_dealers').update(payload).eq('id', existing.first['_id']);
       _snack('Dealer dikemaskini');
     } else {
-      dealerData['shopID'] = _shopID;
-      dealerData['timestamp'] = DateTime.now().millisecondsSinceEpoch;
-      dealerData['cawangan'] = dealerData['cawangan'] ?? [];
-      await _db.collection('pro_dealers_$_ownerID').add(dealerData);
+      await _sb.from('pro_dealers').insert(payload);
       _snack('Dealer disimpan');
     }
   }
@@ -373,7 +425,7 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
                               } else if (val == 'cawangan') {
                                 _showAddCawangan(d, setS);
                               } else if (val == 'delete') {
-                                await _db.collection('pro_dealers_$_ownerID').doc(d['_id']).delete();
+                                await _sb.from('pro_dealers').delete().eq('id', d['_id']);
                                 _snack('Dealer dipadam');
                                 if (ctx.mounted) setS(() {});
                               }
@@ -589,15 +641,19 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
             GestureDetector(
               onTap: () async {
                 if (namaPCtrl.text.trim().isEmpty) { _snack('Sila isi nama pemilik', color: AppColors.red); return; }
-                await _db.collection('pro_dealers_$_ownerID').doc(dealer['_id']).update({
-                  'namaPemilik': namaPCtrl.text.trim().toUpperCase(),
-                  'telPemilik': telPCtrl.text.trim(),
-                  'namaKedai': namaKCtrl.text.trim().toUpperCase(),
-                  'alamatKedai': alamatKCtrl.text.trim(),
-                  'telKedai': telKCtrl.text.trim(),
-                  'noSSM': ssmCtrl.text.trim().toUpperCase(),
-                  'bayaran': editBayaran, 'term': editTerm, 'warranty': editWarranty,
-                });
+                await _sb.from('pro_dealers').update({
+                  'nama_pemilik': namaPCtrl.text.trim().toUpperCase(),
+                  'phone': telPCtrl.text.trim(),
+                  'nama_kedai': namaKCtrl.text.trim().toUpperCase(),
+                  'alamat': alamatKCtrl.text.trim(),
+                  'no_ssm': ssmCtrl.text.trim().toUpperCase(),
+                  'payload': jsonEncode({
+                    'telKedai': telKCtrl.text.trim(),
+                    'bayaran': editBayaran,
+                    'term': editTerm,
+                    'warranty': editWarranty,
+                  }),
+                }).eq('id', dealer['_id']);
                 _snack('Dealer dikemaskini');
                 if (dCtx.mounted) Navigator.pop(dCtx);
                 parentSetS(() {});
@@ -837,7 +893,7 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
                 'alamatKedai': alamatCtrl.text.trim(),
                 'telKedai': telCtrl.text.trim(),
               });
-              await _db.collection('pro_dealers_$_ownerID').doc(dealer['_id']).update({'cawangan': cawangan});
+              await _sb.from('pro_dealers').update({'cawangan': cawangan}).eq('id', dealer['_id']);
               _snack('Cawangan ditambah');
               if (dCtx.mounted) Navigator.pop(dCtx);
               parentSetS(() {});
@@ -982,7 +1038,14 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
                 existing.add({'status': status, 'timestamp': now, 'by': _shopID});
                 updateData['statusTimeline'] = existing;
               }
-              await _db.collection('collab_global_network').doc(task['id']).update(updateData);
+              // Stash all updateData in payload jsonb (schema collab_tasks ada limited columns)
+              final payload = Map<String, dynamic>.from(task['payload'] is Map ? task['payload'] : {});
+              payload.addAll(updateData);
+              await _sb.from('collab_tasks').update({
+                'status': updateData['status'] ?? task['status'],
+                'archived': updateData['archived'] ?? task['archived'] ?? false,
+                'payload': payload,
+              }).eq('id', task['id']);
               if (ctx.mounted) Navigator.pop(ctx);
               _snack('Tugasan dikemaskini');
             },
@@ -1191,14 +1254,36 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
                   tl.add({'status': status, 'timestamp': now, 'by': _shopID});
                   data['statusTimeline'] = tl;
                 }
-                await _db.collection('pro_walkin_$_ownerID').doc(existing['id']).update(data);
+                await _sb.from('pro_walkin').update({
+                  'status': data['status'] ?? existing['status'],
+                  'nama': data['namaCust'] ?? data['nama'] ?? existing['nama'],
+                  'tel': data['telCust'] ?? data['tel'] ?? existing['tel'],
+                  'model': data['model'] ?? existing['model'],
+                  'kerosakan': data['kerosakan'] ?? existing['kerosakan'],
+                  'harga': data['harga'] ?? existing['harga'] ?? 0,
+                  'kos': data['kos'] ?? existing['kos'] ?? 0,
+                  'payload': data,
+                }).eq('id', existing['id']);
               } else {
+                if (_tenantId == null || _branchId == null) return;
                 final now = DateTime.now().millisecondsSinceEpoch;
                 data['timestamp'] = now;
                 final siri = 'PW${now.toString().substring(5)}';
                 data['siri'] = siri;
                 data['statusTimeline'] = [{'status': status, 'timestamp': now, 'by': _shopID}];
-                await _db.collection('pro_walkin_$_ownerID').doc(siri).set(data);
+                await _sb.from('pro_walkin').insert({
+                  'tenant_id': _tenantId,
+                  'branch_id': _branchId,
+                  'siri': siri,
+                  'nama': data['namaCust'] ?? data['nama'] ?? '',
+                  'tel': data['telCust'] ?? data['tel'] ?? '',
+                  'model': data['model'] ?? '',
+                  'kerosakan': data['kerosakan'] ?? '',
+                  'harga': data['harga'] ?? 0,
+                  'kos': data['kos'] ?? 0,
+                  'status': status,
+                  'payload': data,
+                });
               }
               if (ctx.mounted) Navigator.pop(ctx);
               _snack(isEdit ? 'Job dikemaskini' : 'Job baru ditambah');
@@ -1247,9 +1332,10 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
   // BRANCH SETTINGS
   // ═══════════════════════════════════════
   Future<void> _loadBranchSettings() async {
-    final snap = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-    if (snap.exists && mounted) {
-      setState(() { _branchSettings = snap.data() ?? {}; });
+    if (_branchId == null) return;
+    final row = await _sb.from('branches').select().eq('id', _branchId!).maybeSingle();
+    if (row != null && mounted) {
+      setState(() { _branchSettings = Map<String, dynamic>.from(row); });
     }
   }
 
@@ -1391,8 +1477,11 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
         final result = jsonDecode(response.body);
         final pdfUrl = result['pdfUrl']?.toString() ?? '';
         if (pdfUrl.isNotEmpty) {
-          final collection = isOnline ? 'collab_global_network' : 'pro_walkin_$_ownerID';
-          await _db.collection(collection).doc(task['id']).update({'pdfUrl_$typePDF': pdfUrl});
+          final table = isOnline ? 'collab_tasks' : 'pro_walkin';
+          // Stash pdfUrl dalam payload jsonb
+          final payload = Map<String, dynamic>.from(task['payload'] is Map ? task['payload'] : {});
+          payload['pdfUrl_$typePDF'] = pdfUrl;
+          await _sb.from(table).update({'payload': payload}).eq('id', task['id']);
           _snack('$typePDF berjaya dijana!');
           _downloadAndOpenPDF(pdfUrl, typePDF, siri);
         } else {
@@ -1761,7 +1850,7 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
           direction: isArchived ? DismissDirection.endToStart : DismissDirection.startToEnd,
           confirmDismiss: (_) async {
             if (isArchived) {
-              await _db.collection('collab_global_network').doc(t['id']).update({'archived': false});
+              await _sb.from('collab_tasks').update({'archived': false}).eq('id', t['id']);
               _snack('Tugasan dipulihkan');
             } else {
               await _archiveOnline(t);
@@ -1944,7 +2033,7 @@ class _ProfesionalScreenState extends State<ProfesionalScreen> with SingleTicker
                         direction: isArchived ? DismissDirection.endToStart : DismissDirection.startToEnd,
                         confirmDismiss: (_) async {
                           if (isArchived) {
-                            await _db.collection('pro_walkin_$_ownerID').doc(t['id']).update({'archived': false});
+                            await _sb.from('pro_walkin').update({'archived': false}).eq('id', t['id']);
                             _snack('Job dipulihkan');
                           } else {
                             await _archiveOffline(t);

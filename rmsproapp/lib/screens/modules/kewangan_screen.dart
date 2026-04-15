@@ -4,8 +4,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../../services/supabase_client.dart';
+import '../../services/repair_service.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
@@ -27,13 +28,16 @@ class KewanganScreen extends StatefulWidget {
 }
 
 class _KewanganScreenState extends State<KewanganScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   final _searchCtrl = TextEditingController();
   final _printer = PrinterService();
   final _lang = AppLanguage();
 
   String _ownerID = 'admin';
   String _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
   String _filterTime = 'TODAY';
   String _filterSort = 'DESC';
   int _rowsPerPage = 30;
@@ -80,233 +84,237 @@ class _KewanganScreenState extends State<KewanganScreen> {
   }
 
   Future<void> _initData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0].toLowerCase();
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
+    await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
     await _loadBranchSettings();
     _listenAll();
   }
 
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) return DateTime.tryParse(v)?.millisecondsSinceEpoch ?? 0;
+    return 0;
+  }
+
   Future<void> _loadBranchSettings() async {
-    final snap = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-    if (snap.exists) {
-      _branchSettings = snap.data() ?? {};
-      final staffList = _branchSettings['staffList'];
-      if (staffList is List) {
-        _staffList = staffList
-            .map(
-              (s) =>
-                  s is String ? s : (s['name'] ?? s['nama'] ?? '').toString(),
-            )
-            .where((s) => s.isNotEmpty)
-            .toList();
-        if (_staffList.isNotEmpty) _expStaff = _staffList.first;
-      }
+    if (_branchId == null) return;
+    final row = await _sb
+        .from('branches')
+        .select('*, branch_staff(nama, status)')
+        .eq('id', _branchId!)
+        .maybeSingle();
+    if (row == null) return;
+    _branchSettings = Map<String, dynamic>.from(row);
+    final staffRaw = row['branch_staff'];
+    if (staffRaw is List) {
+      _staffList = staffRaw
+          .where((s) => s is Map && (s['status'] ?? 'active') == 'active')
+          .map((s) => (s['nama'] ?? '').toString())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      if (_staffList.isNotEmpty) _expStaff = _staffList.first;
     }
     if (mounted) setState(() {});
   }
 
   void _listenAll() {
-    _subs.add(
-      _db.collection('repairs_$_ownerID').snapshots().listen((snap) {
-        final records = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != _shopID) continue;
-          if ((d['payment_status'] ?? '').toString().toUpperCase() != 'PAID') {
-            continue;
-          }
-          final nama = (d['nama'] ?? '').toString().toUpperCase();
-          final jenis = (d['jenis_servis'] ?? '').toString().toUpperCase();
-          if (nama == 'JUALAN PANTAS' || jenis == 'JUALAN') continue;
-          records.add({
-            'docId': doc.id,
-            'siri': d['siri'] ?? doc.id,
-            'jenis': 'RETAIL',
-            'jenisLabel': 'SALES REPAIR',
-            'nama': d['nama'] ?? '-',
-            'tel': d['tel'] ?? '-',
-            'item': d['model'] ?? d['kerosakan'] ?? '-',
-            'jumlah': double.tryParse(d['total']?.toString() ?? '0') ?? 0,
-            'cara': d['cara_bayaran'] ?? 'CASH',
-            'staff': d['staff_repair'] ?? d['staff_terima'] ?? '-',
-            'timestamp': _dapatkanMasaSah(d['paid_at'] ?? d['timestamp']),
-            'isExpense': false,
-            'rawData': d,
-            'collection': 'repairs_$_ownerID',
-          });
-        }
-        _mergeRecords('REPAIR', records);
-      }),
-    );
+    if (_branchId == null) return;
 
-    final receiverCode = '$_ownerID@$_shopID'.toLowerCase();
-    _subs.add(
-      _db
-          .collection('collab_global_network')
-          .where('receiver', isEqualTo: receiverCode)
-          .snapshots()
-          .listen((snap) {
-            final records = <Map<String, dynamic>>[];
-            for (final doc in snap.docs) {
-              final d = doc.data();
-              if ((d['payment_status'] ?? '').toString().toUpperCase() !=
-                  'PAID') {
-                continue;
-              }
-              records.add({
-                'docId': doc.id,
-                'siri': d['siri'] ?? doc.id,
-                'jenis': 'PRO_ONLINE',
-                'jenisLabel': 'PRO DEALER',
-                'nama': d['namaCust'] ?? d['nama'] ?? '-',
-                'tel': d['telCust'] ?? d['tel'] ?? '-',
-                'item': d['model'] ?? d['kerosakan'] ?? '-',
-                'jumlah': double.tryParse(d['total']?.toString() ?? '0') ?? 0,
-                'cara': d['cara_bayaran'] ?? 'ONLINE',
-                'staff': d['staff_repair'] ?? d['sender'] ?? '-',
-                'timestamp': _dapatkanMasaSah(d['timestamp']),
-                'isExpense': false,
-                'rawData': d,
-                'collection': 'collab_global_network',
-              });
-            }
-            _mergeRecords('COLLAB', records);
-          }),
-    );
+    // Repair jobs (jobs table, filter PAID + bukan JUALAN)
+    _subs.add(_sb
+        .from('jobs')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final records = <Map<String, dynamic>>[];
+      for (final d in rows) {
+        if ((d['payment_status'] ?? '').toString().toUpperCase() != 'PAID') continue;
+        final nama = (d['nama'] ?? '').toString().toUpperCase();
+        final jenis = (d['jenis_servis'] ?? '').toString().toUpperCase();
+        if (nama == 'JUALAN PANTAS' || jenis == 'JUALAN') continue;
+        records.add({
+          'docId': d['id'],
+          'siri': d['siri'] ?? d['id'],
+          'jenis': 'RETAIL',
+          'jenisLabel': 'SALES REPAIR',
+          'nama': d['nama'] ?? '-',
+          'tel': d['tel'] ?? '-',
+          'item': d['model'] ?? d['kerosakan'] ?? '-',
+          'jumlah': (d['total'] as num?)?.toDouble() ?? 0,
+          'cara': d['cara_bayaran'] ?? 'CASH',
+          'staff': d['staff_repair'] ?? d['staff_terima'] ?? '-',
+          'timestamp': _tsFromIso(d['created_at']),
+          'isExpense': false,
+          'rawData': d,
+          'collection': 'jobs',
+        });
+      }
+      _mergeRecords('REPAIR', records);
+    }));
 
-    _subs.add(
-      _db.collection('pro_walkin_$_ownerID').snapshots().listen((snap) {
-        final records = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != _shopID) continue;
-          if ((d['payment_status'] ?? '').toString().toUpperCase() != 'PAID') {
-            continue;
-          }
-          records.add({
-            'docId': doc.id,
-            'siri': d['siri'] ?? doc.id,
-            'jenis': 'PRO_OFFLINE',
-            'jenisLabel': 'PRO DEALER',
-            'nama': d['namaCust'] ?? d['nama'] ?? '-',
-            'tel': d['telCust'] ?? d['tel'] ?? '-',
-            'item': d['model'] ?? d['kerosakan'] ?? '-',
-            'jumlah': double.tryParse(d['total']?.toString() ?? '0') ?? 0,
-            'cara': d['cara_bayaran'] ?? 'CASH',
-            'staff': d['staff_repair'] ?? d['staff_terima'] ?? '-',
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
-            'isExpense': false,
-            'rawData': d,
-            'collection': 'pro_walkin_$_ownerID',
-          });
-        }
-        _mergeRecords('PRO_WALKIN', records);
-      }),
-    );
+    // Collab (cross-tenant). Filter poster_shop_id = _shopID (receiver)
+    _subs.add(_sb
+        .from('collab_tasks')
+        .stream(primaryKey: ['id'])
+        .listen((rows) {
+      final records = <Map<String, dynamic>>[];
+      for (final d in rows) {
+        if ((d['poster_shop_id'] ?? '').toString().toUpperCase() != _shopID) continue;
+        final payload = d['payload'];
+        Map pay = payload is Map ? payload : {};
+        if ((pay['payment_status'] ?? '').toString().toUpperCase() != 'PAID') continue;
+        records.add({
+          'docId': d['id'],
+          'siri': pay['siri'] ?? d['id'],
+          'jenis': 'PRO_ONLINE',
+          'jenisLabel': 'PRO DEALER',
+          'nama': d['nama'] ?? '-',
+          'tel': d['tel'] ?? '-',
+          'item': d['model'] ?? d['kerosakan'] ?? '-',
+          'jumlah': (d['harga'] as num?)?.toDouble() ?? 0,
+          'cara': pay['cara_bayaran'] ?? 'ONLINE',
+          'staff': pay['staff_repair'] ?? pay['sender'] ?? '-',
+          'timestamp': _tsFromIso(d['created_at']),
+          'isExpense': false,
+          'rawData': d,
+          'collection': 'collab_tasks',
+        });
+      }
+      _mergeRecords('COLLAB', records);
+    }));
 
-    _subs.add(
-      _db.collection('expenses_$_ownerID').snapshots().listen((snap) {
-        final records = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != _shopID) continue;
-          if (d['archived'] == true) continue;
-          records.add({
-            'docId': doc.id,
-            'siri': doc.id,
-            'jenis': 'EXPENSE',
-            'jenisLabel': 'DUIT KELUAR',
-            'nama': d['perkara'] ?? '-',
-            'tel': '-',
-            'item': d['perkara'] ?? '-',
-            'jumlah':
-                (d['jumlah'] as num?)?.toDouble() ??
-                (d['amaun'] as num?)?.toDouble() ??
-                0,
-            'cara': '-',
-            'staff': d['staff'] ?? d['staf'] ?? '-',
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
-            'isExpense': true,
-            'rawData': d,
-            'collection': 'expenses_$_ownerID',
-          });
-        }
-        _mergeRecords('EXPENSE', records);
-      }),
-    );
+    // Pro walkin
+    _subs.add(_sb
+        .from('pro_walkin')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final records = <Map<String, dynamic>>[];
+      for (final d in rows) {
+        final payload = d['payload'];
+        Map pay = payload is Map ? payload : {};
+        if ((pay['payment_status'] ?? '').toString().toUpperCase() != 'PAID') continue;
+        records.add({
+          'docId': d['id'],
+          'siri': d['siri'] ?? d['id'],
+          'jenis': 'PRO_OFFLINE',
+          'jenisLabel': 'PRO DEALER',
+          'nama': d['nama'] ?? '-',
+          'tel': d['tel'] ?? '-',
+          'item': d['model'] ?? d['kerosakan'] ?? '-',
+          'jumlah': (d['harga'] as num?)?.toDouble() ?? 0,
+          'cara': pay['cara_bayaran'] ?? 'CASH',
+          'staff': pay['staff_repair'] ?? pay['staff_terima'] ?? '-',
+          'timestamp': _tsFromIso(d['created_at']),
+          'isExpense': false,
+          'rawData': d,
+          'collection': 'pro_walkin',
+        });
+      }
+      _mergeRecords('PRO_WALKIN', records);
+    }));
 
-    _subs.add(
-      _db.collection('jualan_pantas_$_ownerID').snapshots().listen((snap) {
-        final records = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != _shopID) continue;
-          if ((d['payment_status'] ?? '').toString().toUpperCase() != 'PAID') {
-            continue;
-          }
-          final nama = (d['nama'] ?? '').toString().toUpperCase();
-          if (nama == 'JUALAN TELEFON') continue;
-          records.add({
-            'docId': doc.id,
-            'siri': d['siri'] ?? doc.id,
-            'jenis': 'PANTAS',
-            'jenisLabel': 'QUICK SALES',
-            'nama': d['nama'] ?? 'QUICK SALES',
-            'tel': d['tel'] ?? '-',
-            'item': d['item'] ?? d['model'] ?? d['perkara'] ?? '-',
-            'jumlah': double.tryParse(d['total']?.toString() ?? '0') ?? 0,
-            'cara': d['cara_bayaran'] ?? 'CASH',
-            'staff': d['staff'] ?? d['staff_terima'] ?? '-',
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
-            'isExpense': false,
-            'rawData': d,
-            'collection': 'jualan_pantas_$_ownerID',
-          });
-        }
-        _mergeRecords('PANTAS', records);
-      }),
-    );
+    // Expenses
+    _subs.add(_sb
+        .from('expenses')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final records = <Map<String, dynamic>>[];
+      for (final d in rows) {
+        if ((d['status'] ?? '').toString().toUpperCase() == 'ARCHIVED') continue;
+        records.add({
+          'docId': d['id'],
+          'siri': d['id'],
+          'jenis': 'EXPENSE',
+          'jenisLabel': 'DUIT KELUAR',
+          'nama': d['description'] ?? d['category'] ?? '-',
+          'tel': '-',
+          'item': d['description'] ?? d['category'] ?? '-',
+          'jumlah': (d['amount'] as num?)?.toDouble() ?? 0,
+          'cara': '-',
+          'staff': d['paid_by'] ?? '-',
+          'timestamp': _tsFromIso(d['created_at']),
+          'isExpense': true,
+          'rawData': d,
+          'collection': 'expenses',
+        });
+      }
+      _mergeRecords('EXPENSE', records);
+    }));
+
+    // Quick sales (ganti jualan_pantas)
+    _subs.add(_sb
+        .from('quick_sales')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final records = <Map<String, dynamic>>[];
+      for (final d in rows) {
+        final kind = (d['kind'] ?? '').toString().toUpperCase();
+        if (kind == 'JUALAN TELEFON') continue; // skip phone sales (separate stream)
+        records.add({
+          'docId': d['id'],
+          'siri': d['description'] ?? d['id'],
+          'jenis': 'PANTAS',
+          'jenisLabel': 'QUICK SALES',
+          'nama': kind.isEmpty ? 'QUICK SALES' : kind,
+          'tel': '-',
+          'item': d['description'] ?? '-',
+          'jumlah': (d['amount'] as num?)?.toDouble() ?? 0,
+          'cara': d['payment_method'] ?? 'CASH',
+          'staff': d['sold_by'] ?? '-',
+          'timestamp': _tsFromIso(d['sold_at']),
+          'isExpense': false,
+          'rawData': d,
+          'collection': 'quick_sales',
+        });
+      }
+      _mergeRecords('PANTAS', records);
+    }));
 
     // Phone sales listener
-    _subs.add(
-      _db.collection('phone_sales_$_ownerID').snapshots().listen((snap) {
-        final records = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != _shopID) continue;
-          records.add({
-            'docId': doc.id,
-            'kod': d['kod'] ?? '-',
-            'nama': d['nama'] ?? '-',
-            'imei': d['imei'] ?? '-',
-            'warna': d['warna'] ?? '-',
-            'storage': d['storage'] ?? '-',
-            'jual': (d['jual'] as num?)?.toDouble() ?? 0,
-            'imageUrl': d['imageUrl'] ?? '',
-            'siri': d['siri'] ?? '-',
-            'staffJual': d['staffJual'] ?? d['staffName'] ?? '-',
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
-            'saleType': (d['saleType'] ?? 'CUSTOMER').toString().toUpperCase(),
-            'custName': d['custName'] ?? '-',
-            'custPhone': d['custPhone'] ?? '-',
-            'dealerName': d['dealerName'] ?? '',
-            'dealerKedai': d['dealerKedai'] ?? '',
-          });
+    _subs.add(_sb
+        .from('phone_sales')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final records = rows.where((r) => r['deleted_at'] == null).map((d) {
+        final n = d['notes'];
+        Map extra = {};
+        if (n is String && n.startsWith('{')) {
+          try { extra = jsonDecode(n) as Map; } catch (_) {}
         }
-        records.sort(
-          (a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0),
-        );
-        if (mounted)
-          setState(() {
-            _phoneSales = records;
-            _applyPhoneSalesFilter();
-          });
-      }),
-    );
+        return {
+          'docId': d['id'],
+          'kod': extra['kod'] ?? '-',
+          'nama': d['device_name'] ?? '-',
+          'imei': extra['imei'] ?? '-',
+          'warna': extra['warna'] ?? '-',
+          'storage': extra['storage'] ?? '-',
+          'jual': (d['price_per_unit'] as num?)?.toDouble() ?? 0,
+          'imageUrl': extra['imageUrl'] ?? '',
+          'siri': extra['siri'] ?? '-',
+          'staffJual': d['sold_by'] ?? '-',
+          'timestamp': _tsFromIso(d['sold_at']),
+          'saleType': (extra['saleType'] ?? 'CUSTOMER').toString().toUpperCase(),
+          'custName': d['customer_name'] ?? '-',
+          'custPhone': d['customer_phone'] ?? '-',
+          'dealerName': extra['dealerName'] ?? '',
+          'dealerKedai': extra['dealerKedai'] ?? '',
+        };
+      }).toList();
+      records.sort((a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0));
+      if (mounted) {
+        setState(() {
+          _phoneSales = records;
+          _applyPhoneSalesFilter();
+        });
+      }
+    }));
   }
 
   void _applyPhoneSalesFilter() {
@@ -351,9 +359,10 @@ class _KewanganScreenState extends State<KewanganScreen> {
     _filteredPhoneSales = data;
   }
 
+  // ignore: unused_element
   int _dapatkanMasaSah(dynamic ts) {
     if (ts == null) return 0;
-    if (ts is Timestamp) return ts.millisecondsSinceEpoch;
+    if (ts is String && ts.isNotEmpty) return DateTime.tryParse(ts)?.millisecondsSinceEpoch ?? 0;
     if (ts is int) {
       if (ts > 0 && ts < 10000000000) return ts * 1000;
       return ts;
@@ -1624,10 +1633,7 @@ class _KewanganScreenState extends State<KewanganScreen> {
             onPressed: () async {
               Navigator.pop(ctx);
               try {
-                await _db
-                    .collection('expenses_$_ownerID')
-                    .doc(docId)
-                    .update({'archived': true});
+                await _sb.from('expenses').update({'status': 'ARCHIVED'}).eq('id', docId);
                 _snack(_lang.get('kw_arkib_ok'));
               } catch (e) {
                 _snack('${_lang.get('kw_arkib_gagal')}: $e', err: true);
@@ -1783,17 +1789,16 @@ class _KewanganScreenState extends State<KewanganScreen> {
                       _snack(_lang.get('kw_sila_isi'), err: true);
                       return;
                     }
-                    await _db.collection('expenses_$_ownerID').add({
-                      'perkara': perkara.toUpperCase(),
-                      'jumlah': jumlah,
-                      'amaun': jumlah,
-                      'staf': _expStaff,
-                      'staff': _expStaff,
-                      'shopID': _shopID,
-                      'timestamp': DateTime.now().millisecondsSinceEpoch,
-                      'tarikh': DateFormat(
-                        "yyyy-MM-dd'T'HH:mm",
-                      ).format(DateTime.now()),
+                    if (_tenantId == null) return;
+                    await _sb.from('expenses').insert({
+                      'tenant_id': _tenantId,
+                      'branch_id': _branchId,
+                      'description': perkara.toUpperCase(),
+                      'category': perkara.toUpperCase(),
+                      'amount': jumlah,
+                      'paid_by': _expStaff,
+                      'paid_date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+                      'status': 'PAID',
                     });
                     if (ctx.mounted) Navigator.pop(ctx);
                     _snack(
@@ -2220,12 +2225,13 @@ class _KewanganScreenState extends State<KewanganScreen> {
         final result = jsonDecode(response.body);
         final pdfUrl = result['pdfUrl']?.toString() ?? '';
         if (pdfUrl.isNotEmpty) {
-          if (rec['collection'] == 'repairs_$_ownerID') {
-            await _db
-                .collection('repairs_$_ownerID')
-                .doc(siri)
+          if (rec['collection'] == 'jobs' && _tenantId != null) {
+            await _sb
+                .from('jobs')
                 .update({'pdfUrl_INVOICE': pdfUrl})
-                .catchError((_) {});
+                .eq('tenant_id', _tenantId!)
+                .eq('siri', siri)
+                .then((_) {}, onError: (_) {});
           }
           _snack(_lang.get('kw_pdf_berjaya'));
           _downloadAndOpenPDF(pdfUrl, siri);

@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import '../../theme/app_theme.dart';
 import '../../services/app_language.dart';
+import '../../services/supabase_client.dart';
+import '../../services/repair_service.dart';
 
 class RefundScreen extends StatefulWidget {
   const RefundScreen({super.key});
@@ -15,9 +16,12 @@ class RefundScreen extends StatefulWidget {
 
 class _RefundScreenState extends State<RefundScreen> {
   final _lang = AppLanguage();
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   final _searchCtrl = TextEditingController();
   String _ownerID = 'admin', _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
   String _sortOrder = 'ZA'; // ZA=terbaru
   String _adminPass = '';
   List<Map<String, dynamic>> _refunds = [];
@@ -31,27 +35,44 @@ class _RefundScreenState extends State<RefundScreen> {
   void dispose() { _sub?.cancel(); _repairSub?.cancel(); _searchCtrl.dispose(); super.dispose(); }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) { _ownerID = branch.split('@')[0]; _shopID = branch.split('@')[1].toUpperCase(); }
-    // Load admin pass
+    await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+    if (_tenantId == null || _branchId == null) return;
+    // Load admin pass from tenants.config.svPass
     try {
-      final shopDoc = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-      if (shopDoc.exists) _adminPass = shopDoc.data()?['svPass'] ?? '';
+      final row = await _sb.from('tenants').select('config').eq('id', _tenantId!).maybeSingle();
+      final cfg = row?['config'];
+      if (cfg is Map) _adminPass = (cfg['svPass'] ?? '').toString();
     } catch (_) {}
-    // Listen refunds
-    _sub = _db.collection('refunds_$_ownerID').snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data(); d['key'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) list.add(d);
-      }
-      list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
+    _sub = _sb
+        .from('refunds')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .order('created_at', ascending: false)
+        .listen((rows) {
+      final list = rows.map((r) {
+        final m = Map<String, dynamic>.from(r);
+        m['key'] = r['id'];
+        m['siri'] = r['siri'] ?? '';
+        m['namaCust'] = r['nama'] ?? '';
+        m['reason'] = r['reason'] ?? '';
+        m['amount'] = r['refund_amount'] ?? 0;
+        m['status'] = r['refund_status'] ?? 'PENDING';
+        final c = r['created_at']?.toString();
+        m['timestamp'] = c == null ? 0 : (DateTime.tryParse(c)?.millisecondsSinceEpoch ?? 0);
+        return m;
+      }).toList();
       if (mounted) setState(() => _refunds = list);
     });
-    // Listen repairs for siri lookup
-    _repairSub = _db.collection('repairs_$_ownerID').snapshots().listen((snap) {
-      _repairs = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    _repairSub = _sb
+        .from('jobs')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      _repairs = rows.map((r) => Map<String, dynamic>.from(r)).toList();
     });
   }
 
@@ -209,14 +230,26 @@ class _RefundScreenState extends State<RefundScreen> {
                 onPressed: () async {
                   if (foundRepair == null) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lang.get('rd_cari_dahulu')), backgroundColor: AppColors.red)); return; }
                   if (amountCtrl.text.isEmpty || reasonCtrl.text.isEmpty) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lang.get('rd_isi_amaun')), backgroundColor: AppColors.red)); return; }
-                  await _db.collection('refunds_$_ownerID').add({
-                    'shopID': _shopID, 'siri': siriCtrl.text.trim().toUpperCase(),
-                    'namaCust': foundRepair!['nama'] ?? '-', 'model': foundRepair!['model'] ?? '-',
-                    'kerosakan': foundRepair!['kerosakan'] ?? '-', 'hargaAsal': foundRepair!['total'] ?? foundRepair!['harga'] ?? 0,
-                    'amount': double.tryParse(amountCtrl.text) ?? 0, 'reason': reasonCtrl.text.trim(),
-                    'method': method, 'speed': speed,
-                    'accName': accNameCtrl.text.trim(), 'bankName': bankNameCtrl.text.trim(), 'accNo': accNoCtrl.text.trim(),
-                    'status': 'PENDING', 'timestamp': DateTime.now().millisecondsSinceEpoch,
+                  if (_tenantId == null) return;
+                  await _sb.from('refunds').insert({
+                    'tenant_id': _tenantId,
+                    'branch_id': _branchId,
+                    'job_id': foundRepair!['id'],
+                    'siri': siriCtrl.text.trim().toUpperCase(),
+                    'nama': foundRepair!['nama'] ?? '-',
+                    'refund_amount': double.tryParse(amountCtrl.text) ?? 0,
+                    'refund_status': 'PENDING',
+                    'reason': reasonCtrl.text.trim(),
+                    'processed_by': jsonEncode({
+                      'method': method,
+                      'speed': speed,
+                      'accName': accNameCtrl.text.trim(),
+                      'bankName': bankNameCtrl.text.trim(),
+                      'accNo': accNoCtrl.text.trim(),
+                      'model': foundRepair!['model'] ?? '-',
+                      'kerosakan': foundRepair!['kerosakan'] ?? '-',
+                      'hargaAsal': foundRepair!['total'] ?? foundRepair!['harga'] ?? 0,
+                    }),
                   });
                   if (ctx.mounted) Navigator.pop(ctx);
                   if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lang.get('rd_permohonan_dihantar')), backgroundColor: AppColors.green));
@@ -260,7 +293,10 @@ class _RefundScreenState extends State<RefundScreen> {
       ],
     ));
     if (confirmed == true) {
-      await _db.collection('refunds_$_ownerID').doc(docId).update({'status': 'COMPLETED'});
+      await _sb.from('refunds').update({
+        'refund_status': 'COMPLETED',
+        'processed_at': DateTime.now().toIso8601String(),
+      }).eq('id', docId);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_lang.get('rd_refund_diluluskan')), backgroundColor: AppColors.green));
     }
   }

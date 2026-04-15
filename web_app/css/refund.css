@@ -59,3 +59,14 @@
 .rd-card.c-green  { border-left-color: var(--green); }
 .rd-card.c-yellow { border-left-color: var(--yellow); }
 .rd-card.c-red    { border-left-color: var(--red); }
+
+/* ── Hygiene ── */
+.rd-found, .rd-found__grid, .rd-bank, .rd-amounts { box-sizing: border-box; }
+.rd-found *, .rd-bank * { box-sizing: border-box; }
+.rd-found__grid > * { min-width: 0; }
+.rd-val, .rd-cust, .rd-info, .rd-siri { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.rd-amounts > * { min-width: 0; }
+.rd-approve { border: none; cursor: pointer; }
+@media (max-width: 420px) {
+  .rd-found__grid { grid-template-columns: 1fr; }
+}

@@ -1,13 +1,14 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_theme.dart';
 import '../../services/app_language.dart';
+import '../../services/supabase_client.dart';
+import '../../services/repair_service.dart';
 
 class ReferralScreen extends StatefulWidget {
   const ReferralScreen({super.key});
@@ -17,11 +18,14 @@ class ReferralScreen extends StatefulWidget {
 
 class _ReferralScreenState extends State<ReferralScreen> {
   final _lang = AppLanguage();
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   final _searchCtrl = TextEditingController();
   final _custSearchCtrl = TextEditingController();
 
   String _ownerID = 'admin', _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
   String _svPass = '';
 
   // Referral list
@@ -49,37 +53,51 @@ class _ReferralScreenState extends State<ReferralScreen> {
   }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0].toLowerCase();
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
+    await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
     _loadBranchSettings();
     _listenReferrals();
     _listenRepairs();
   }
 
   Future<void> _loadBranchSettings() async {
-    final snap = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-    if (snap.exists && mounted) {
-      final d = snap.data() ?? {};
-      _svPass = (d['svPass'] ?? d['branchAdminPass'] ?? '').toString();
+    if (_tenantId == null) return;
+    final row = await _sb.from('tenants').select('config').eq('id', _tenantId!).maybeSingle();
+    final cfg = row?['config'];
+    if (cfg is Map && mounted) {
+      _svPass = (cfg['svPass'] ?? cfg['branchAdminPass'] ?? '').toString();
     }
   }
 
-  // ═══════════════════════════════════════
-  // LISTEN REFERRALS
-  // ═══════════════════════════════════════
+  Map<String, dynamic> _refRowToUi(Map r) {
+    final m = Map<String, dynamic>.from(r);
+    m['id'] = r['id'];
+    m['refCode'] = r['code'] ?? '';
+    // Unpack extra from created_by jsonb (stash area)
+    final cb = r['created_by'];
+    if (cb is String && cb.startsWith('{')) {
+      try {
+        final parsed = jsonDecode(cb);
+        if (parsed is Map) m.addAll(Map<String, dynamic>.from(parsed));
+      } catch (_) {}
+    }
+    final c = r['created_at']?.toString();
+    m['timestamp'] = c == null ? 0 : (DateTime.tryParse(c)?.millisecondsSinceEpoch ?? 0);
+    return m;
+  }
+
   void _listenReferrals() {
-    _refSub = _db.collection('referrals_$_ownerID')
-        .orderBy('timestamp', descending: true)
-        .snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data(); d['id'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) list.add(d);
-      }
+    if (_tenantId == null) return;
+    _refSub = _sb
+        .from('referrals')
+        .stream(primaryKey: ['id'])
+        .eq('tenant_id', _tenantId!)
+        .order('created_at', ascending: false)
+        .listen((rows) {
+      final list = rows.map(_refRowToUi).toList();
       if (mounted) setState(() { _referrals = list; _filterReferrals(); });
     });
   }
@@ -96,13 +114,13 @@ class _ReferralScreenState extends State<ReferralScreen> {
   // LISTEN REPAIRS (rawDataArr) for customer search
   // ═══════════════════════════════════════
   void _listenRepairs() {
-    _repairsSub = _db.collection('repairs_$_ownerID').snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data(); d['id'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) list.add(d);
-      }
-      if (mounted) setState(() => _rawDataArr = list);
+    if (_branchId == null) return;
+    _repairsSub = _sb
+        .from('jobs')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      if (mounted) setState(() => _rawDataArr = rows.map((r) => Map<String, dynamic>.from(r)).toList());
     });
   }
 
@@ -213,22 +231,22 @@ class _ReferralScreenState extends State<ReferralScreen> {
                             else
                               GestureDetector(
                                 onTap: () async {
+                                  if (_tenantId == null) return;
                                   final refCode = _generateRefCode();
-                                  // Ensure unique code
-                                  final existing = await _db.collection('referrals_$_ownerID').doc(refCode).get();
-                                  final finalCode = existing.exists ? _generateRefCode() : refCode;
-                                  await _db.collection('referrals_$_ownerID').doc(finalCode).set({
-                                    'refCode': finalCode,
-                                    'nama': (c['nama'] ?? '').toString().toUpperCase(),
-                                    'tel': c['tel'] ?? '',
-                                    'siriAsal': c['siri'] ?? '',
-                                    'shopID': _shopID,
-                                    'ownerID': _ownerID,
+                                  final existing = await _sb.from('referrals').select('id').eq('tenant_id', _tenantId!).eq('code', refCode).maybeSingle();
+                                  final finalCode = existing != null ? _generateRefCode() : refCode;
+                                  await _sb.from('referrals').insert({
+                                    'tenant_id': _tenantId,
+                                    'code': finalCode,
                                     'status': 'ACTIVE',
-                                    'bank': '',
-                                    'accNo': '',
-                                    'commission': 0,
-                                    'timestamp': DateTime.now().millisecondsSinceEpoch,
+                                    'created_by': jsonEncode({
+                                      'nama': (c['nama'] ?? '').toString().toUpperCase(),
+                                      'tel': c['tel'] ?? '',
+                                      'siriAsal': c['siri'] ?? '',
+                                      'bank': '',
+                                      'accNo': '',
+                                      'commission': 0,
+                                    }),
                                   });
                                   if (ctx.mounted) Navigator.pop(ctx);
                                   _snack('Referral $finalCode dijana');
@@ -279,13 +297,23 @@ class _ReferralScreenState extends State<ReferralScreen> {
     bool loadingClaims = true;
 
     // Load claims
-    _db.collection('referral_claims_$_ownerID')
-        .where('refCode', isEqualTo: ref['refCode'])
-        .orderBy('timestamp', descending: true)
-        .get().then((snap) {
-      claims = snap.docs.map((d) => <String, dynamic>{'id': d.id, ...d.data()}).toList();
+    _sb.from('referral_claims')
+        .select()
+        .eq('referral_code', ref['refCode'] ?? '')
+        .order('created_at', ascending: false)
+        .then((rows) {
+      claims = (rows as List).map((d) {
+        final m = Map<String, dynamic>.from(d as Map);
+        m['id'] = m['id'];
+        m['redeemerName'] = m['claimed_by_name'] ?? m['claimed_by'] ?? '';
+        m['perkara'] = 'Siri: ${m['siri'] ?? '-'}';
+        m['paymentStatus'] = m['status'] == 'APPROVED' ? 'PAID' : 'UNPAID';
+        final c = m['created_at']?.toString();
+        m['timestamp'] = c == null ? 0 : (DateTime.tryParse(c)?.millisecondsSinceEpoch ?? 0);
+        return m;
+      }).toList();
       loadingClaims = false;
-    }).catchError((_) {
+    }, onError: (_) {
       loadingClaims = false;
     });
 
@@ -295,17 +323,26 @@ class _ReferralScreenState extends State<ReferralScreen> {
       builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
         // Reload claims on first build if still loading
         if (loadingClaims) {
-          _db.collection('referral_claims_$_ownerID')
-              .where('refCode', isEqualTo: ref['refCode'])
-              .orderBy('timestamp', descending: true)
-              .get().then((snap) {
+          _sb.from('referral_claims')
+              .select()
+              .eq('referral_code', ref['refCode'] ?? '')
+              .order('created_at', ascending: false)
+              .then((rows) {
             if (ctx.mounted) {
               setS(() {
-                claims = snap.docs.map((d) => <String, dynamic>{'id': d.id, ...d.data()}).toList();
+                claims = (rows as List).map((d) {
+                  final m = Map<String, dynamic>.from(d as Map);
+                  m['redeemerName'] = m['claimed_by_name'] ?? m['claimed_by'] ?? '';
+                  m['perkara'] = 'Siri: ${m['siri'] ?? '-'}';
+                  m['paymentStatus'] = m['status'] == 'APPROVED' ? 'PAID' : 'UNPAID';
+                  final c = m['created_at']?.toString();
+                  m['timestamp'] = c == null ? 0 : (DateTime.tryParse(c)?.millisecondsSinceEpoch ?? 0);
+                  return m;
+                }).toList();
                 loadingClaims = false;
               });
             }
-          }).catchError((_) {
+          }, onError: (_) {
             if (ctx.mounted) setS(() => loadingClaims = false);
           });
         }
@@ -342,12 +379,15 @@ class _ReferralScreenState extends State<ReferralScreen> {
               Row(children: [
                 Expanded(child: ElevatedButton.icon(
                   onPressed: () async {
-                    await _db.collection('referrals_$_ownerID').doc(ref['id']).update({
-                      'bank': bankCtrl.text.trim().toUpperCase(),
-                      'accNo': accNoCtrl.text.trim(),
-                      'commission': double.tryParse(commCtrl.text) ?? 0,
-                      'lastUpdated': DateTime.now().millisecondsSinceEpoch,
-                    });
+                    // Merge into created_by jsonb
+                    final cur = Map<String, dynamic>.from(ref);
+                    cur['bank'] = bankCtrl.text.trim().toUpperCase();
+                    cur['accNo'] = accNoCtrl.text.trim();
+                    cur['commission'] = double.tryParse(commCtrl.text) ?? 0;
+                    cur.removeWhere((k, _) => ['id', 'timestamp', 'code', 'status', 'created_at', 'updated_at', 'tenant_id'].contains(k));
+                    await _sb.from('referrals').update({
+                      'created_by': jsonEncode(cur),
+                    }).eq('id', ref['id']);
                     if (ctx.mounted) Navigator.pop(ctx);
                     _snack('Referral dikemaskini');
                   },
@@ -362,10 +402,9 @@ class _ReferralScreenState extends State<ReferralScreen> {
                   ),
                   onPressed: () async {
                     final newStatus = refStatus == 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-                    await _db.collection('referrals_$_ownerID').doc(ref['id']).update({
+                    await _sb.from('referrals').update({
                       'status': newStatus,
-                      'lastUpdated': DateTime.now().millisecondsSinceEpoch,
-                    });
+                    }).eq('id', ref['id']);
                     setS(() => refStatus = newStatus);
                     _snack(newStatus == 'ACTIVE' ? 'Referral diaktifkan' : 'Referral digantung');
                   },
@@ -419,18 +458,26 @@ class _ReferralScreenState extends State<ReferralScreen> {
                         const SizedBox(height: 4),
                         GestureDetector(
                           onTap: () async {
-                            final newPayStatus = isPaid ? 'UNPAID' : 'PAID';
-                            await _db.collection('referral_claims_$_ownerID').doc(cl['id']).update({
-                              'paymentStatus': newPayStatus,
-                              'paidAt': newPayStatus == 'PAID' ? DateTime.now().millisecondsSinceEpoch : null,
-                            });
+                            final newDbStatus = isPaid ? 'PENDING' : 'APPROVED';
+                            await _sb.from('referral_claims').update({
+                              'status': newDbStatus,
+                            }).eq('id', cl['id']);
                             // Reload claims
-                            final snap = await _db.collection('referral_claims_$_ownerID')
-                                .where('refCode', isEqualTo: ref['refCode'])
-                                .orderBy('timestamp', descending: true).get();
+                            final rows = await _sb.from('referral_claims')
+                                .select()
+                                .eq('referral_code', ref['refCode'] ?? '')
+                                .order('created_at', ascending: false);
                             if (ctx.mounted) {
                               setS(() {
-                                claims = snap.docs.map((d) => <String, dynamic>{'id': d.id, ...d.data()}).toList();
+                                claims = (rows as List).map((d) {
+                                  final m = Map<String, dynamic>.from(d as Map);
+                                  m['redeemerName'] = m['claimed_by_name'] ?? m['claimed_by'] ?? '';
+                                  m['perkara'] = 'Siri: ${m['siri'] ?? '-'}';
+                                  m['paymentStatus'] = m['status'] == 'APPROVED' ? 'PAID' : 'UNPAID';
+                                  final c = m['created_at']?.toString();
+                                  m['timestamp'] = c == null ? 0 : (DateTime.tryParse(c)?.millisecondsSinceEpoch ?? 0);
+                                  return m;
+                                }).toList();
                               });
                             }
                           },
@@ -506,7 +553,7 @@ class _ReferralScreenState extends State<ReferralScreen> {
                 _snack('PIN tidak sah!', color: AppColors.red);
                 return;
               }
-              await _db.collection('referrals_$_ownerID').doc(ref['id']).delete();
+              await _sb.from('referrals').delete().eq('id', ref['id']);
               if (ctx.mounted) Navigator.pop(ctx); // Close PIN dialog
               if (parentCtx.mounted) Navigator.pop(parentCtx); // Close edit modal
               _snack('Referral dipadam');

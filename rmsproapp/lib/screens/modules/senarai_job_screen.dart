@@ -4,11 +4,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../../services/supabase_storage.dart';
+import '../../services/supabase_client.dart';
+import '../../services/repair_service.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -31,11 +31,14 @@ class SenaraiJobScreen extends StatefulWidget {
 
 class _SenaraiJobScreenState extends State<SenaraiJobScreen> {
   final _searchCtrl = TextEditingController();
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   final _lang = AppLanguage();
 
   String _ownerID = 'admin';
   String _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
   String _filterStatus = 'ALL';
   String _filterSort = 'TARIKH_DESC';
   String _filterTime = 'ALL';
@@ -69,30 +72,80 @@ class _SenaraiJobScreenState extends State<SenaraiJobScreen> {
   }
 
   Future<void> _initData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0].toLowerCase();
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
+    await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
     _listenRepairs();
     _listenInventory();
     _loadBranchSettings();
   }
 
+  int _tsFromRow(Map row) {
+    final c = row['created_at']?.toString();
+    if (c == null || c.isEmpty) return 0;
+    return DateTime.tryParse(c)?.millisecondsSinceEpoch ?? 0;
+  }
+
+  Map<String, dynamic> _jobRowToUi(Map row) {
+    final m = Map<String, dynamic>.from(row);
+    m['timestamp'] = _tsFromRow(row);
+    m['shopID'] = _shopID;
+    return m;
+  }
+
+  Map<String, dynamic> _stockRowToUi(Map row) {
+    final m = Map<String, dynamic>.from(row);
+    m['nama'] = row['part_name'] ?? '';
+    m['kod'] = row['sku'] ?? '';
+    m['jual'] = row['price'] ?? 0;
+    m['kos'] = row['cost'] ?? 0;
+    return m;
+  }
+
+  Future<void> _updateJobBySiri(String siri, Map<String, dynamic> data) async {
+    if (_tenantId == null) return;
+    await _sb
+        .from('jobs')
+        .update(data)
+        .eq('tenant_id', _tenantId!)
+        .eq('siri', siri);
+  }
+
+  Future<void> _addTimeline(String siri, String status, {String note = '', String byUser = ''}) async {
+    if (_tenantId == null) return;
+    final job = await _sb
+        .from('jobs')
+        .select('id')
+        .eq('tenant_id', _tenantId!)
+        .eq('siri', siri)
+        .maybeSingle();
+    if (job == null) return;
+    await _sb.from('job_timeline').insert({
+      'tenant_id': _tenantId,
+      'job_id': job['id'],
+      'status': status,
+      'note': note,
+      'by_user': byUser,
+    });
+  }
+
   void _listenRepairs() {
-    _repairsSub =
-        _db.collection('repairs_$_ownerID').snapshots().listen((snap) {
+    if (_branchId == null) return;
+    _repairsSub = _sb
+        .from('jobs')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .order('created_at', ascending: false)
+        .listen((rows) {
       final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) {
-          final nama = (d['nama'] ?? '').toString().toUpperCase();
-          final jenis = (d['jenis_servis'] ?? '').toString().toUpperCase();
-          if (nama != 'JUALAN PANTAS' && jenis != 'JUALAN') list.add(d);
-        }
+      for (final r in rows) {
+        final nama = (r['nama'] ?? '').toString().toUpperCase();
+        final jenis = (r['jenis_servis'] ?? '').toString().toUpperCase();
+        if (nama == 'JUALAN PANTAS' || jenis == 'JUALAN') continue;
+        list.add(_jobRowToUi(r));
       }
-      list.sort((a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0));
       if (mounted) {
         setState(() {
           _allData = list;
@@ -104,54 +157,69 @@ class _SenaraiJobScreenState extends State<SenaraiJobScreen> {
   }
 
   void _listenInventory() {
-    _invSub =
-        _db.collection('inventory_$_ownerID').snapshots().listen((snap) {
-      _inventory = snap.docs
-          .map((d) => {'id': d.id, ...d.data()})
-          .where((d) => (d['qty'] ?? 0) > 0)
+    if (_tenantId == null) return;
+    _invSub = _sb
+        .from('stock_parts')
+        .stream(primaryKey: ['id'])
+        .eq('tenant_id', _tenantId!)
+        .listen((rows) {
+      _inventory = rows
+          .where((r) => ((r['qty'] as num?) ?? 0) > 0)
+          .map(_stockRowToUi)
           .toList();
     });
   }
 
   Future<void> _loadBranchSettings() async {
-    final snap = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-    if (snap.exists) {
-      _branchSettings = snap.data() ?? {};
-      final staffRaw = _branchSettings['staffList'];
-      if (staffRaw is List) {
-        _staffRawList = staffRaw
-            .map((s) => s is Map
-                ? Map<String, dynamic>.from(s)
-                : <String, dynamic>{'name': s.toString()})
-            .toList();
-        _staffList = _staffRawList
-            .map((s) => (s['name'] ?? s['nama'] ?? '').toString())
-            .where((s) => s.isNotEmpty)
-            .toList();
-      }
+    if (_branchId == null) return;
+    final branch = await _sb
+        .from('branches')
+        .select('*, branch_staff(nama, phone, role, pin, status), tenants!inner(*)')
+        .eq('id', _branchId!)
+        .maybeSingle();
+    if (branch == null) return;
+
+    _branchSettings = Map<String, dynamic>.from(branch);
+    // Flatten enabled_modules jsonb (warranty_rules, staff config dsb.)
+    final em = branch['enabled_modules'];
+    if (em is Map) {
+      _branchSettings.addAll(Map<String, dynamic>.from(em));
     }
-    // Load warranty rules
+
+    // Staff list from branch_staff rows
+    final staffRaw = branch['branch_staff'];
+    if (staffRaw is List) {
+      _staffRawList = staffRaw
+          .map((s) => s is Map
+              ? Map<String, dynamic>.from(s)
+              : <String, dynamic>{'name': s.toString()})
+          .where((s) => (s['status'] ?? 'active') == 'active')
+          .toList();
+      _staffList = _staffRawList
+          .map((s) => (s['nama'] ?? s['name'] ?? '').toString())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+
+    // Warranty rules (simpan dalam enabled_modules.warranty_rules)
     final wr = _branchSettings['warranty_rules'];
     if (wr is List) {
       _warrantyRules = wr.map((e) => Map<String, dynamic>.from(e as Map)).toList();
     }
-    // Also load dealer-level settings for svPass etc.
-    try {
-      final dealerSnap =
-          await _db.collection('saas_dealers').doc(_ownerID).get();
-      if (dealerSnap.exists) {
-        final dd = dealerSnap.data() ?? {};
-        _branchSettings['svPass'] = dd['svPass'] ?? '';
-        _branchSettings['hasGalleryAddon'] = dd['addonGallery'] == true;
-        _branchSettings['domain'] =
-            dd['domain'] ?? 'https://rmspro.net';
-        _branchSettings['dealerCode'] =
-            (dd['dealerCode'] ?? '').toString();
-        _branchSettings['isCustomDomain'] =
-            (dd['domain'] ?? '') != '' &&
-            dd['domain'] != 'https://rmspro.net';
-      }
-    } catch (_) {}
+
+    // Tenant-level settings (svPass, gallery addon, domain)
+    final tenant = branch['tenants'];
+    if (tenant is Map) {
+      final t = Map<String, dynamic>.from(tenant);
+      final tConfig = t['config'] is Map ? Map<String, dynamic>.from(t['config']) : <String, dynamic>{};
+      _branchSettings['svPass'] = tConfig['svPass'] ?? '';
+      _branchSettings['hasGalleryAddon'] = t['addon_gallery'] == true;
+      final domain = (t['domain'] ?? '').toString();
+      _branchSettings['domain'] = domain.isNotEmpty ? domain : 'https://rmspro.net';
+      _branchSettings['dealerCode'] = (t['owner_id'] ?? '').toString();
+      _branchSettings['isCustomDomain'] =
+          domain.isNotEmpty && domain != 'https://rmspro.net';
+    }
   }
 
   // -------------------------------------------------------
@@ -597,10 +665,18 @@ class _SenaraiJobScreenState extends State<SenaraiJobScreen> {
                     // Clean empty keywords
                     rules.removeWhere((r) =>
                         (r['keyword'] ?? '').toString().trim().isEmpty);
-                    await _db
-                        .collection('shops_$_ownerID')
-                        .doc(_shopID)
-                        .update({'warranty_rules': rules});
+                    // Warranty rules simpan dlm branches.enabled_modules jsonb
+                    if (_branchId != null) {
+                      final currentEm = _branchSettings['enabled_modules'];
+                      final em = currentEm is Map
+                          ? Map<String, dynamic>.from(currentEm)
+                          : <String, dynamic>{};
+                      em['warranty_rules'] = rules;
+                      await _sb.from('branches').update({
+                        'enabled_modules': em,
+                      }).eq('id', _branchId!);
+                      _branchSettings['enabled_modules'] = em;
+                    }
                     _warrantyRules = rules;
                     _branchSettings['warranty_rules'] = rules;
                     Navigator.pop(ctx);
@@ -643,27 +719,33 @@ class _SenaraiJobScreenState extends State<SenaraiJobScreen> {
         final docId = invDoc['id']?.toString() ?? '';
         if (docId.isNotEmpty) {
           final currentQty = (invDoc['qty'] ?? 0) as num;
-          final newQty = (currentQty - qty).clamp(0, 999999);
-          await _db
-              .collection('inventory_$_ownerID')
-              .doc(docId)
-              .update({'qty': newQty});
+          final newQty = (currentQty - qty).clamp(0, 999999).toInt();
+          await _sb.from('stock_parts').update({'qty': newQty}).eq('id', docId);
         }
       }
     }
   }
 
   Future<void> _reverseInventory(List<Map<String, dynamic>> items) async {
+    if (_tenantId == null) return;
     for (final item in items) {
       final nama = (item['nama'] ?? '').toString().toLowerCase();
       final qty = (item['qty'] ?? 1) as num;
       if (nama.isEmpty) continue;
-      // Search all inventory including zero-stock
-      final snap = await _db.collection('inventory_$_ownerID').get();
-      for (final doc in snap.docs) {
-        if ((doc.data()['nama'] ?? '').toString().toLowerCase() == nama) {
-          final currentQty = (doc.data()['qty'] ?? 0) as num;
-          await doc.reference.update({'qty': currentQty + qty});
+      // Search all stock_parts (including zero-qty) by part_name
+      final rows = await _sb
+          .from('stock_parts')
+          .select('id, qty, part_name')
+          .eq('tenant_id', _tenantId!)
+          .ilike('part_name', nama);
+      for (final row in (rows as List)) {
+        final r = Map<String, dynamic>.from(row as Map);
+        if ((r['part_name'] ?? '').toString().toLowerCase() == nama) {
+          final currentQty = (r['qty'] as num?)?.toInt() ?? 0;
+          await _sb
+              .from('stock_parts')
+              .update({'qty': currentQty + qty.toInt()})
+              .eq('id', r['id']);
           break;
         }
       }
@@ -671,28 +753,31 @@ class _SenaraiJobScreenState extends State<SenaraiJobScreen> {
   }
 
   // -------------------------------------------------------
-  // KEWANGAN RECORD CREATION
+  // KEWANGAN RECORD CREATION — simpan dalam quick_sales (kind='REPAIR', description=siri)
+  // Schema gap: takde table khusus untuk repair payment record. TODO: extend schema.
   // -------------------------------------------------------
   Future<void> _createKewanganRecord(Map<String, dynamic> job) async {
-    final siri = job['siri'] ?? '-';
-    // Check if already exists
-    final existing = await _db
-        .collection('kewangan_$_ownerID')
-        .where('siri', isEqualTo: siri)
-        .get();
-    if (existing.docs.isNotEmpty) return;
+    if (_tenantId == null) return;
+    final siri = (job['siri'] ?? '-').toString();
+    // Check if already exists (match by description=siri + kind='REPAIR')
+    final existing = await _sb
+        .from('quick_sales')
+        .select('id')
+        .eq('tenant_id', _tenantId!)
+        .eq('kind', 'REPAIR')
+        .eq('description', siri)
+        .limit(1);
+    if ((existing as List).isNotEmpty) return;
 
-    await _db.collection('kewangan_$_ownerID').add({
-      'siri': siri,
-      'shopID': _shopID,
-      'nama': job['nama'] ?? '-',
-      'tel': job['tel'] ?? '-',
-      'jumlah': double.tryParse(job['total']?.toString() ?? '0') ?? 0,
-      'cara': job['cara_bayaran'] ?? 'CASH',
-      'staff': job['staff_repair'] ?? job['staff_terima'] ?? '-',
-      'jenis': 'REPAIR',
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-      'tarikh': DateFormat("yyyy-MM-dd'T'HH:mm").format(DateTime.now()),
+    await _sb.from('quick_sales').insert({
+      'tenant_id': _tenantId,
+      'branch_id': _branchId,
+      'kind': 'REPAIR',
+      'amount': double.tryParse(job['total']?.toString() ?? '0') ?? 0,
+      'description': siri,
+      'sold_by': job['staff_repair'] ?? job['staff_terima'] ?? '-',
+      'payment_method': job['cara_bayaran'] ?? 'CASH',
+      'sold_at': DateTime.now().toIso8601String(),
     });
   }
 
@@ -1497,10 +1582,7 @@ class _SenaraiJobScreenState extends State<SenaraiJobScreen> {
         final result = jsonDecode(response.body);
         final pdfUrl = result['pdfUrl']?.toString() ?? '';
         if (pdfUrl.isNotEmpty) {
-          await _db
-              .collection('repairs_$_ownerID')
-              .doc(siri)
-              .update({'pdfUrl_$typePDF': pdfUrl});
+          await _updateJobBySiri(siri, {'pdfUrl_$typePDF': pdfUrl});
           _snack('$typePDF berjaya dijana!');
           _downloadAndOpenPDF(pdfUrl, typePDF, siri);
         } else {
@@ -1801,16 +1883,13 @@ class _SenaraiJobScreenState extends State<SenaraiJobScreen> {
 
       _snack('Memuat naik gambar $jenis...');
       final bytes = await File(file.path).readAsBytes();
-      final ref = FirebaseStorage.instance
-          .ref('repairs/$_ownerID/$siri/img_$jenis.jpg');
-      await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
-      final url = await ref.getDownloadURL();
+      final url = await SupabaseStorageHelper().uploadBytes(
+        bucket: 'repairs',
+        path: '$_ownerID/$siri/img_${jenis}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        bytes: bytes,
+      );
 
-      // Save URL to Firestore
-      await _db
-          .collection('repairs_$_ownerID')
-          .doc(siri)
-          .update({'img_$jenis': url});
+      await _updateJobBySiri(siri, {'img_$jenis': url});
       _snack('Gambar $jenis berjaya dimuat naik');
       return url;
     } catch (e) {
@@ -2438,10 +2517,7 @@ class _SenaraiJobScreenState extends State<SenaraiJobScreen> {
                                       const SizedBox(width: 6),
                                       GestureDetector(
                                         onTap: () async {
-                                          await _db
-                                              .collection('repairs_$_ownerID')
-                                              .doc(siri)
-                                              .update({'catatan': catatanCtrl.text});
+                                          await _updateJobBySiri(siri, {'catatan': catatanCtrl.text});
                                           setS(() => catatanEditing = false);
                                           _snack('Catatan disimpan!');
                                         },
@@ -2678,12 +2754,17 @@ class _SenaraiJobScreenState extends State<SenaraiJobScreen> {
                                       if (tPickup.isNotEmpty) {
                                         updateData['tarikh_pickup'] = tPickup;
                                       }
-                                      updateData['status_history'] = statusHistory;
-
-                                      await _db
-                                          .collection('repairs_$_ownerID')
-                                          .doc(siri)
-                                          .update(updateData);
+                                      // status_history simpan dlm job_timeline (schema);
+                                      // drop from update payload, insert timeline row sebaliknya.
+                                      await _updateJobBySiri(siri, updateData);
+                                      if (status != originalStatus) {
+                                        await _addTimeline(
+                                          siri,
+                                          status,
+                                          note: DateFormat("yyyy-MM-dd'T'HH:mm").format(DateTime.now()),
+                                          byUser: staffBaiki,
+                                        );
+                                      }
 
                                       // Inventory deduction on READY TO PICKUP / COMPLETED
                                       if ((status == 'READY TO PICKUP' ||
@@ -3911,19 +3992,11 @@ class _SenaraiJobScreenState extends State<SenaraiJobScreen> {
               _actBtn('Selesai', FontAwesomeIcons.circleCheck, AppColors.green,
                   () async {
                 final now = DateFormat("yyyy-MM-dd'T'HH:mm").format(DateTime.now());
-                final existingHistory = (job['status_history'] is List)
-                    ? List<Map<String, dynamic>>.from(
-                        (job['status_history'] as List).map((e) => Map<String, dynamic>.from(e as Map)))
-                    : <Map<String, dynamic>>[];
-                existingHistory.add({'status': 'COMPLETED', 'timestamp': now});
-                await _db
-                    .collection('repairs_$_ownerID')
-                    .doc(siri)
-                    .update({
+                await _updateJobBySiri(siri, {
                   'status': 'COMPLETED',
                   'tarikh_pickup': now,
-                  'status_history': existingHistory,
                 });
+                await _addTimeline(siri, 'COMPLETED', note: now);
                 _snack('Status #$siri -> COMPLETED');
               }),
             const Spacer(),

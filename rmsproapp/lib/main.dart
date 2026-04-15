@@ -4,7 +4,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, kDebugMode;
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'config/supabase_config.dart';
 import 'firebase_options.dart';
 import 'screens/login_screen.dart';
 import 'screens/branch_dashboard_screen.dart';
@@ -17,7 +20,18 @@ import 'services/notification_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  await dotenv.load(fileName: '.env');
+
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  if (SupabaseConfig.isConfigured) {
+    await Supabase.initialize(
+      url: SupabaseConfig.url,
+      anonKey: SupabaseConfig.anonKey,
+    );
+  } else {
+    debugPrint('[Supabase] config missing — skip initialize');
+  }
 
   // App Check — verify requests come from genuine app, not bots/scrapers
   try {

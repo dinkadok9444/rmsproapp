@@ -4,10 +4,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
@@ -15,6 +13,8 @@ import 'package:dio/dio.dart';
 import '../../theme/app_theme.dart';
 import '../../services/app_language.dart';
 import '../../services/printer_service.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 
 const String _cloudRunUrl = 'https://rms-backend-94407896005.asia-southeast1.run.app';
 
@@ -31,7 +31,9 @@ class SvUntungRugiTab extends StatefulWidget {
 }
 
 class SvUntungRugiTabState extends State<SvUntungRugiTab> with SingleTickerProviderStateMixin {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _branchId;
   final _lang = AppLanguage();
   String _filterTime = 'TODAY';
   DateTime? _customStart, _customEnd;
@@ -65,23 +67,23 @@ class SvUntungRugiTabState extends State<SvUntungRugiTab> with SingleTickerProvi
     _segmentCtrl = TabController(length: widget.phoneEnabled ? 3 : 2, vsync: this);
     _segmentCtrl.addListener(() { if (mounted) setState(() {}); });
     _lang.addListener(_onLangChanged);
+    _init();
+  }
+
+  Future<void> _init() async {
+    await _repairService.init();
+    _branchId = _repairService.branchId;
+    await _loadBranchSettings();
     _listenAll();
-    _loadBranchSettings();
   }
 
   Future<void> _loadBranchSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    String ownerID = '', shopID = '';
-    if (branch.contains('@')) {
-      ownerID = branch.split('@')[0];
-      shopID = branch.split('@')[1].toUpperCase();
-    }
-    if (ownerID.isEmpty) return;
+    if (_branchId == null) return;
     try {
-      final doc = await _db.collection('shops_$ownerID').doc(shopID).get();
-      if (doc.exists && mounted) {
-        setState(() => _branchSettings = doc.data() ?? {});
+      final row = await _sb.from('branches').select().eq('id', _branchId!).maybeSingle();
+      if (row != null && mounted) {
+        final extras = (row['extras'] is Map) ? Map<String, dynamic>.from(row['extras']) : <String, dynamic>{};
+        setState(() => _branchSettings = {...extras, ...Map<String, dynamic>.from(row)});
       }
     } catch (_) {}
   }
@@ -94,33 +96,31 @@ class SvUntungRugiTabState extends State<SvUntungRugiTab> with SingleTickerProvi
   void dispose() {
     _lang.removeListener(_onLangChanged);
     _segmentCtrl.dispose();
-    for (final s in _subs) s.cancel();
+    for (final s in _subs) {
+      s.cancel();
+    }
     super.dispose();
   }
 
-  int _dapatkanMasaSah(dynamic ts) {
-    if (ts == null) return 0;
-    if (ts is Timestamp) return ts.millisecondsSinceEpoch;
-    if (ts is int) {
-      if (ts > 0 && ts < 10000000000) return ts * 1000;
-      return ts;
-    }
-    if (ts is double) return ts.toInt();
-    if (ts is String) {
-      final p = DateTime.tryParse(ts);
-      if (p != null) return p.millisecondsSinceEpoch;
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
     }
     return 0;
   }
 
+  int _dapatkanMasaSah(dynamic ts) => _tsFromIso(ts);
+
   void _listenAll() {
+    if (_branchId == null) return;
+
     // 1. Repair income (PAID, bukan JUALAN)
     _subs.add(
-      _db.collection('repairs_${widget.ownerID}').snapshots().listen((snap) {
+      _sb.from('jobs').stream(primaryKey: ['id']).eq('branch_id', _branchId!).listen((rows) {
         final list = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != widget.shopID) continue;
+        for (final d in rows) {
           if ((d['payment_status'] ?? '').toString().toUpperCase() != 'PAID') continue;
           final nama = (d['nama'] ?? '').toString().toUpperCase();
           final jenis = (d['jenis_servis'] ?? '').toString().toUpperCase();
@@ -129,7 +129,7 @@ class SvUntungRugiTabState extends State<SvUntungRugiTab> with SingleTickerProvi
             'label': d['nama'] ?? '-',
             'sublabel': '#${d['siri'] ?? '-'}',
             'jumlah': double.tryParse(d['total']?.toString() ?? '0') ?? 0,
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
+            'timestamp': _tsFromIso(d['created_at']),
             'jenis': 'REPAIR',
           });
         }
@@ -137,20 +137,17 @@ class SvUntungRugiTabState extends State<SvUntungRugiTab> with SingleTickerProvi
       }),
     );
 
-    // 2. Stock usage (modal sparepart)
+    // 2. Stock usage
     _subs.add(
-      _db.collection('stock_usage_${widget.ownerID}').snapshots().listen((snap) {
+      _sb.from('stock_usage').stream(primaryKey: ['id']).eq('branch_id', _branchId!).listen((rows) {
         final list = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != widget.shopID) continue;
-          if ((d['status'] ?? '').toString().toUpperCase() != 'USED') continue;
+        for (final d in rows) {
           list.add({
-            'label': d['nama'] ?? d['kod'] ?? '-',
-            'sublabel': d['kod'] ?? '-',
-            'kos': ((d['kos'] ?? 0) as num).toDouble(),
-            'jual': ((d['jual'] ?? 0) as num).toDouble(),
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
+            'label': d['part_name'] ?? d['sku'] ?? '-',
+            'sublabel': d['sku'] ?? '-',
+            'kos': ((d['cost'] ?? 0) as num).toDouble(),
+            'jual': ((d['price'] ?? 0) as num).toDouble(),
+            'timestamp': _tsFromIso(d['created_at']),
           });
         }
         if (mounted) setState(() => _stockUsage = list);
@@ -159,16 +156,14 @@ class SvUntungRugiTabState extends State<SvUntungRugiTab> with SingleTickerProvi
 
     // 3. Expenses
     _subs.add(
-      _db.collection('expenses_${widget.ownerID}').snapshots().listen((snap) {
+      _sb.from('expenses').stream(primaryKey: ['id']).eq('branch_id', _branchId!).listen((rows) {
         final list = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != widget.shopID) continue;
+        for (final d in rows) {
           list.add({
-            'label': d['perkara'] ?? '-',
-            'sublabel': d['staff'] ?? '-',
-            'jumlah': (d['jumlah'] as num?)?.toDouble() ?? 0,
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
+            'label': d['description'] ?? '-',
+            'sublabel': d['paid_by'] ?? '-',
+            'jumlah': (d['amount'] as num?)?.toDouble() ?? 0,
+            'timestamp': _tsFromIso(d['created_at']),
             'jenis': 'EXPENSE',
           });
         }
@@ -178,17 +173,16 @@ class SvUntungRugiTabState extends State<SvUntungRugiTab> with SingleTickerProvi
 
     // 4. Phone sales
     _subs.add(
-      _db.collection('phone_sales_${widget.ownerID}').snapshots().listen((snap) {
+      _sb.from('phone_sales').stream(primaryKey: ['id']).eq('branch_id', _branchId!).listen((rows) {
         final list = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != widget.shopID) continue;
+        for (final d in rows) {
+          final notes = (d['notes'] is Map) ? Map<String, dynamic>.from(d['notes']) : <String, dynamic>{};
           list.add({
-            'label': d['nama'] ?? d['kod'] ?? '-',
-            'sublabel': '#${d['siri'] ?? '-'}',
-            'kos': ((d['kos'] ?? 0) as num).toDouble(),
-            'jual': ((d['jual'] ?? 0) as num).toDouble(),
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
+            'label': d['device_name'] ?? notes['nama'] ?? '-',
+            'sublabel': '#${notes['siri'] ?? '-'}',
+            'kos': ((notes['kos'] ?? 0) as num).toDouble(),
+            'jual': (d['sold_price'] as num?)?.toDouble() ?? ((notes['jual'] ?? 0) as num).toDouble(),
+            'timestamp': _tsFromIso(d['sold_at'] ?? d['created_at']),
             'jenis': 'TELEFON',
           });
         }
@@ -198,35 +192,31 @@ class SvUntungRugiTabState extends State<SvUntungRugiTab> with SingleTickerProvi
 
     // 5. Losses
     _subs.add(
-      _db.collection('losses_${widget.ownerID}').snapshots().listen((snap) {
+      _sb.from('losses').stream(primaryKey: ['id']).eq('branch_id', _branchId!).listen((rows) {
         final list = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != widget.shopID) continue;
+        for (final d in rows) {
           list.add({
-            'label': d['keterangan'] ?? '-',
-            'sublabel': d['jenis'] ?? '-',
-            'jumlah': ((d['jumlah'] ?? 0) as num).toDouble(),
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
+            'label': d['reason'] ?? '-',
+            'sublabel': d['item_type'] ?? '-',
+            'jumlah': ((d['estimated_value'] ?? 0) as num).toDouble(),
+            'timestamp': _tsFromIso(d['created_at']),
           });
         }
         if (mounted) setState(() => _lossRecords = list);
       }),
     );
 
-    // 6. Jualan Pantas (PAID)
+    // 6. Jualan Pantas → quick_sales kind=JUALAN PANTAS
     _subs.add(
-      _db.collection('jualan_pantas_${widget.ownerID}').snapshots().listen((snap) {
+      _sb.from('quick_sales').stream(primaryKey: ['id']).eq('branch_id', _branchId!).listen((rows) {
         final list = <Map<String, dynamic>>[];
-        for (final doc in snap.docs) {
-          final d = doc.data();
-          if ((d['shopID'] ?? '').toString().toUpperCase() != widget.shopID) continue;
-          if ((d['payment_status'] ?? '').toString().toUpperCase() != 'PAID') continue;
+        for (final d in rows) {
+          if ((d['kind'] ?? '').toString().toUpperCase() != 'JUALAN PANTAS') continue;
           list.add({
-            'label': d['nama'] ?? 'JUALAN PANTAS',
-            'sublabel': '#${d['siri'] ?? '-'}',
-            'jumlah': double.tryParse(d['total']?.toString() ?? '0') ?? 0,
-            'timestamp': _dapatkanMasaSah(d['timestamp']),
+            'label': d['description'] ?? 'JUALAN PANTAS',
+            'sublabel': '#${d['description'] ?? '-'}',
+            'jumlah': double.tryParse(d['amount']?.toString() ?? '0') ?? 0,
+            'timestamp': _tsFromIso(d['created_at']),
             'jenis': 'JUALAN PANTAS',
           });
         }

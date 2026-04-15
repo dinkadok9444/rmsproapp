@@ -7,8 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../../services/supabase_storage.dart';
+import '../../services/supabase_client.dart';
 import 'package:dio/dio.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:path_provider/path_provider.dart';
@@ -29,7 +29,9 @@ class CreateJobScreen extends StatefulWidget {
 
 class _CreateJobScreenState extends State<CreateJobScreen> {
   final _repairService = RepairService();
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  String? _tenantId;
+  String? _branchId;
   final _printerService = PrinterService();
   final _lang = AppLanguage();
 
@@ -135,6 +137,8 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
     await _repairService.init();
     _ownerID = _repairService.ownerID;
     _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
 
     final staff = await _repairService.getStaffList();
     final inv = await _repairService.getInventory();
@@ -166,36 +170,58 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
 
   void _listenCustomerForms() {
     _formSub?.cancel();
-    _formSub = _db
-        .collection('customer_forms_$_ownerID')
-        .where('status', isEqualTo: 'PENDING')
-        .snapshots()
-        .listen((snap) {
-      final list = snap.docs
-          .map((d) => {'_id': d.id, ...d.data()})
-          .where((d) => (d['shopID'] ?? '').toString().toUpperCase() == _shopID.toUpperCase())
+    if (_tenantId == null || _branchId == null) return;
+    _formSub = _sb
+        .from('bookings')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .order('created_at', ascending: false)
+        .listen((rows) {
+      final list = rows
+          .where((r) => (r['status'] ?? '').toString().toUpperCase() == 'PENDING')
+          .map((r) => _bookingToForm(r))
           .toList();
-      list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
       if (mounted) setState(() => _pendingForms = list.take(10).toList());
-    }, onError: (_) {
-      // Fallback: manual fetch tanpa composite index
-      _fetchPendingForms();
-    });
+    }, onError: (_) => _fetchPendingForms());
   }
 
   Future<void> _fetchPendingForms() async {
+    if (_branchId == null) return;
     try {
-      final snap = await _db
-          .collection('customer_forms_$_ownerID')
-          .where('status', isEqualTo: 'PENDING')
-          .get();
-      final list = snap.docs
-          .map((d) => {'_id': d.id, ...d.data()})
-          .where((d) => (d['shopID'] ?? '').toString().toUpperCase() == _shopID.toUpperCase())
+      final rows = await _sb
+          .from('bookings')
+          .select()
+          .eq('branch_id', _branchId!)
+          .eq('status', 'PENDING')
+          .order('created_at', ascending: false)
+          .limit(10);
+      final list = (rows as List)
+          .map((r) => _bookingToForm(Map<String, dynamic>.from(r as Map)))
           .toList();
-      list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
-      if (mounted) setState(() => _pendingForms = list.take(10).toList());
+      if (mounted) setState(() => _pendingForms = list);
     } catch (_) {}
+  }
+
+  Map<String, dynamic> _bookingToForm(Map<String, dynamic> r) {
+    final notes = r['notes'];
+    Map<String, dynamic> extra = {};
+    if (notes is String && notes.isNotEmpty) {
+      try {
+        extra = Map<String, dynamic>.from(jsonDecode(notes) as Map);
+      } catch (_) {}
+    }
+    return {
+      '_id': r['id'],
+      'nama': r['nama'] ?? '',
+      'tel': r['tel'] ?? '',
+      'model': r['model'] ?? '',
+      'kerosakan': r['kerosakan'] ?? '',
+      'password': extra['password'] ?? 'Tiada',
+      'pattern': extra['pattern'] ?? '',
+      'catatan': extra['catatan'] ?? '',
+      'telBackup': extra['telBackup'] ?? [],
+      'timestamp': DateTime.tryParse(r['created_at']?.toString() ?? '')?.millisecondsSinceEpoch ?? 0,
+    };
   }
 
   void _loadFromForm(Map<String, dynamic> form) {
@@ -218,84 +244,68 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
     // Mark as USED so next customer shows
     final docId = form['_id'];
     if (docId != null) {
-      _db.collection('customer_forms_$_ownerID').doc(docId).update({
-        'status': 'USED',
-        'used_at': DateTime.now().millisecondsSinceEpoch,
-      });
+      _sb.from('bookings').update({'status': 'USED'}).eq('id', docId.toString()).then((_) {}, onError: (_) {});
     }
 
     _snack('Data borang pelanggan dimuatkan');
   }
 
   Future<void> _loadExistingCustomers() async {
+    if (_tenantId == null) return;
     try {
-      final snap = await _db.collection('repairs_$_ownerID').get();
-
-      // Load active shop vouchers & referrals for cross-reference
-      final voucherSnap = await _db.collection('shop_vouchers_$_ownerID').get();
-      final refSnap = await _db.collection('referrals_$_ownerID').get();
-
-      // Build voucher map: custTel -> list of active voucher codes
-      final voucherByTel = <String, List<String>>{};
+      // Active shop vouchers (remaining > 0, not expired)
+      final nowIso = DateTime.now().toIso8601String();
+      final voucherRows = await _sb
+          .from('shop_vouchers')
+          .select()
+          .eq('tenant_id', _tenantId!)
+          .or('expiry_date.is.null,expiry_date.gt.$nowIso');
       final loadedVouchers = <Map<String, dynamic>>[];
-      for (final doc in voucherSnap.docs) {
-        final d = doc.data();
-        if ((d['shopID'] ?? '').toString().toUpperCase() != _shopID) continue;
-        if ((d['status'] ?? '').toString().toUpperCase() != 'ACTIVE') continue;
-        final limit = (d['limit'] ?? 0) as int;
-        final claimed = (d['claimed'] ?? 0) as int;
-        if (limit > 0 && claimed >= limit) continue;
-        final expiry = (d['expiry'] ?? '').toString();
-        if (expiry.isNotEmpty && expiry != 'LIFETIME') {
-          final expiryDate = DateTime.tryParse(expiry);
-          if (expiryDate != null && expiryDate.isBefore(DateTime.now())) continue;
-        }
-        loadedVouchers.add({'code': d['code'] ?? doc.id, 'value': d['value'] ?? 0, ...d});
-        final custTel = (d['custTel'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
-        final code = d['code'] ?? doc.id;
-        if (custTel.isNotEmpty) {
-          voucherByTel.putIfAbsent(custTel, () => []).add(code);
-        } else {
-          // Shop-wide voucher — available to all
-          voucherByTel.putIfAbsent('_SHOP', () => []).add(code);
-        }
+      final shopWideVouchers = <String>[];
+      for (final row in (voucherRows as List)) {
+        final d = Map<String, dynamic>.from(row as Map);
+        final remaining = (d['remaining'] as num?)?.toDouble() ?? 0;
+        if (remaining <= 0) continue;
+        loadedVouchers.add({
+          'code': d['voucher_code'],
+          'value': d['allocated_amount'] ?? 0,
+          ...d,
+        });
+        shopWideVouchers.add(d['voucher_code']?.toString() ?? '');
       }
       _activeVouchers = loadedVouchers;
 
-      // Build referral map: tel -> refCode
-      final refByTel = <String, String>{};
-      for (final doc in refSnap.docs) {
-        final d = doc.data();
-        if ((d['shopID'] ?? '').toString().toUpperCase() != _shopID) continue;
-        if ((d['status'] ?? '').toString().toUpperCase() != 'ACTIVE') continue;
-        final tel = (d['tel'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
-        if (tel.isNotEmpty) refByTel[tel] = d['refCode'] ?? doc.id;
-      }
+      // Active referrals
+      final refRows = await _sb
+          .from('referrals')
+          .select('code')
+          .eq('tenant_id', _tenantId!)
+          .eq('status', 'ACTIVE');
+      final allRefCodes = (refRows as List)
+          .map((r) => (r as Map)['code']?.toString() ?? '')
+          .where((c) => c.isNotEmpty)
+          .toList();
 
-      final seen = <String>{};
+      // Customers from customers table
+      final custRows = await _sb
+          .from('customers')
+          .select('nama, tel')
+          .eq('tenant_id', _tenantId!)
+          .order('last_visit_at', ascending: false)
+          .limit(500);
       final custs = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        if ((d['shopID'] ?? '').toString().toUpperCase() != _shopID) continue;
+      for (final row in (custRows as List)) {
+        final d = Map<String, dynamic>.from(row as Map);
         final tel = (d['tel'] ?? '').toString();
-        if (tel.isNotEmpty && tel != '-' && !seen.contains(tel)) {
-          seen.add(tel);
-          final cleanTel = tel.replaceAll(RegExp(r'\D'), '');
-          // Gather voucher codes for this customer
-          final custVouchers = <String>[
-            ...(voucherByTel[cleanTel] ?? []),
-            ...(voucherByTel['_SHOP'] ?? []),
-          ];
-          final refCode = refByTel[cleanTel] ?? '';
-          custs.add({
-            'nama': d['nama'] ?? '',
-            'tel': tel,
-            'tel_wasap': d['tel_wasap'] ?? d['wasap'] ?? '',
-            'voucher': custVouchers.isNotEmpty ? custVouchers.first : '',
-            'allVouchers': custVouchers,
-            'referral': refCode,
-          });
-        }
+        if (tel.isEmpty || tel == '-') continue;
+        custs.add({
+          'nama': d['nama'] ?? '',
+          'tel': tel,
+          'tel_wasap': '',
+          'voucher': shopWideVouchers.isNotEmpty ? shopWideVouchers.first : '',
+          'allVouchers': shopWideVouchers,
+          'referral': allRefCodes.isNotEmpty ? allRefCodes.first : '',
+        });
       }
       if (mounted) setState(() => _existingCustomers = custs);
     } catch (_) {}
@@ -579,76 +589,94 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       return;
     }
 
-    // Voucher code V-XXXX — search from shop_vouchers (Fungsi Lain)
+    if (_tenantId == null) {
+      _snack('Tenant belum dimuatkan', err: true);
+      return;
+    }
+
+    // Voucher V-XXXX — lookup shop_vouchers
     if (kod.startsWith('V-')) {
       try {
-        final voucherSnap = await _db.collection('shop_vouchers_$_ownerID').doc(kod).get();
-        if (voucherSnap.exists) {
-          final vData = voucherSnap.data()!;
-          final vStatus = (vData['status'] ?? '').toString().toUpperCase();
-          final claimed = (vData['claimed'] ?? 0) as int;
-          final limit = (vData['limit'] ?? 0) as int;
-
-          if (vStatus != 'ACTIVE') {
-            _snack('Voucher $kod tidak aktif!', err: true);
-            return;
-          }
-          if (limit > 0 && claimed >= limit) {
-            _snack('Voucher $kod sudah habis kuota!', err: true);
-            return;
-          }
-          // Check expiry
-          final expiry = (vData['expiry'] ?? '').toString();
-          if (expiry.isNotEmpty && expiry != 'LIFETIME') {
-            final expiryDate = DateTime.tryParse(expiry);
-            if (expiryDate != null && expiryDate.isBefore(DateTime.now())) {
-              _snack('Voucher $kod sudah tamat tempoh!', err: true);
-              return;
-            }
-          }
-
-          final vAmt = double.tryParse(vData['value']?.toString() ?? _branchSettings['voucherAmount']?.toString() ?? '5') ?? 5;
-          setState(() {
-            _kodVoucher = kod;
-            _voucherAmt = vAmt;
-          });
-          _snack('Voucher $kod aktif! Potongan RM ${vAmt.toStringAsFixed(2)}');
-        } else {
+        final v = await _sb
+            .from('shop_vouchers')
+            .select()
+            .eq('tenant_id', _tenantId!)
+            .eq('voucher_code', kod)
+            .maybeSingle();
+        if (v == null) {
           _snack('Voucher $kod tidak dijumpai', err: true);
+          return;
         }
+        final remaining = (v['remaining'] as num?)?.toDouble() ?? 0;
+        if (remaining <= 0) {
+          _snack('Voucher $kod sudah habis kuota!', err: true);
+          return;
+        }
+        final expiryStr = v['expiry_date']?.toString();
+        if (expiryStr != null && expiryStr.isNotEmpty) {
+          final dt = DateTime.tryParse(expiryStr);
+          if (dt != null && dt.isBefore(DateTime.now())) {
+            _snack('Voucher $kod sudah tamat tempoh!', err: true);
+            return;
+          }
+        }
+        final perClaim = double.tryParse(
+                _branchSettings['voucherAmount']?.toString() ?? '5') ??
+            5;
+        final vAmt = remaining < perClaim ? remaining : perClaim;
+        setState(() {
+          _kodVoucher = kod;
+          _voucherAmt = vAmt;
+        });
+        _snack('Voucher $kod aktif! Potongan RM ${vAmt.toStringAsFixed(2)}');
       } catch (e) {
         _snack('Ralat semak voucher: $e', err: true);
       }
       return;
     }
 
-    // Referral code REF-XXXX
+    // Referral REF-XXXX
     if (kod.startsWith('REF-')) {
       try {
-        final refSnap =
-            await _db.collection('referrals_$_ownerID').doc(kod).get();
-        if (!refSnap.exists) {
+        final ref = await _sb
+            .from('referrals')
+            .select()
+            .eq('tenant_id', _tenantId!)
+            .eq('code', kod)
+            .maybeSingle();
+        if (ref == null) {
           _snack('Kod referral $kod tidak dijumpai', err: true);
           return;
         }
-        final refData = refSnap.data()!;
-        final refTel = (refData['tel'] ?? '').toString();
-
-        // Self-referral prevention
-        if (refTel == _telCtrl.text.trim()) {
-          _snack('Tidak boleh guna referral sendiri!', err: true);
+        final status = (ref['status'] ?? '').toString().toUpperCase();
+        if (status != 'ACTIVE') {
+          _snack('Kod referral $kod tidak aktif', err: true);
           return;
         }
-
-        final refAmt = double.tryParse(
-                _branchSettings['referralAmount']?.toString() ?? '5') ??
-            5;
+        final maxUses = (ref['max_uses'] as num?)?.toInt() ?? 0;
+        final usedCount = (ref['used_count'] as num?)?.toInt() ?? 0;
+        if (maxUses > 0 && usedCount >= maxUses) {
+          _snack('Kod referral $kod habis kuota', err: true);
+          return;
+        }
+        final validUntil = ref['valid_until']?.toString();
+        if (validUntil != null && validUntil.isNotEmpty) {
+          final dt = DateTime.tryParse(validUntil);
+          if (dt != null && dt.isBefore(DateTime.now())) {
+            _snack('Kod referral $kod sudah tamat tempoh', err: true);
+            return;
+          }
+        }
+        // Schema belum ada referrer tel — skip self-referral check
+        final discAmt = (ref['discount_amount'] as num?)?.toDouble() ?? 0;
+        final refAmt = discAmt > 0
+            ? discAmt
+            : (double.tryParse(_branchSettings['referralAmount']?.toString() ?? '5') ?? 5);
         setState(() {
           _kodVoucher = kod;
           _voucherAmt = refAmt;
         });
-        _snack(
-            'Referral $kod aktif! Potongan RM ${refAmt.toStringAsFixed(2)}');
+        _snack('Referral $kod aktif! Potongan RM ${refAmt.toStringAsFixed(2)}');
       } catch (e) {
         _snack('Ralat semak referral: $e', err: true);
       }
@@ -881,11 +909,11 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
       if (b64 == null) return null;
       try {
         final bytes = base64Decode(b64.split(',').last);
-        final ref = FirebaseStorage.instance
-            .ref('repairs/$_ownerID/$siri/${label}_${DateTime.now().millisecondsSinceEpoch}.jpg');
-        final task = await ref.putData(
-            bytes, SettableMetadata(contentType: 'image/jpeg'));
-        return await task.ref.getDownloadURL();
+        return await SupabaseStorageHelper().uploadBytes(
+          bucket: 'repairs',
+          path: '$_ownerID/$siri/${label}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          bytes: bytes,
+        );
       } catch (_) {
         return null;
       }
@@ -937,46 +965,61 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
         voucherAmt: _voucherAmt,
       );
 
-      // Upload images to Firebase Storage
+      // Upload images ke Firebase Storage (Fasa 7.5 akan migrate), update jobs row
       final imageUrls = await _uploadImages(siri);
-      if (imageUrls.isNotEmpty) {
-        await _db
-            .collection('repairs_$_ownerID')
-            .doc(siri)
-            .update(imageUrls);
+      if (imageUrls.isNotEmpty && _tenantId != null) {
+        await _sb
+            .from('jobs')
+            .update(imageUrls)
+            .eq('tenant_id', _tenantId!)
+            .eq('siri', siri);
       }
 
-      // Create referral claim if referral code used
-      if (_kodVoucher.startsWith('REF-')) {
+      // Referral: bump used_count (schema takde referral_claims log — TODO kalau perlu)
+      if (_kodVoucher.startsWith('REF-') && _tenantId != null) {
         try {
-          await _db.collection('referral_claims_$_ownerID').add({
-            'referralCode': _kodVoucher,
-            'claimedBy': _telCtrl.text.trim(),
-            'claimedByName': _namaCtrl.text.trim().toUpperCase(),
-            'siri': siri,
-            'amount': _voucherAmt,
-            'shopID': _shopID,
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-          });
+          final ref = await _sb
+              .from('referrals')
+              .select('id, used_count')
+              .eq('tenant_id', _tenantId!)
+              .eq('code', _kodVoucher)
+              .maybeSingle();
+          if (ref != null) {
+            await _sb.from('referrals').update({
+              'used_count': ((ref['used_count'] as num?)?.toInt() ?? 0) + 1,
+            }).eq('id', ref['id']);
+          }
         } catch (_) {}
       }
 
-      // Update voucher claimed count if voucher code used
-      if (_kodVoucher.startsWith('V-')) {
+      // Voucher: bump used_amount oleh voucherAmt
+      if (_kodVoucher.startsWith('V-') && _tenantId != null) {
         try {
-          await _db.collection('shop_vouchers_$_ownerID').doc(_kodVoucher).update({
-            'claimed': FieldValue.increment(1),
-          });
+          final v = await _sb
+              .from('shop_vouchers')
+              .select('id, used_amount')
+              .eq('tenant_id', _tenantId!)
+              .eq('voucher_code', _kodVoucher)
+              .maybeSingle();
+          if (v != null) {
+            await _sb.from('shop_vouchers').update({
+              'used_amount':
+                  ((v['used_amount'] as num?)?.toDouble() ?? 0) + _voucherAmt,
+            }).eq('id', v['id']);
+          }
         } catch (_) {}
       }
-
-      // Delete any draft that was pulled
-      // (already deleted at pull time)
 
       // Read back saved data for receipt printing
-      final savedSnap =
-          await _db.collection('repairs_$_ownerID').doc(siri).get();
-      _savedJobData = savedSnap.data();
+      if (_tenantId != null) {
+        final saved = await _sb
+            .from('jobs')
+            .select()
+            .eq('tenant_id', _tenantId!)
+            .eq('siri', siri)
+            .maybeSingle();
+        _savedJobData = saved == null ? null : Map<String, dynamic>.from(saved);
+      }
       _generatedVoucher =
           _savedJobData?['voucher_generated']?.toString() ?? '';
 
@@ -2150,62 +2193,58 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
             final cleanCode = code.trim().toUpperCase();
             if (cleanCode.isEmpty) return;
 
-            // Query Firestore for earliest AVAILABLE stock with this kod
-            final snap = await _db
-                .collection('inventory_$_ownerID')
-                .where('kod', isEqualTo: cleanCode)
-                .where('status', isEqualTo: 'AVAILABLE')
-                .get();
-
-            if (snap.docs.isEmpty) {
+            if (_tenantId == null) {
+              _snack('Tenant belum dimuatkan', err: true);
+              return;
+            }
+            // Cari stock_parts dengan sku=cleanCode, qty>0
+            final rows = await _sb
+                .from('stock_parts')
+                .select()
+                .eq('tenant_id', _tenantId!)
+                .eq('sku', cleanCode)
+                .gt('qty', 0)
+                .order('created_at', ascending: true)
+                .limit(1);
+            if ((rows as List).isEmpty) {
               _snack('Tiada stok "$cleanCode" yang available', err: true);
               return;
             }
-
-            // Pick the earliest stock (lowest timestamp)
-            final docs = snap.docs.toList()
-              ..sort((a, b) => ((a.data()['timestamp'] ?? 0) as num).compareTo((b.data()['timestamp'] ?? 0) as num));
-            final doc = docs.first;
-            final inv = doc.data();
-            final docId = doc.id;
+            final inv = Map<String, dynamic>.from(rows.first as Map);
+            final stockId = inv['id'] as String;
+            final currentQty = (inv['qty'] as num?)?.toInt() ?? 0;
+            final partName = inv['part_name']?.toString() ?? '';
+            final price = (inv['price'] as num?)?.toDouble() ?? 0;
             final now = DateTime.now();
 
-            // Mark stock as USED
-            await _db.collection('inventory_$_ownerID').doc(docId).update({
-              'status': 'USED',
-              'tkh_guna': DateFormat('yyyy-MM-dd HH:mm').format(now),
-            });
+            // Decrement qty
+            await _sb
+                .from('stock_parts')
+                .update({'qty': currentQty - 1})
+                .eq('id', stockId);
 
-            // Record in stock usage history
-            final usageRef = await _db.collection('stock_usage_$_ownerID').add({
-              'stock_doc_id': docId,
-              'kod': cleanCode,
-              'nama': inv['nama'] ?? '',
-              'kos': inv['kos'] ?? 0,
-              'jual': inv['jual'] ?? 0,
-              'shopID': _shopID,
-              'timestamp': now.millisecondsSinceEpoch,
-              'tarikh': DateFormat('yyyy-MM-dd HH:mm').format(now),
-              'status': 'USED',
-            });
+            // Log stock_usage
+            final usage = await _sb.from('stock_usage').insert({
+              'tenant_id': _tenantId,
+              'branch_id': _branchId,
+              'stock_part_id': stockId,
+              'part_name': partName,
+              'qty': 1,
+              'used_by': _staffTerima,
+            }).select('id').single();
 
-            // Track locally for history display
             setState(() {
               _stockUsageHistory.add({
-                'usage_id': usageRef.id,
-                'stock_doc_id': docId,
+                'usage_id': usage['id'],
+                'stock_part_id': stockId,
                 'kod': cleanCode,
-                'nama': inv['nama'] ?? '',
-                'jual': inv['jual'] ?? 0,
+                'nama': partName,
+                'jual': price,
                 'tarikh': DateFormat('HH:mm').format(now),
               });
-              _items.add(RepairItem(
-                nama: inv['nama']?.toString() ?? '',
-                qty: 1,
-                harga: (inv['jual'] as num?)?.toDouble() ?? 0,
-              ));
+              _items.add(RepairItem(nama: partName, qty: 1, harga: price));
             });
-            _snack('Stok diambil: ${inv['nama']}');
+            _snack('Stok diambil: $partName');
           },
         ),
       ),
@@ -2215,20 +2254,23 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
   // ─── CANCEL STOCK USAGE ───
   Future<void> _cancelStockUsage(int index) async {
     final usage = _stockUsageHistory[index];
-    final stockDocId = usage['stock_doc_id'] as String;
+    final stockPartId = usage['stock_part_id'] as String;
     final usageId = usage['usage_id'] as String;
 
-    // Restore stock to AVAILABLE
-    await _db.collection('inventory_$_ownerID').doc(stockDocId).update({
-      'status': 'AVAILABLE',
-      'tkh_guna': '',
-    });
+    // Restore qty +1
+    final current = await _sb
+        .from('stock_parts')
+        .select('qty')
+        .eq('id', stockPartId)
+        .maybeSingle();
+    final currentQty = (current?['qty'] as num?)?.toInt() ?? 0;
+    await _sb
+        .from('stock_parts')
+        .update({'qty': currentQty + 1})
+        .eq('id', stockPartId);
 
-    // Update usage record
-    await _db.collection('stock_usage_$_ownerID').doc(usageId).update({
-      'status': 'CANCELLED',
-      'cancelled_at': DateTime.now().millisecondsSinceEpoch,
-    });
+    // Delete usage row
+    await _sb.from('stock_usage').delete().eq('id', usageId);
 
     setState(() => _stockUsageHistory.removeAt(index));
     _snack('Stok "${usage['nama']}" dibatalkan, kembali ke inventori');
@@ -2252,19 +2294,19 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
               ? const Iterable.empty()
               : _inventory
                   .where((inv) =>
-                      (inv['nama'] ?? '')
+                      (inv['part_name'] ?? '')
                           .toString()
                           .toLowerCase()
                           .contains(v.text.toLowerCase()) ||
-                      (inv['kod'] ?? '')
+                      (inv['sku'] ?? '')
                           .toString()
                           .toLowerCase()
                           .contains(v.text.toLowerCase()))
                   .take(5),
-          displayStringForOption: (o) => o['nama']?.toString() ?? '',
+          displayStringForOption: (o) => o['part_name']?.toString() ?? '',
           onSelected: (o) => setState(() {
-            item.nama = o['nama']?.toString() ?? '';
-            item.harga = (o['jual'] as num?)?.toDouble() ?? 0;
+            item.nama = o['part_name']?.toString() ?? '';
+            item.harga = (o['price'] as num?)?.toDouble() ?? 0;
             // Update harga controller
             _hargaCtrlCache[index]?.text = item.harga > 0 ? item.harga.toStringAsFixed(2) : '';
           }),
@@ -2321,18 +2363,18 @@ class _CreateJobScreenState extends State<CreateJobScreen> {
                                 crossAxisAlignment:
                                     CrossAxisAlignment.start,
                                 children: [
-                                  Text(o['kod']?.toString() ?? '',
+                                  Text(o['sku']?.toString() ?? '',
                                       style: const TextStyle(
                                           color: AppColors.primary,
                                           fontSize: 9,
                                           fontWeight: FontWeight.bold)),
-                                  Text(o['nama']?.toString() ?? '',
+                                  Text(o['part_name']?.toString() ?? '',
                                       style: const TextStyle(
                                           color: Colors.black,
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700)),
                                   Text(
-                                      'RM ${(o['jual'] as num?)?.toStringAsFixed(2) ?? '0'} (Stok: ${o['qty']})',
+                                      'RM ${(o['price'] as num?)?.toStringAsFixed(2) ?? '0'} (Stok: ${o['qty']})',
                                       style: const TextStyle(
                                           color: AppColors.green,
                                           fontSize: 10,

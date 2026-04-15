@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../../theme/app_theme.dart';
+import '../../services/supabase_client.dart';
 
 const _functionsBase = 'https://us-central1-rmspro-2f454.cloudfunctions.net';
 
@@ -14,7 +14,7 @@ class WhatsappBotScreen extends StatefulWidget {
 }
 
 class _WhatsappBotScreenState extends State<WhatsappBotScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
   List<Map<String, dynamic>> _botList = [];
   bool _isLoading = true;
 
@@ -27,11 +27,18 @@ class _WhatsappBotScreenState extends State<WhatsappBotScreen> {
   Future<void> _loadBots() async {
     setState(() => _isLoading = true);
     try {
-      final snap = await _db.collection('saas_dealers').where('botWhatsapp', isNotEqualTo: null).get();
-      _botList = snap.docs.map((doc) {
-        final d = doc.data();
-        d['id'] = doc.id;
-        return d;
+      final rows = await _sb.from('tenants').select();
+      _botList = rows.where((r) {
+        final bw = r['bot_whatsapp'];
+        return bw is Map && bw.isNotEmpty;
+      }).map<Map<String, dynamic>>((r) {
+        return {
+          'id': r['owner_id'], // legacy key
+          'tenant_id': r['id'],
+          'ownerID': r['owner_id'],
+          'namaKedai': r['nama_kedai'] ?? '',
+          'botWhatsapp': Map<String, dynamic>.from(r['bot_whatsapp'] as Map),
+        };
       }).toList();
 
       _botList.sort((a, b) {
@@ -43,6 +50,13 @@ class _WhatsappBotScreenState extends State<WhatsappBotScreen> {
       debugPrint('loadBots error: $e');
     }
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _updateBotWhatsapp(String ownerId, Map<String, dynamic> patch) async {
+    final existing = await _sb.from('tenants').select('bot_whatsapp').eq('owner_id', ownerId).maybeSingle();
+    final bot = (existing?['bot_whatsapp'] is Map) ? Map<String, dynamic>.from(existing!['bot_whatsapp']) : <String, dynamic>{};
+    bot.addAll(patch);
+    await _sb.from('tenants').update({'bot_whatsapp': bot}).eq('owner_id', ownerId);
   }
 
   Future<void> _showAddDialog() async {
@@ -343,11 +357,11 @@ class _WhatsappBotScreenState extends State<WhatsappBotScreen> {
 
     _showLoading('Mengaktifkan bot...');
     try {
-      await _db.collection('saas_dealers').doc(ownerID).update({
-        'botWhatsapp': {
+      await _sb.from('tenants').update({
+        'bot_whatsapp': {
           'noWhatsapp': noWhatsapp,
           'status': 'AKTIF',
-          'createdAt': FieldValue.serverTimestamp(),
+          'createdAt': DateTime.now().toIso8601String(),
           'phoneNumberId': (result['phoneNumberId'] ?? '').toString(),
           'accessToken': (result['accessToken'] ?? '').toString(),
           'wabaId': (result['wabaId'] ?? '').toString(),
@@ -355,7 +369,7 @@ class _WhatsappBotScreenState extends State<WhatsappBotScreen> {
           'greeting': 'Terima kasih kerana menghubungi $namaKedai. Sila hantar nombor telefon anda untuk semak status repair.',
           'notFound': 'Maaf, tiada rekod repair dijumpai untuk nombor ini. Sila semak semula atau hubungi kedai.',
         },
-      });
+      }).eq('owner_id', ownerID);
 
       if (!mounted) return;
       Navigator.pop(context);
@@ -386,9 +400,7 @@ class _WhatsappBotScreenState extends State<WhatsappBotScreen> {
     final id = (item['id'] ?? '').toString();
 
     try {
-      await _db.collection('saas_dealers').doc(id).update({
-        'botWhatsapp.status': newStatus,
-      });
+      await _updateBotWhatsapp(id, {'status': newStatus});
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Bot ${newStatus == 'AKTIF' ? 'diaktifkan' : 'dinyahaktifkan'}'),
@@ -436,9 +448,7 @@ class _WhatsappBotScreenState extends State<WhatsappBotScreen> {
 
     try {
       final id = (item['id'] ?? '').toString();
-      await _db.collection('saas_dealers').doc(id).update({
-        'botWhatsapp': FieldValue.delete(),
-      });
+      await _sb.from('tenants').update({'bot_whatsapp': <String, dynamic>{}}).eq('owner_id', id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text('Bot telah dipadam'),
@@ -577,14 +587,14 @@ class _WhatsappBotScreenState extends State<WhatsappBotScreen> {
                 child: ElevatedButton(
                   onPressed: () async {
                     try {
-                      await _db.collection('saas_dealers').doc(id).update({
-                        'botWhatsapp.noWhatsapp': noWaCtrl.text.trim().replaceAll(RegExp(r'[^0-9]'), ''),
-                        'botWhatsapp.phoneNumberId': phoneIdCtrl.text.trim(),
-                        'botWhatsapp.accessToken': accessTokenCtrl.text.trim(),
-                        'botWhatsapp.wabaId': wabaIdCtrl.text.trim(),
-                        'botWhatsapp.verifyToken': verifyTokenCtrl.text.trim(),
-                        'botWhatsapp.greeting': greetingCtrl.text.trim(),
-                        'botWhatsapp.notFound': notFoundCtrl.text.trim(),
+                      await _updateBotWhatsapp(id, {
+                        'noWhatsapp': noWaCtrl.text.trim().replaceAll(RegExp(r'[^0-9]'), ''),
+                        'phoneNumberId': phoneIdCtrl.text.trim(),
+                        'accessToken': accessTokenCtrl.text.trim(),
+                        'wabaId': wabaIdCtrl.text.trim(),
+                        'verifyToken': verifyTokenCtrl.text.trim(),
+                        'greeting': greetingCtrl.text.trim(),
+                        'notFound': notFoundCtrl.text.trim(),
                       });
                       if (!ctx.mounted) return;
                       Navigator.pop(ctx);

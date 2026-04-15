@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 
 class SvExpenseTab extends StatefulWidget {
   final String ownerID, shopID;
@@ -13,7 +14,10 @@ class SvExpenseTab extends StatefulWidget {
 }
 
 class _SvExpenseTabState extends State<SvExpenseTab> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _tenantId;
+  String? _branchId;
   final _searchCtrl = TextEditingController();
   String _sortOrder = 'ZA';
   String _filterKategori = 'SEMUA';
@@ -37,7 +41,7 @@ class _SvExpenseTabState extends State<SvExpenseTab> {
   @override
   void initState() {
     super.initState();
-    _listen();
+    _init();
   }
 
   @override
@@ -47,22 +51,42 @@ class _SvExpenseTabState extends State<SvExpenseTab> {
     super.dispose();
   }
 
-  void _listen() {
-    _sub = _db.collection('expenses_${widget.ownerID}').snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        d['key'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == widget.shopID) list.add(d);
-      }
+  Future<void> _init() async {
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+    if (_branchId == null) return;
+    _sub = _sb
+        .from('expenses')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map<Map<String, dynamic>>((r) => {
+        'key': r['id'],
+        'shopID': widget.shopID,
+        'kategori': r['category'] ?? '',
+        'perkara': r['description'] ?? '',
+        'jumlah': r['amount'] ?? 0,
+        'catatan': r['notes'] ?? '',
+        'staff': r['paid_by'] ?? '',
+        'timestamp': _tsFromIso(r['created_at']),
+      }).toList();
       list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
       if (mounted) setState(() => _expenses = list);
     });
   }
 
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
+    return 0;
+  }
+
   int _dapatkanMasaSah(dynamic ts) {
     if (ts == null) return 0;
-    if (ts is Timestamp) return ts.millisecondsSinceEpoch;
     if (ts is int) {
       if (ts > 0 && ts < 10000000000) return ts * 1000;
       return ts;
@@ -262,20 +286,20 @@ class _SvExpenseTabState extends State<SvExpenseTab> {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Isi perkara & jumlah'), backgroundColor: AppColors.red));
                     return;
                   }
+                  if (_tenantId == null || _branchId == null) return;
                   final data = {
-                    'shopID': widget.shopID,
-                    'kategori': kategori,
-                    'perkara': perkaraCtrl.text.trim(),
-                    'jumlah': double.tryParse(jumlahCtrl.text) ?? 0,
-                    'catatan': catatanCtrl.text.trim(),
-                    'staff': existing?['staff'] ?? '',
-                    'timestamp': existing?['timestamp'] ?? DateTime.now().millisecondsSinceEpoch,
+                    'tenant_id': _tenantId,
+                    'branch_id': _branchId,
+                    'category': kategori,
+                    'description': perkaraCtrl.text.trim(),
+                    'amount': double.tryParse(jumlahCtrl.text) ?? 0,
+                    'notes': catatanCtrl.text.trim(),
+                    'paid_by': existing?['staff'] ?? '',
                   };
                   if (existing != null && existing['key'] != null) {
-                    await _db.collection('expenses_${widget.ownerID}').doc(existing['key']).update(data);
+                    await _sb.from('expenses').update(data).eq('id', existing['key']);
                   } else {
-                    data['timestamp'] = DateTime.now().millisecondsSinceEpoch;
-                    await _db.collection('expenses_${widget.ownerID}').add(data);
+                    await _sb.from('expenses').insert(data);
                   }
                   if (ctx.mounted) Navigator.pop(ctx);
                   if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -309,7 +333,7 @@ class _SvExpenseTabState extends State<SvExpenseTab> {
       ],
     ));
     if (confirmed == true) {
-      await _db.collection('expenses_${widget.ownerID}').doc(docId).delete();
+      await _sb.from('expenses').delete().eq('id', docId);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rekod dipadam'), backgroundColor: AppColors.green));
     }
   }

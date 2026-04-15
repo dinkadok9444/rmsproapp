@@ -59,9 +59,12 @@
     .fl-modal-bg.is-open{display:flex;}
     .fl-modal{background:#fff;border-radius:16px;padding:20px;max-width:440px;width:100%;}
     .fl-modal h3{margin:0 0 14px;color:#f59e0b;font-size:13px;font-weight:900;}
-    .fl-field{margin-bottom:10px;}
+    .fl-field{margin-bottom:10px;min-width:0;}
     .fl-field label{display:block;color:#64748b;font-size:10px;font-weight:900;margin-bottom:4px;}
-    .fl-field input,.fl-field select{width:100%;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font:inherit;background:#f8fafc;}
+    .fl-field input,.fl-field select{width:100%;min-width:0;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font:inherit;background:#f8fafc;}
+    .fl-modal-actions{flex-wrap:wrap;}
+    .fl-pos-row{flex-wrap:wrap;min-width:0;}
+    .fl-pos-row>*{min-width:0;}
     .fl-modal-actions{display:flex;gap:8px;margin-top:12px;}
     .fl-modal-actions button{flex:1;}
   </style>
@@ -105,9 +108,9 @@
       <h3 id="posModalTitle"><i class="fas fa-truck-fast"></i> TAMBAH REKOD</h3>
       <div class="fl-field"><label>TARIKH</label><input id="posTarikh" placeholder="yyyy-mm-dd"></div>
       <div class="fl-field"><label>ITEM / TUJUAN</label><input id="posItem" placeholder="Maklumat barang"></div>
-      <div style="display:flex;gap:8px;">
-        <div class="fl-field" style="flex:1;"><label>KURIER</label><input id="posKurier" placeholder="J&T / PosLaju"></div>
-        <div class="fl-field" style="flex:1;"><label>NO TRACKING</label><input id="posTrack" placeholder="No Track" style="text-transform:uppercase;"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <div class="fl-field" style="flex:1 1 140px;min-width:0;"><label>KURIER</label><input id="posKurier" placeholder="J&T / PosLaju"></div>
+        <div class="fl-field" style="flex:1 1 140px;min-width:0;"><label>NO TRACKING</label><input id="posTrack" placeholder="No Track" style="text-transform:uppercase;"></div>
       </div>
       <div class="fl-field"><label>STATUS</label>
         <select id="posStatus"><option>DIPOS</option><option>DALAM PERJALANAN</option><option>SELESAI</option></select>
@@ -117,11 +120,8 @@
         <button class="fl-btn" id="posSave"><i class="fas fa-save"></i> SIMPAN</button>
       </div>
     </div>
-  </div>
-
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js"></script>
+  </div>  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
   <script src="js/fungsi_lain.js"></script>
 </body>
 </html>

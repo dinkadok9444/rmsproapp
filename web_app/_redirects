@@ -1,0 +1,4 @@
+# Default fallback to index.html (for unmatched routes)
+/branch    /branch.html    302
+/dashboard /dashboard.html 302
+/*         /index.html     200

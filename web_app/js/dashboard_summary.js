@@ -1,34 +1,83 @@
-/* Ringkasan Jualan — dashboard. Semua bil aktif (CUSTOMER + DEALER), semua masa. */
-(function () {
+/* dashboard_summary.js — Ringkasan Jualan (today). Mirror branch_dashboard summary card. */
+(async function () {
   'use strict';
-  if (!document.getElementById('stCount')) return;
-  if (typeof firebase === 'undefined' || !firebase.firestore) return;
+  const ctx = await window.requireAuth();
+  if (!ctx) return;
+  const branchId = ctx.current_branch_id;
+  if (!branchId) return;
 
-  const branch = localStorage.getItem('rms_current_branch');
-  if (!branch || !branch.includes('@')) return;
-  const [ownerRaw, shopRaw] = branch.split('@');
-  const ownerID = (ownerRaw || '').toLowerCase();
-  const shopID = (shopRaw || '').toUpperCase();
+  const fmt = (n) => 'RM ' + (Number(n) || 0).toLocaleString('en-MY', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  });
 
-  const $ = id => document.getElementById(id);
-  const num = v => Number(v) || 0;
-  const fmtMoney = n => 'RM ' + (Number(n) || 0).toFixed(2);
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
 
-  firebase.firestore().collection('phone_receipts_' + ownerID)
-    .onSnapshot(snap => {
-      let count = 0, totalSales = 0, totalBuy = 0, unitCount = 0;
-      snap.forEach(doc => {
-        const d = doc.data() || {};
-        if (String(d.shopID || '').toUpperCase() !== shopID) return;
-        if (String(d.billStatus || 'ACTIVE').toUpperCase() !== 'ACTIVE') return;
-        count += 1;
-        totalSales += num(d.sellPrice);
-        totalBuy += num(d.buyPrice);
-        unitCount += Array.isArray(d.items) ? d.items.length : 1;
-      });
-      $('stCount').textContent = count;
-      $('stSales').textContent = fmtMoney(totalSales);
-      $('stProfit').textContent = fmtMoney(totalSales - totalBuy);
-      $('stUnit').textContent = unitCount;
-    }, err => console.warn('dashboard_summary:', err));
+  // Greet
+  const greet = document.querySelector('.dashboard-greeting h2');
+  if (greet && ctx.nama) greet.textContent = `${ctx.nama} 👋`;
+
+  async function loadSummary() {
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const isoStart = todayStart.toISOString();
+
+    // Phone sales (active only)
+    const { data: phones } = await window.sb
+      .from('phone_sales')
+      .select('price_per_unit, total_price, notes')
+      .eq('branch_id', branchId)
+      .is('deleted_at', null)
+      .gte('sold_at', isoStart);
+
+    // Quick sales (kind != REFUND/REVERSAL)
+    const { data: quicks } = await window.sb
+      .from('quick_sales')
+      .select('amount, kind')
+      .eq('branch_id', branchId)
+      .gte('sold_at', isoStart);
+
+    // Repair jobs paid today
+    const { data: jobs } = await window.sb
+      .from('jobs')
+      .select('total, harga')
+      .eq('branch_id', branchId)
+      .eq('payment_status', 'PAID')
+      .gte('updated_at', isoStart);
+
+    let count = 0, sales = 0, profit = 0, unit = 0;
+
+    (phones || []).forEach((r) => {
+      count++;
+      const total = Number(r.total_price || r.price_per_unit || 0);
+      sales += total;
+      let kos = 0;
+      try { const n = typeof r.notes === 'string' ? JSON.parse(r.notes) : r.notes; kos = Number(n?.kos || 0); } catch (_) {}
+      profit += total - kos;
+      unit++;
+    });
+
+    (quicks || []).forEach((r) => {
+      if ((r.kind || '').toUpperCase().includes('REFUND')) return;
+      count++;
+      sales += Number(r.amount || 0);
+      profit += Number(r.amount || 0);
+      unit++;
+    });
+
+    (jobs || []).forEach((r) => {
+      count++;
+      const t = Number(r.total || r.harga || 0);
+      sales += t;
+      profit += t;
+      unit++;
+    });
+
+    setText('stCount', String(count));
+    setText('stSales', fmt(sales));
+    setText('stProfit', fmt(profit));
+    setText('stUnit', String(unit));
+  }
+
+  await loadSummary();
+  // Refresh every minute
+  setInterval(loadSummary, 60000);
 })();

@@ -26,7 +26,8 @@
 .mb-score__denom { color: var(--text-sub); font-size: var(--fs-md); }
 .mb-score__count { color: var(--text-muted); font-size: var(--fs-xs); font-weight: 700; }
 
-.mb-controls { display: inline-flex; gap: 10px; align-items: center; }
+.mb-controls { display: inline-flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; max-width: 100%; }
+.mb-select { max-width: 100%; }
 .mb-select {
   padding: 8px 12px;
   border-radius: var(--radius);
@@ -82,7 +83,8 @@
   display: grid; gap: 4px;
   box-shadow: 0 1px 2px rgba(0,0,0,.03);
 }
-.mb-card__top { display: flex; justify-content: space-between; align-items: center; }
+.mb-card__top { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.mb-card__nama { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .mb-card__siri { color: var(--yellow); font-weight: 900; font-size: var(--fs-xs); }
 .mb-card__stars { color: var(--yellow); font-size: var(--fs-sm); letter-spacing: 2px; }
 .mb-card__nama { color: var(--text-primary); font-weight: 800; font-size: var(--fs-sm); }

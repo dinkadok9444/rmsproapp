@@ -1,3 +1,7 @@
+/* Box-sizing guard for inventory components */
+.inv-segment, .inv-tabs, .inv-stats, .inv-stat, .inv-list, .inv-item,
+.inv-item__main, .inv-item__head, .inv-item__meta, .inv-seg-btn { box-sizing: border-box; }
+
 /* Filter section — satu baris sahaja */
 #secFilter .settings-section__body {
   display: flex;
@@ -92,7 +96,14 @@
   font-size: var(--fs-lg, 18px);
   font-weight: 800;
   color: var(--text, #0f172a);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.inv-stat__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-item__head { flex-wrap: wrap; }
+.inv-item__kod { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .inv-stat[data-k="value"] .inv-stat__val { color: #059669; }
 .inv-stat[data-k="qty"] .inv-stat__val { color: #2563eb; }
 .inv-stat[data-k="low"] .inv-stat__val { color: #dc2626; }
@@ -104,7 +115,7 @@
 }
 .inv-item {
   display: grid;
-  grid-template-columns: 48px 1fr auto;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
   gap: var(--sp-3);
   padding: var(--sp-3);
   border: 1px solid var(--border, #e2e8f0);

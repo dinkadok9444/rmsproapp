@@ -1,145 +1,204 @@
-/* Fungsi Lain — port lib/screens/modules/fungsi_lain_screen.dart */
-(function () {
+/* fungsi_lain.js — Notifikasi admin, feedback, rekod pos. Mirror fungsi_lain_screen.dart. */
+(async function () {
   'use strict';
-  const branch = localStorage.getItem('rms_current_branch') || '';
-  let ownerID = 'admin', shopID = 'MAIN';
-  if (branch.includes('@')) { ownerID = branch.split('@')[0]; shopID = branch.split('@')[1].toUpperCase(); }
-  const staffRole = localStorage.getItem('rms_staff_role') || '';
-  const userRole = localStorage.getItem('rms_user_role') || '';
-  const senderRole = staffRole || userRole || 'branch';
-  const senderName = localStorage.getItem('rms_staff_name') || ownerID;
+  const ctx = await window.requireAuth();
+  if (!ctx) return;
+  const tenantId = ctx.tenant_id;
+  const branchId = ctx.current_branch_id;
 
-  const $ = id => document.getElementById(id);
-  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  const fmtTs = ms => { if (!ms) return '-'; const d = new Date(+ms); const p = n => String(n).padStart(2,'0'); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(-2)} ${p(d.getHours())}:${p(d.getMinutes())}`; };
-  function snack(msg, err=false){ const el=document.createElement('div'); el.className='fl-snack'+(err?' err':''); el.textContent=msg; document.body.appendChild(el); setTimeout(()=>el.remove(),2500); }
+  const $ = (id) => document.getElementById(id);
+  const fmtDate = (iso) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  };
 
-  // ── Announcement ──
-  db.collection('admin_announcements').doc('global').onSnapshot(snap => {
-    const m = snap.exists ? String((snap.data() || {}).message || '').trim() : '';
-    const box = $('annBox');
-    if (!m) { box.className = 'fl-ann-empty'; box.textContent = 'Tiada pengumuman'; }
-    else { box.className = 'fl-ann'; box.textContent = 'Berita: ' + m; }
-  });
-
-  // ── Feedback ──
-  let myFeedbacks = [];
-  db.collection('app_feedback').where('ownerID','==',ownerID).where('shopID','==',shopID).onSnapshot(snap => {
-    myFeedbacks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    myFeedbacks.sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
-    renderFeedback();
-  });
-
-  function renderFeedback(){
-    const wrap = $('fbHistWrap'); const host = $('fbHist');
-    if (!myFeedbacks.length) { wrap.hidden = true; return; }
-    wrap.hidden = false;
-    host.innerHTML = myFeedbacks.map(fb => {
-      const resolved = fb.status === 'resolved';
-      const note = (fb.resolveNote || '').toString().trim();
-      return `<div class="fl-fb-item${resolved?' resolved':''}">
-        <div class="fl-fb-hdr">
-          <span class="fl-badge${resolved?' resolved':''}">${resolved?'SELESAI':'TERBUKA'}</span>
-          <span class="fl-fb-time">${fmtTs(fb.createdAt)}</span>
-        </div>
-        <div class="fl-fb-msg">${esc(fb.message || '')}</div>
-        ${resolved && note ? `<div class="fl-resolve-note"><i class="fas fa-reply"></i><span>${esc(note)}</span></div>` : ''}
-        ${resolved ? `<div class="fl-resolved-at">Diselesaikan: ${fmtTs(fb.resolvedAt)}</div>` : ''}
-      </div>`;
-    }).join('');
+  function snack(msg, err) {
+    const el = document.createElement('div');
+    el.className = 'fl-snack' + (err ? ' err' : '');
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2200);
   }
 
-  let sending = false;
+  // ── ANNOUNCEMENTS ─────────────────────────────────────────
+  async function loadAnnouncements() {
+    const box = $('annBox'); if (!box) return;
+    const nowIso = new Date().toISOString();
+    const results = await Promise.all([
+      window.sb.from('admin_announcements').select('*').order('posted_at', { ascending: false }).limit(5),
+      window.sb.from('system_settings').select('*').eq('id', 'pengumuman').maybeSingle(),
+    ]);
+    const anns = results[0].data || [];
+    const sys = results[1].data;
+    let html = '';
+    if (sys && sys.enabled && sys.message) {
+      const inWindow = (!sys.start_date || sys.start_date <= nowIso) && (!sys.end_date || sys.end_date >= nowIso);
+      if (inWindow) {
+        const sev = (sys.severity || 'info').toLowerCase();
+        const color = sev === 'warn' ? '#f59e0b' : sev === 'error' ? '#dc2626' : '#2563eb';
+        html += `<div class="fl-ann" style="border-left-color:${color};color:${color};">
+          <strong>${sys.title || 'PENGUMUMAN'}</strong><br>${sys.message}</div>`;
+      }
+    }
+    if (anns.length) {
+      html += anns.map((a) => `<div class="fl-ann">
+        <strong>${a.title || '—'}</strong><br>${a.body || ''}
+        <div style="font-size:9px;color:#94a3b8;margin-top:4px;">${fmtDate(a.posted_at)}</div>
+      </div>`).join('');
+    }
+    if (!html) {
+      box.className = 'fl-ann-empty';
+      box.textContent = 'Tiada pengumuman';
+    } else {
+      box.className = '';
+      box.innerHTML = html;
+    }
+  }
+
+  // ── FEEDBACK ──────────────────────────────────────────────
+  async function loadFeedback() {
+    const { data } = await window.sb.from('feedback')
+      .select('*').eq('branch_id', branchId)
+      .order('created_at', { ascending: false }).limit(20);
+    const rows = data || [];
+    if (rows.length) {
+      $('fbHistWrap').hidden = false;
+      $('fbHist').innerHTML = rows.map((r) => {
+        const resolved = !!r.resolved;
+        return `<div class="fl-fb-item${resolved ? ' resolved' : ''}">
+          <div class="fl-fb-hdr">
+            <span class="fl-badge${resolved ? ' resolved' : ''}">${resolved ? 'SELESAI' : 'BARU'}</span>
+            <span class="fl-fb-time">${fmtDate(r.created_at)}</span>
+          </div>
+          <div class="fl-fb-msg">${(r.message || '').replace(/</g, '&lt;')}</div>
+          ${r.resolved_note ? `<div class="fl-resolve-note"><i class="fas fa-reply"></i> ${r.resolved_note}</div>` : ''}
+          ${resolved && r.resolved_at ? `<div class="fl-resolved-at">${fmtDate(r.resolved_at)}</div>` : ''}
+        </div>`;
+      }).join('');
+    } else {
+      $('fbHistWrap').hidden = true;
+    }
+  }
+
   $('fbSend').addEventListener('click', async () => {
     const msg = $('fbInput').value.trim();
-    if (!msg || sending) return;
-    sending = true; $('fbSend').disabled = true; $('fbSendLbl').textContent = 'MENGHANTAR...';
-    try {
-      await db.collection('app_feedback').add({
-        ownerID, shopID, senderRole, senderName, message: msg,
-        createdAt: Date.now(), status: 'open',
-      });
-      $('fbInput').value = '';
-      snack('Feedback dihantar');
-    } catch(e){ snack('Ralat: '+e.message, true); }
-    finally { sending = false; $('fbSend').disabled = false; $('fbSendLbl').textContent = 'HANTAR FEEDBACK'; }
-  });
-
-  // ── POS / Tracking ──
-  let posRecords = [];
-  db.collection('trackings_'+ownerID).onSnapshot(snap => {
-    posRecords = [];
-    snap.forEach(doc => {
-      const d = doc.data(); d.id = doc.id;
-      if ((d.shopID || '').toString().toUpperCase() === shopID) posRecords.push(d);
+    if (!msg) { snack('Isi feedback dulu', true); return; }
+    $('fbSend').disabled = true;
+    $('fbSendLbl').textContent = 'MENGHANTAR...';
+    const { error } = await window.sb.from('feedback').insert({
+      tenant_id: tenantId,
+      branch_id: branchId,
+      message: msg,
+      resolved: false,
+      sender_id: ctx.id,
+      sender_name: ctx.nama || ctx.email,
     });
-    posRecords.sort((a,b) => (b.timestamp||0) - (a.timestamp||0));
-    posRecords = posRecords.slice(0, 15);
-    renderPos();
+    $('fbSend').disabled = false;
+    $('fbSendLbl').textContent = 'HANTAR FEEDBACK';
+    if (error) { snack('Gagal: ' + error.message, true); return; }
+    $('fbInput').value = '';
+    snack('Feedback dihantar');
+    loadFeedback();
   });
 
-  function statusColor(s){ if (s === 'SELESAI') return '#10b981'; if (s === 'DALAM PERJALANAN') return '#2563eb'; return '#eab308'; }
+  // ── POS TRACKING ──────────────────────────────────────────
+  let EDIT_ID = null;
 
-  function renderPos(){
-    const host = $('posList');
-    if (!posRecords.length) { host.innerHTML = `<div class="fl-empty">Tiada rekod pos</div>`; return; }
-    host.innerHTML = posRecords.map(t => {
-      const col = statusColor(t.status_track || 'DIPOS');
+  async function loadPos() {
+    const { data } = await window.sb.from('pos_tracking')
+      .select('*').eq('branch_id', branchId)
+      .order('tarikh', { ascending: false }).limit(100);
+    const rows = data || [];
+    if (!rows.length) {
+      $('posList').innerHTML = '<div class="fl-empty">Tiada rekod pos.</div>';
+      return;
+    }
+    $('posList').innerHTML = rows.map((r) => {
+      const st = (r.status || 'DIPOS').toUpperCase();
+      const col = st === 'SELESAI' ? '#10b981' : st === 'DALAM PERJALANAN' ? '#2563eb' : '#f59e0b';
       return `<div class="fl-pos-row">
         <div style="flex:1;">
-          <div class="fl-pos-tarikh">${esc(t.tarikh || '-')}</div>
-          <div class="fl-pos-track">${esc(t.trackNo || '-')}</div>
-          <div class="fl-pos-kurier">(${esc(t.kurier || '-')})</div>
-          <div class="fl-pos-item">${esc(t.item || '')}</div>
-          <span class="fl-pos-status" style="color:${col};border-color:${col};">${esc(t.status_track || 'DIPOS')}</span>
+          <div class="fl-pos-tarikh">${fmtDate(r.tarikh)}</div>
+          <div class="fl-pos-track">${r.tracking_no || '—'}</div>
+          <div class="fl-pos-kurier">${r.kurier || ''}</div>
+          <div class="fl-pos-item">${r.item || ''}</div>
+          <span class="fl-pos-status" style="color:${col};border-color:${col};">${st}</span>
         </div>
-        <div style="display:flex;flex-direction:column;gap:6px;">
-          <button class="fl-icon-btn" data-edit="${esc(t.id)}" style="border-color:#eab308;color:#eab308;background:rgba(234,179,8,.1);"><i class="fas fa-pen-to-square"></i></button>
-          <button class="fl-icon-btn" data-del="${esc(t.id)}" style="border-color:#dc2626;color:#dc2626;background:rgba(220,38,38,.1);"><i class="fas fa-trash-can"></i></button>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <button class="fl-icon-btn" style="border-color:#2563eb;color:#2563eb;" data-edit="${r.id}"><i class="fas fa-pen"></i></button>
+          <button class="fl-icon-btn" style="border-color:#dc2626;color:#dc2626;" data-del="${r.id}"><i class="fas fa-trash"></i></button>
         </div>
       </div>`;
     }).join('');
-    host.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
-      const rec = posRecords.find(x => x.id === b.getAttribute('data-edit'));
-      if (rec) openPosModal(rec);
-    }));
-    host.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => {
-      if (!confirm('Padam rekod pos ini?')) return;
-      await db.collection('trackings_'+ownerID).doc(b.getAttribute('data-del')).delete();
-    }));
+
+    $('posList').querySelectorAll('[data-edit]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const r = rows.find((x) => x.id === b.dataset.edit); if (!r) return;
+        EDIT_ID = r.id;
+        $('posModalTitle').innerHTML = '<i class="fas fa-truck-fast"></i> EDIT REKOD';
+        $('posTarikh').value = (r.tarikh || '').slice(0, 10);
+        $('posItem').value = r.item || '';
+        $('posKurier').value = r.kurier || '';
+        $('posTrack').value = r.tracking_no || '';
+        $('posStatus').value = r.status || 'DIPOS';
+        $('posModal').classList.add('is-open');
+      });
+    });
+    $('posList').querySelectorAll('[data-del]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        if (!confirm('Padam rekod ini?')) return;
+        const { error } = await window.sb.from('pos_tracking').delete().eq('id', b.dataset.del);
+        if (error) { snack('Gagal: ' + error.message, true); return; }
+        snack('Dipadam'); loadPos();
+      });
+    });
   }
 
-  // ── POS Modal ──
-  let editingId = null;
-  function openPosModal(existing){
-    editingId = existing ? existing.id : null;
-    $('posModalTitle').innerHTML = `<i class="fas fa-truck-fast"></i> ${existing ? 'KEMASKINI REKOD' : 'TAMBAH REKOD'}`;
-    const today = new Date().toISOString().slice(0,10);
-    $('posTarikh').value = existing?.tarikh || today;
-    $('posItem').value = existing?.item || '';
-    $('posKurier').value = existing?.kurier || '';
-    $('posTrack').value = existing?.trackNo || '';
-    $('posStatus').value = existing?.status_track || 'DIPOS';
+  $('btnAddPos').addEventListener('click', () => {
+    EDIT_ID = null;
+    $('posModalTitle').innerHTML = '<i class="fas fa-truck-fast"></i> TAMBAH REKOD';
+    const today = new Date().toISOString().slice(0, 10);
+    $('posTarikh').value = today;
+    $('posItem').value = '';
+    $('posKurier').value = '';
+    $('posTrack').value = '';
+    $('posStatus').value = 'DIPOS';
     $('posModal').classList.add('is-open');
-  }
-  $('btnAddPos').addEventListener('click', () => openPosModal(null));
-  $('posCancel').addEventListener('click', () => $('posModal').classList.remove('is-open'));
-  $('posSave').addEventListener('click', async () => {
-    const item = $('posItem').value.trim();
-    if (!item) return;
-    const data = {
-      shopID,
-      tarikh: $('posTarikh').value.trim(),
-      item: item.toUpperCase(),
-      kurier: $('posKurier').value.trim().toUpperCase(),
-      trackNo: $('posTrack').value.trim().toUpperCase(),
-      status_track: $('posStatus').value,
-    };
-    if (editingId) {
-      await db.collection('trackings_'+ownerID).doc(editingId).update({ ...data, updated: Date.now() });
-    } else {
-      await db.collection('trackings_'+ownerID).add({ ...data, timestamp: Date.now() });
-    }
-    $('posModal').classList.remove('is-open');
   });
+
+  $('posCancel').addEventListener('click', () => $('posModal').classList.remove('is-open'));
+
+  $('posSave').addEventListener('click', async () => {
+    const payload = {
+      tarikh: $('posTarikh').value || null,
+      item: $('posItem').value.trim(),
+      kurier: $('posKurier').value.trim(),
+      tracking_no: $('posTrack').value.trim().toUpperCase(),
+      status: $('posStatus').value,
+    };
+    if (!payload.item || !payload.tracking_no) { snack('Item & tracking wajib', true); return; }
+    let error;
+    if (EDIT_ID) {
+      ({ error } = await window.sb.from('pos_tracking').update(payload).eq('id', EDIT_ID));
+    } else {
+      ({ error } = await window.sb.from('pos_tracking').insert({
+        ...payload, tenant_id: tenantId, branch_id: branchId,
+      }));
+    }
+    if (error) { snack('Gagal: ' + error.message, true); return; }
+    snack('Disimpan');
+    $('posModal').classList.remove('is-open');
+    loadPos();
+  });
+
+  // ── Realtime ──────────────────────────────────────────────
+  window.sb.channel('fl-feedback-' + branchId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'feedback', filter: `branch_id=eq.${branchId}` }, loadFeedback)
+    .subscribe();
+  window.sb.channel('fl-pos-' + branchId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'pos_tracking', filter: `branch_id=eq.${branchId}` }, loadPos)
+    .subscribe();
+
+  await Promise.all([loadAnnouncements(), loadFeedback(), loadPos()]);
 })();

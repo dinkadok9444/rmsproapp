@@ -3,8 +3,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../../services/supabase_storage.dart';
+import '../../services/supabase_client.dart';
+import '../../services/repair_service.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
@@ -22,8 +23,9 @@ class AccessoriesScreen extends StatefulWidget {
 }
 
 class _AccessoriesScreenState extends State<AccessoriesScreen> {
-  final _db = FirebaseFirestore.instance;
-  final _storage = FirebaseStorage.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  final _storage = SupabaseStorageHelper();
   final _searchCtrl = TextEditingController();
   final _printer = PrinterService();
   final _picker = ImagePicker();
@@ -31,6 +33,8 @@ class _AccessoriesScreenState extends State<AccessoriesScreen> {
 
   String _ownerID = 'admin';
   String _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
 
   List<Map<String, dynamic>> _inventory = [];
   List<Map<String, dynamic>> _filtered = [];
@@ -66,22 +70,38 @@ class _AccessoriesScreenState extends State<AccessoriesScreen> {
   }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0].toLowerCase();
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
+    await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
     _listenInventory();
   }
 
+  Map<String, dynamic> _accRowToUi(Map row) {
+    final m = Map<String, dynamic>.from(row);
+    m['id'] = row['id'];
+    m['kod'] = row['sku'] ?? '';
+    m['nama'] = row['item_name'] ?? '';
+    m['kos'] = row['cost'] ?? 0;
+    m['jual'] = row['price'] ?? 0;
+    m['qty'] = row['qty'] ?? 0;
+    m['category'] = row['category'] ?? '';
+    m['status'] = row['status'] ?? 'AVAILABLE';
+    final c = row['created_at']?.toString();
+    m['timestamp'] = c == null ? 0 : (DateTime.tryParse(c)?.millisecondsSinceEpoch ?? 0);
+    return m;
+  }
+
   void _listenInventory() {
-    _invSub = _db
-        .collection('accessories_$_ownerID')
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .listen((snap) {
-      final list = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    if (_tenantId == null) return;
+    _invSub = _sb
+        .from('accessories')
+        .stream(primaryKey: ['id'])
+        .eq('tenant_id', _tenantId!)
+        .order('created_at', ascending: false)
+        .listen((rows) {
+      final list = rows.map(_accRowToUi).toList();
       if (mounted) setState(() { _inventory = list; _loaded = true; _filter(); });
     });
   }
@@ -190,9 +210,11 @@ class _AccessoriesScreenState extends State<AccessoriesScreen> {
 
   Future<String?> _uploadStockImage(File file, String kod) async {
     final ts = DateTime.now().millisecondsSinceEpoch;
-    final ref = _storage.ref().child('inventory/$_ownerID/${kod}_$ts.jpg');
-    final task = await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
-    return await task.ref.getDownloadURL();
+    return await _storage.uploadFile(
+      bucket: 'accessories',
+      path: '$_ownerID/${kod}_$ts.jpg',
+      file: file,
+    );
   }
 
   // ═══════════════════════════════════════
@@ -362,21 +384,17 @@ class _AccessoriesScreenState extends State<AccessoriesScreen> {
                         imageUrl = await _uploadStockImage(pickedImage!, _kodCtrl.text.trim());
                       }
 
-                      await _db.collection('accessories_$_ownerID').add({
-                        'kod': _kodCtrl.text.trim().toUpperCase(),
-                        'nama': _namaCtrl.text.trim().toUpperCase(),
+                      if (_tenantId == null) return;
+                      await _sb.from('accessories').insert({
+                        'tenant_id': _tenantId,
+                        'branch_id': _branchId,
+                        'sku': _kodCtrl.text.trim().toUpperCase(),
+                        'item_name': _namaCtrl.text.trim().toUpperCase(),
                         'category': selectedCategory,
-                        'kos': 0,
-                        'jual': double.tryParse(_jualCtrl.text) ?? 0,
+                        'cost': 0,
+                        'price': double.tryParse(_jualCtrl.text) ?? 0,
                         'qty': 1,
-                        'supplier': '',
-                        'tarikh_masuk': _tarikhMasukCtrl.text.trim(),
-                        'tkh_jual': '',
-                        'no_siri_jual': '',
-                        'imageUrl': imageUrl ?? '',
                         'status': 'AVAILABLE',
-                        'timestamp': DateTime.now().millisecondsSinceEpoch,
-                        'shopID': _shopID,
                       });
                       if (ctx.mounted) Navigator.pop(ctx);
                       _snack('Stok berjaya ditambah');
@@ -467,10 +485,10 @@ class _AccessoriesScreenState extends State<AccessoriesScreen> {
                       label: _lang.get('kemaskini'),
                       color: AppColors.primary,
                       onTap: () async {
-                        await _db.collection('accessories_$_ownerID').doc(docId).update({
-                          'nama': namaCtrl.text.trim().toUpperCase(),
-                          'jual': double.tryParse(jualCtrl.text) ?? 0,
-                        });
+                        await _sb.from('accessories').update({
+                          'item_name': namaCtrl.text.trim().toUpperCase(),
+                          'price': double.tryParse(jualCtrl.text) ?? 0,
+                        }).eq('id', docId);
                         if (ctx.mounted) Navigator.pop(ctx);
                         _snack('Stok berjaya dikemaskini');
                       },
@@ -503,12 +521,10 @@ class _AccessoriesScreenState extends State<AccessoriesScreen> {
                     if (siri.isEmpty) { _snack('Sila isi No. Siri', err: true); return; }
                     if ((item['no_siri_jual'] ?? '').toString().toUpperCase() == siri) {
                       final currentQty = (item['qty'] ?? 0) as int;
-                      await _db.collection('accessories_$_ownerID').doc(docId).update({
+                      await _sb.from('accessories').update({
                         'qty': currentQty + 1,
                         'status': 'AVAILABLE',
-                        'no_siri_jual': '',
-                        'tkh_jual': '',
-                      });
+                      }).eq('id', docId);
                       if (ctx.mounted) Navigator.pop(ctx);
                       _snack('Stok berjaya di-reverse dari job $siri');
                     } else {
@@ -544,7 +560,7 @@ class _AccessoriesScreenState extends State<AccessoriesScreen> {
                         ),
                       );
                       if (confirm == true) {
-                        await _db.collection('accessories_$_ownerID').doc(docId).delete();
+                        await _sb.from('accessories').delete().eq('id', docId);
                         if (ctx.mounted) Navigator.pop(ctx);
                         _snack('Item berjaya dipadam');
                       }
@@ -686,12 +702,28 @@ class _AccessoriesScreenState extends State<AccessoriesScreen> {
   // ═══════════════════════════════════════
 
   Future<List<Map<String, dynamic>>> _loadUsedHistory() async {
-    final snap = await _db.collection('acc_usage_$_ownerID')
-        .where('status', isEqualTo: 'USED')
-        .get();
-    final list = snap.docs.map((d) => {'_id': d.id, ...d.data()}).toList();
-    list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
-    return list.take(50).toList();
+    if (_tenantId == null) return [];
+    final rows = await _sb
+        .from('accessory_usage')
+        .select('*, accessories(sku, item_name, price)')
+        .eq('tenant_id', _tenantId!)
+        .order('used_at', ascending: false)
+        .limit(50);
+    return (rows as List).map((r) {
+      final m = Map<String, dynamic>.from(r as Map);
+      m['_id'] = m['id'];
+      m['stock_doc_id'] = m['accessory_id'];
+      final sp = m['accessories'];
+      if (sp is Map) {
+        m['kod'] = sp['sku'] ?? '';
+        m['nama'] = sp['item_name'] ?? m['item_name'] ?? '';
+        m['jual'] = sp['price'] ?? 0;
+      }
+      final u = m['used_at']?.toString();
+      m['timestamp'] = u == null ? 0 : (DateTime.tryParse(u)?.millisecondsSinceEpoch ?? 0);
+      m['tarikh'] = u == null ? '' : DateFormat('yyyy-MM-dd HH:mm').format(DateTime.parse(u));
+      return m;
+    }).toList();
   }
 
   void _showUsedHistory() {
@@ -759,14 +791,17 @@ class _AccessoriesScreenState extends State<AccessoriesScreen> {
                                     onTap: () async {
                                       final stockDocId = d['stock_doc_id'] ?? '';
                                       final usageId = d['_id'] ?? '';
-                                      await _db.collection('accessories_$_ownerID').doc(stockDocId).update({
+                                      final cur = await _sb
+                                          .from('accessories')
+                                          .select('qty')
+                                          .eq('id', stockDocId)
+                                          .maybeSingle();
+                                      final q = (cur?['qty'] as num?)?.toInt() ?? 0;
+                                      await _sb.from('accessories').update({
+                                        'qty': q + 1,
                                         'status': 'AVAILABLE',
-                                        'tkh_guna': '',
-                                      });
-                                      await _db.collection('acc_usage_$_ownerID').doc(usageId).update({
-                                        'status': 'REVERSED',
-                                        'reversed_at': DateTime.now().millisecondsSinceEpoch,
-                                      });
+                                      }).eq('id', stockDocId);
+                                      await _sb.from('accessory_usage').delete().eq('id', usageId);
                                       setModalState(() => usedList!.removeAt(i));
                                       _snack('Stok "${d['nama']}" di-reverse');
                                     },
@@ -867,18 +902,19 @@ class _AccessoriesScreenState extends State<AccessoriesScreen> {
                                       final returnDocId = r['_id'] ?? '';
                                       final rQty = (r['qty'] ?? 0) as int;
 
-                                      // Add qty back to stock
-                                      final stockSnap = await _db.collection('accessories_$_ownerID').doc(stockDocId).get();
-                                      if (stockSnap.exists) {
-                                        final currentQty = (stockSnap.data()?['qty'] ?? 0) as int;
-                                        await _db.collection('accessories_$_ownerID').doc(stockDocId).update({
+                                      final stockSnap = await _sb
+                                          .from('accessories')
+                                          .select('qty')
+                                          .eq('id', stockDocId)
+                                          .maybeSingle();
+                                      if (stockSnap != null) {
+                                        final currentQty = (stockSnap['qty'] as num?)?.toInt() ?? 0;
+                                        await _sb.from('accessories').update({
                                           'qty': currentQty + rQty,
                                           'status': 'AVAILABLE',
-                                        });
+                                        }).eq('id', stockDocId);
                                       }
-
-                                      // Delete return record
-                                      await _db.collection('accessories_$_ownerID').doc(stockDocId).collection('returns').doc(returnDocId).delete();
+                                      await _sb.from('accessory_returns').delete().eq('id', returnDocId);
 
                                       setModalState(() => returnList!.removeAt(i));
                                       _snack('Return "${r['nama']}" di-reverse, +$rQty unit');
@@ -909,29 +945,27 @@ class _AccessoriesScreenState extends State<AccessoriesScreen> {
   }
 
   Future<List<Map<String, dynamic>>> _loadReturnHistory() async {
-    final List<Map<String, dynamic>> allReturns = [];
-    for (final item in _inventory) {
-      final docId = item['id'];
-      final kod = item['kod'] ?? '';
-      final nama = item['nama'] ?? '';
-      final snap = await _db
-          .collection('accessories_$_ownerID')
-          .doc(docId)
-          .collection('returns')
-          .orderBy('timestamp', descending: true)
-          .get();
-      for (final d in snap.docs) {
-        allReturns.add({
-          ...d.data(),
-          '_id': d.id,
-          'kod': kod,
-          'nama': nama,
-          'stock_doc_id': docId,
-        });
+    if (_tenantId == null) return [];
+    final rows = await _sb
+        .from('accessory_returns')
+        .select('*, accessories(sku, item_name)')
+        .eq('tenant_id', _tenantId!)
+        .order('returned_at', ascending: false)
+        .limit(50);
+    return (rows as List).map((r) {
+      final m = Map<String, dynamic>.from(r as Map);
+      m['_id'] = m['id'];
+      m['stock_doc_id'] = m['accessory_id'];
+      final sp = m['accessories'];
+      if (sp is Map) {
+        m['kod'] = sp['sku'] ?? '';
+        m['nama'] = sp['item_name'] ?? '';
       }
-    }
-    allReturns.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
-    return allReturns.take(50).toList();
+      final u = m['returned_at']?.toString();
+      m['timestamp'] = u == null ? 0 : (DateTime.tryParse(u)?.millisecondsSinceEpoch ?? 0);
+      m['tarikh'] = u == null ? '' : DateFormat('yyyy-MM-dd HH:mm').format(DateTime.parse(u));
+      return m;
+    }).toList();
   }
 
   @override

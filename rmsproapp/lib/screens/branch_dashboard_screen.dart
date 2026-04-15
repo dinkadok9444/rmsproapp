@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart'; // ignore: unused_import
 import '../services/auth_service.dart';
 import '../services/branch_service.dart';
+import '../services/repair_service.dart';
+import '../services/supabase_client.dart';
 import 'login_screen.dart';
 import 'modules/create_job_screen.dart';
 import 'modules/senarai_job_screen.dart';
@@ -46,7 +47,10 @@ class _BranchDashboardScreenState extends State<BranchDashboardScreen> {
 
   // Theme color - customizable from settings
   Color _themeColor = const Color(0xFF0D9488); // Default teal
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _tenantId;
+  String? _branchId;
   String _ownerID = 'admin', _shopID = 'MAIN';
 
   // Pro Mode subscription state
@@ -74,33 +78,48 @@ class _BranchDashboardScreenState extends State<BranchDashboardScreen> {
 
   Future<void> _initDashboard() async {
     await _branchService.initialize();
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0];
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
-    // Load theme color from settings
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    // Load theme color from branches.extras + enabled_modules
     try {
-      final shopDoc = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-      if (shopDoc.exists) {
-        final d = shopDoc.data()!;
-        final colorHex = d['themeColor'] as String?;
-        if (colorHex != null && colorHex.isNotEmpty) {
-          _themeColor = Color(int.parse(colorHex.replaceFirst('#', '0xFF')));
+      if (_branchId != null) {
+        final row = await _sb.from('branches').select('extras, enabled_modules').eq('id', _branchId!).maybeSingle();
+        if (row != null) {
+          final extras = (row['extras'] is Map) ? Map<String, dynamic>.from(row['extras']) : <String, dynamic>{};
+          final colorHex = extras['themeColor'] as String?;
+          if (colorHex != null && colorHex.isNotEmpty) {
+            _themeColor = Color(int.parse(colorHex.replaceFirst('#', '0xFF')));
+          }
         }
-        // logo loaded from settings if needed
       }
     } catch (_) {}
-    // Listen to pro mode status
-    _proSub = _db.collection('shops_$_ownerID').doc(_shopID).snapshots().listen((snap) {
-      if (snap.exists && mounted) {
-        final d = snap.data()!;
-        final colorHex = d['themeColor'] as String?;
-        final em = d['enabledModules'];
+    // Stream branches row + tenant config untuk pro mode
+    if (_branchId != null) {
+      _proSub = _sb.from('branches').stream(primaryKey: ['id']).eq('id', _branchId!).listen((rows) async {
+        if (rows.isEmpty || !mounted) return;
+        final d = rows.first;
+        final extras = (d['extras'] is Map) ? Map<String, dynamic>.from(d['extras']) : <String, dynamic>{};
+        final em = d['enabled_modules'];
+        // Pro mode disimpan dalam tenants.config
+        bool proMode = false;
+        int proModeExpire = 0;
+        if (_tenantId != null) {
+          try {
+            final t = await _sb.from('tenants').select('config').eq('id', _tenantId!).maybeSingle();
+            final config = (t?['config'] is Map) ? Map<String, dynamic>.from(t!['config']) : <String, dynamic>{};
+            proMode = config['proMode'] == true || config['pro_mode'] == true;
+            final exp = config['proModeExpire'] ?? config['pro_mode_expire'];
+            if (exp is int) proModeExpire = exp;
+            if (exp is String) proModeExpire = DateTime.tryParse(exp)?.millisecondsSinceEpoch ?? 0;
+          } catch (_) {}
+        }
         setState(() {
-          _proMode = d['proMode'] == true;
-          _proModeExpire = (d['proModeExpire'] ?? 0) is int ? d['proModeExpire'] ?? 0 : 0;
+          _proMode = proMode;
+          _proModeExpire = proModeExpire;
+          final colorHex = extras['themeColor'] as String?;
           if (colorHex != null && colorHex.isNotEmpty) {
             _themeColor = Color(int.parse(colorHex.replaceFirst('#', '0xFF')));
           }
@@ -110,8 +129,8 @@ class _BranchDashboardScreenState extends State<BranchDashboardScreen> {
             _enabledModules = {};
           }
         });
-      }
-    });
+      });
+    }
 
     if (mounted) setState(() => _isLoading = false);
   }

@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
 import '../../services/app_language.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 
 class FungsiLainScreen extends StatefulWidget {
   const FungsiLainScreen({super.key});
@@ -15,74 +16,121 @@ class FungsiLainScreen extends StatefulWidget {
 
 class _FungsiLainScreenState extends State<FungsiLainScreen> {
   final _lang = AppLanguage();
-  final _db = FirebaseFirestore.instance;
-  String _ownerID = 'admin', _shopID = 'MAIN';
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _tenantId;
+  String? _branchId;
   String _senderRole = 'admin', _senderName = '';
   String _announcement = '';
   List<Map<String, dynamic>> _posRecords = [];
   List<Map<String, dynamic>> _myFeedbacks = [];
   final TextEditingController _feedbackCtrl = TextEditingController();
   bool _sending = false;
-  StreamSubscription? _announceSub, _posSub, _feedbackSub;
+  StreamSubscription? _posSub, _feedbackSub;
+  Timer? _announceTimer;
 
   @override
   void initState() { super.initState(); _init(); }
   @override
   void dispose() {
-    _announceSub?.cancel(); _posSub?.cancel(); _feedbackSub?.cancel();
+    _announceTimer?.cancel(); _posSub?.cancel(); _feedbackSub?.cancel();
     _feedbackCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) { _ownerID = branch.split('@')[0]; _shopID = branch.split('@')[1].toUpperCase(); }
-    final staffRole = prefs.getString('rms_staff_role') ?? '';
-    final userRole = prefs.getString('rms_user_role') ?? '';
-    _senderRole = staffRole.isNotEmpty ? staffRole : (userRole.isNotEmpty ? userRole : 'branch');
-    _senderName = prefs.getString('rms_staff_name') ?? _ownerID;
-    // Announcement
-    _announceSub = _db.collection('admin_announcements').doc('global').snapshots().listen((snap) {
-      if (snap.exists && (snap.data()?['message'] ?? '').toString().trim().isNotEmpty) {
-        if (mounted) setState(() => _announcement = snap.data()!['message']);
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
+    return 0;
+  }
+
+  Future<void> _loadAnnouncement() async {
+    try {
+      final rows = await _sb
+          .from('admin_announcements')
+          .select('body, title')
+          .order('created_at', ascending: false)
+          .limit(1);
+      if (rows.isNotEmpty) {
+        final msg = (rows.first['body'] ?? rows.first['title'] ?? '').toString().trim();
+        if (mounted) setState(() => _announcement = msg);
       } else {
         if (mounted) setState(() => _announcement = '');
       }
-    });
+    } catch (_) {}
+  }
+
+  Future<void> _init() async {
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+
+    final prefs = await SharedPreferences.getInstance();
+    final staffRole = prefs.getString('rms_staff_role') ?? '';
+    final userRole = prefs.getString('rms_user_role') ?? '';
+    _senderRole = staffRole.isNotEmpty ? staffRole : (userRole.isNotEmpty ? userRole : 'branch');
+    _senderName = prefs.getString('rms_staff_name') ?? _repairService.ownerID;
+
+    // Announcement — poll every 60s (global, no branch filter)
+    await _loadAnnouncement();
+    _announceTimer = Timer.periodic(const Duration(seconds: 60), (_) => _loadAnnouncement());
+
+    if (_branchId == null) return;
+
     // Pos records
-    _posSub = _db.collection('trackings_$_ownerID').snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data(); d['id'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) list.add(d);
-      }
+    _posSub = _sb
+        .from('pos_trackings')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map<Map<String, dynamic>>((r) => {
+        'id': r['id'],
+        'tarikh': r['tarikh'] ?? '',
+        'item': r['item'] ?? '',
+        'kurier': r['kurier'] ?? '',
+        'trackNo': r['track_no'] ?? '',
+        'status_track': r['status_track'] ?? 'DIPOS',
+        'timestamp': _tsFromIso(r['created_at']),
+      }).toList();
       list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
       if (mounted) setState(() => _posRecords = list.take(15).toList());
     });
+
     // My feedback history
-    _feedbackSub = _db.collection('app_feedback')
-        .where('ownerID', isEqualTo: _ownerID)
-        .where('shopID', isEqualTo: _shopID)
-        .snapshots().listen((snap) {
-      final list = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-      list.sort((a, b) => ((b['createdAt'] ?? 0) as num).compareTo((a['createdAt'] ?? 0) as num));
-      if (mounted) setState(() => _myFeedbacks = list);
-    });
+    if (_tenantId != null) {
+      _feedbackSub = _sb
+          .from('app_feedback')
+          .stream(primaryKey: ['id'])
+          .eq('tenant_id', _tenantId!)
+          .listen((rows) {
+        final list = rows.where((r) => r['branch_id'] == _branchId).map<Map<String, dynamic>>((r) => {
+          'id': r['id'],
+          'message': r['message'] ?? '',
+          'status': r['status'] ?? 'open',
+          'resolveNote': r['resolve_note'] ?? '',
+          'resolvedAt': _tsFromIso(r['resolved_at']),
+          'createdAt': _tsFromIso(r['created_at']),
+        }).toList();
+        list.sort((a, b) => ((b['createdAt'] ?? 0) as num).compareTo((a['createdAt'] ?? 0) as num));
+        if (mounted) setState(() => _myFeedbacks = list);
+      });
+    }
   }
 
   Future<void> _submitFeedback() async {
     final msg = _feedbackCtrl.text.trim();
-    if (msg.isEmpty || _sending) return;
+    if (msg.isEmpty || _sending || _tenantId == null) return;
     setState(() => _sending = true);
     try {
-      await _db.collection('app_feedback').add({
-        'ownerID': _ownerID,
-        'shopID': _shopID,
-        'senderRole': _senderRole,
-        'senderName': _senderName,
+      await _sb.from('app_feedback').insert({
+        'tenant_id': _tenantId,
+        'branch_id': _branchId,
+        'sender_role': _senderRole,
+        'sender_name': _senderName,
         'message': msg,
-        'createdAt': DateTime.now().millisecondsSinceEpoch,
         'status': 'open',
       });
       _feedbackCtrl.clear();
@@ -144,15 +192,20 @@ class _FungsiLainScreenState extends State<FungsiLainScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: Colors.black),
             onPressed: () async {
               if (itemCtrl.text.trim().isEmpty) return;
+              if (_tenantId == null || _branchId == null) return;
               final Map<String, dynamic> data = {
-                'shopID': _shopID, 'tarikh': tarikhCtrl.text.trim(),
-                'item': itemCtrl.text.trim().toUpperCase(), 'kurier': kurierCtrl.text.trim().toUpperCase(),
-                'trackNo': trackCtrl.text.trim().toUpperCase(), 'status_track': status,
+                'tenant_id': _tenantId,
+                'branch_id': _branchId,
+                'tarikh': tarikhCtrl.text.trim(),
+                'item': itemCtrl.text.trim().toUpperCase(),
+                'kurier': kurierCtrl.text.trim().toUpperCase(),
+                'track_no': trackCtrl.text.trim().toUpperCase(),
+                'status_track': status,
               };
               if (existing != null) {
-                await _db.collection('trackings_$_ownerID').doc(existing['id']).update({...data, 'updated': DateTime.now().millisecondsSinceEpoch});
+                await _sb.from('pos_trackings').update(data).eq('id', existing['id']);
               } else {
-                await _db.collection('trackings_$_ownerID').add({...data, 'timestamp': DateTime.now().millisecondsSinceEpoch});
+                await _sb.from('pos_trackings').insert(data);
               }
               if (ctx.mounted) Navigator.pop(ctx);
             },
@@ -331,7 +384,7 @@ class _FungsiLainScreenState extends State<FungsiLainScreen> {
                   const SizedBox(height: 6),
                   GestureDetector(onTap: () async {
                     if (await _confirmDelete('Padam rekod pos ini?')) {
-                      await _db.collection('trackings_$_ownerID').doc(t['id']).delete();
+                      await _sb.from('pos_trackings').delete().eq('id', t['id']);
                     }
                   }, child: Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: AppColors.red.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
                     child: const FaIcon(FontAwesomeIcons.trashCan, size: 10, color: AppColors.red))),

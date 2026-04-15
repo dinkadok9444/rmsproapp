@@ -1,13 +1,13 @@
 import 'dart:math';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'supabase_client.dart';
 
 class RepairService {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
-
   String? _ownerID;
   String? _shopID;
+  String? _tenantId;
+  String? _branchId;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
@@ -20,10 +20,30 @@ class RepairService {
       _ownerID = 'admin';
       _shopID = 'MAIN';
     }
+    _tenantId = prefs.getString('rms_tenant_id');
+    _branchId = prefs.getString('rms_branch_id');
+
+    // Fallback: resolve from DB kalau prefs kosong (sebelum BranchService.initialize)
+    if (_tenantId == null || _branchId == null) {
+      final row = await SupabaseService.client
+          .from('branches')
+          .select('id, tenant_id, tenants!inner(owner_id)')
+          .eq('shop_code', _shopID!)
+          .eq('tenants.owner_id', _ownerID!)
+          .maybeSingle();
+      if (row != null) {
+        _branchId = row['id'] as String;
+        _tenantId = row['tenant_id'] as String;
+        await prefs.setString('rms_tenant_id', _tenantId!);
+        await prefs.setString('rms_branch_id', _branchId!);
+      }
+    }
   }
 
   String get ownerID => _ownerID ?? 'admin';
   String get shopID => _shopID ?? 'MAIN';
+  String? get tenantId => _tenantId;
+  String? get branchId => _branchId;
 
   String _generateVoucherCode() {
     final chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -33,23 +53,14 @@ class RepairService {
   }
 
   Future<String> _getNextSiri() async {
-    final counterRef = _db.collection('counters_$ownerID').doc('${shopID}_global');
-
-    final newCount = await _db.runTransaction<int>((transaction) async {
-      final snap = await transaction.get(counterRef);
-      int count = 1;
-      if (snap.exists) {
-        count = ((snap.data()?['count'] ?? 0) as int) + 1;
-      }
-      transaction.set(counterRef, {'count': count}, SetOptions(merge: true));
-      return count;
+    if (_tenantId == null || _branchId == null) throw Exception('Tenant/branch belum di-resolve');
+    // RPC: atomic increment kat job_counters, return siri string
+    final result = await SupabaseService.client.rpc('next_siri', params: {
+      'p_tenant_id': _tenantId,
+      'p_branch_id': _branchId,
+      'p_shop_code': shopID,
     });
-
-    String pureShopID = shopID;
-    if (pureShopID.contains('-')) {
-      pureShopID = pureShopID.split('-')[1];
-    }
-    return '$pureShopID${newCount.toString().padLeft(5, '0')}';
+    return result as String;
   }
 
   Future<String> simpanTiket({
@@ -84,138 +95,145 @@ class RepairService {
     }
 
     final kerosakan = items.map((i) => '${i.nama} (x${i.qty})').join(', ');
-    final itemsArray = items.map((i) => {'nama': i.nama, 'qty': i.qty, 'harga': i.harga}).toList();
     final total = harga - voucherAmt - deposit;
 
-    final data = {
-      'siri': siri,
-      'receiptNo': siri,
-      'shopID': shopID,
-      'nama': nama.toUpperCase(),
-      'pelanggan': nama.toUpperCase(),
-      'tel': tel,
-      'telefon': tel,
-      'tel_wasap': telWasap.isNotEmpty ? telWasap : '-',
-      'wasap': telWasap.isNotEmpty ? telWasap : '-',
-      'model': model.toUpperCase(),
-      'kerosakan': kerosakan,
-      'items_array': itemsArray,
-      'tarikh': tarikh,
-      'harga': harga.toStringAsFixed(2),
-      'deposit': deposit.toStringAsFixed(2),
-      'diskaun': '0',
-      'tambahan': '0',
-      'total': total.toStringAsFixed(2),
-      'baki': total.toStringAsFixed(2),
-      'voucher_generated': newVoucherGen,
-      'voucher_used': kodVoucher,
-      'voucher_used_amt': voucherAmt,
-      'payment_status': paymentStatus,
-      'cara_bayaran': caraBayaran,
-      'catatan': catatan,
-      'jenis_servis': jenisServis,
-      'staff_terima': staffTerima,
-      'staff_repair': '',
-      'staff_serah': '',
-      'password': finalPass,
-      'cust_type': custType,
-      'status': 'IN PROGRESS',
-      'status_history': [
-        {
-          'status': 'IN PROGRESS',
-          'timestamp': DateFormat("yyyy-MM-dd'T'HH:mm").format(DateTime.now()),
-        }
-      ],
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-    };
+    final sb = SupabaseService.client;
 
-    await _db.collection('repairs_$ownerID').doc(siri).set(data);
+    // Insert job row
+    final jobRow = await sb
+        .from('jobs')
+        .insert({
+          'tenant_id': _tenantId,
+          'branch_id': _branchId,
+          'siri': siri,
+          'receipt_no': siri,
+          'nama': nama.toUpperCase(),
+          'tel': tel,
+          'tel_wasap': telWasap.isNotEmpty ? telWasap : '-',
+          'model': model.toUpperCase(),
+          'kerosakan': kerosakan,
+          'jenis_servis': jenisServis,
+          'status': 'IN PROGRESS',
+          'tarikh': tarikh,
+          'harga': harga,
+          'deposit': deposit,
+          'diskaun': 0,
+          'tambahan': 0,
+          'total': total,
+          'baki': total,
+          'payment_status': paymentStatus,
+          'cara_bayaran': caraBayaran,
+          'voucher_generated': newVoucherGen,
+          'voucher_used': kodVoucher,
+          'voucher_used_amt': voucherAmt,
+          'device_password': finalPass,
+          'cust_type': custType,
+          'staff_terima': staffTerima,
+          'catatan': catatan,
+        })
+        .select('id')
+        .single();
+    final jobId = jobRow['id'] as String;
+
+    // Insert items
+    if (items.isNotEmpty) {
+      await sb.from('job_items').insert(items
+          .map((i) => {
+                'tenant_id': _tenantId,
+                'job_id': jobId,
+                'nama': i.nama,
+                'qty': i.qty,
+                'harga': i.harga,
+              })
+          .toList());
+    }
+
+    // Initial timeline
+    await sb.from('job_timeline').insert({
+      'tenant_id': _tenantId,
+      'job_id': jobId,
+      'status': 'IN PROGRESS',
+      'note': DateFormat("yyyy-MM-dd'T'HH:mm").format(DateTime.now()),
+      'by_user': staffTerima,
+    });
+
     return siri;
   }
 
   Future<List<Map<String, dynamic>>> getDrafts() async {
     await init();
-    final snap = await _db
-        .collection('drafts_$ownerID')
-        .orderBy('timestamp', descending: true)
-        .limit(10)
-        .get();
-
-    return snap.docs
-        .where((d) => d.data()['shopID'] == shopID && d.data()['status'] != 'PULLED')
-        .map((d) => {'id': d.id, ...d.data()})
-        .toList();
+    final rows = await SupabaseService.client
+        .from('job_drafts')
+        .select()
+        .eq('branch_id', _branchId!)
+        .eq('status', 'ACTIVE')
+        .order('created_at', ascending: false)
+        .limit(10);
+    return List<Map<String, dynamic>>.from(rows);
   }
 
   Future<void> deleteDraft(String draftId) async {
     await init();
     try {
-      await _db.collection('drafts_$ownerID').doc(draftId).delete();
+      await SupabaseService.client.from('job_drafts').delete().eq('id', draftId);
     } catch (_) {
       try {
-        await _db.collection('drafts_$ownerID').doc(draftId).set(
-          {'shopID': 'DELETED', 'status': 'PULLED'},
-          SetOptions(merge: true),
-        );
+        await SupabaseService.client
+            .from('job_drafts')
+            .update({'status': 'PULLED'}).eq('id', draftId);
       } catch (_) {}
     }
   }
 
   Future<List<Map<String, dynamic>>> getInventory() async {
     await init();
-    final snap = await _db.collection('inventory_$ownerID').get();
-    return snap.docs
-        .map((d) => {'id': d.id, ...d.data()})
-        .where((d) => (d['qty'] ?? 0) > 0 && (d['status'] ?? 'AVAILABLE').toString().toUpperCase() == 'AVAILABLE')
-        .toList();
+    final rows = await SupabaseService.client
+        .from('stock_parts')
+        .select()
+        .eq('tenant_id', _tenantId!)
+        .eq('status', 'AVAILABLE')
+        .gt('qty', 0);
+    return List<Map<String, dynamic>>.from(rows);
   }
 
   Future<Map<String, dynamic>?> getBranchSettings() async {
     await init();
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch');
-    if (branch == null) return null;
+    if (_tenantId == null || _branchId == null) return null;
 
-    // Gabung data dari saas_dealers + shops
-    Map<String, dynamic> merged = {};
+    final row = await SupabaseService.client
+        .from('branches')
+        .select(
+            'nama_kedai, alamat, phone, email, enabled_modules, single_staff_mode, expire_date, tenants!inner(addon_gallery, gallery_expire, single_staff_mode, config)')
+        .eq('id', _branchId!)
+        .maybeSingle();
+    if (row == null) return null;
 
-    // 1. Baca dari saas_dealers (addonGallery, singleStaffMode, etc)
-    try {
-      final dealerSnap = await _db.collection('saas_dealers').doc(ownerID).get();
-      if (dealerSnap.exists) merged.addAll(dealerSnap.data() ?? {});
-    } catch (_) {}
+    final merged = <String, dynamic>{};
+    final tenant = row['tenants'] as Map?;
+    if (tenant != null) merged.addAll(Map<String, dynamic>.from(tenant));
+    final branchFields = Map<String, dynamic>.from(row)..remove('tenants');
+    merged.addAll(branchFields);
 
-    // 2. Baca dari shops (settings kedai)
-    try {
-      final shopSnap = await _db.collection('shops_$ownerID').doc(shopID).get();
-      if (shopSnap.exists) merged.addAll(shopSnap.data() ?? {});
-    } catch (_) {}
-
-    // Semak gallery addon + expiry
-    bool hasGallery = merged['addonGallery'] == true;
-    if (hasGallery && merged['galleryExpire'] != null) {
-      if (DateTime.now().millisecondsSinceEpoch > (merged['galleryExpire'] as num)) {
-        hasGallery = false;
-      }
+    bool hasGallery = merged['addon_gallery'] == true;
+    final ge = merged['gallery_expire'];
+    if (hasGallery && ge != null) {
+      final dt = DateTime.tryParse(ge.toString());
+      if (dt != null && DateTime.now().isAfter(dt)) hasGallery = false;
     }
     merged['hasGalleryAddon'] = hasGallery;
-    merged['singleStaffMode'] = merged['singleStaffMode'] == true;
-
+    merged['singleStaffMode'] = merged['single_staff_mode'] == true;
     return merged;
   }
 
   Future<List<String>> getStaffList() async {
-    final settings = await getBranchSettings();
-    if (settings == null) return [];
-    final staffList = settings['staffList'];
-    if (staffList is List) {
-      return staffList.map((s) {
-        if (s is String) return s;
-        if (s is Map) return (s['name'] ?? s['nama'] ?? '').toString();
-        return '';
-      }).where((s) => s.isNotEmpty).toList();
-    }
-    return [];
+    await init();
+    if (_branchId == null) return [];
+    final rows = await SupabaseService.client
+        .from('branch_staff')
+        .select('nama')
+        .eq('branch_id', _branchId!)
+        .eq('status', 'active');
+    return rows.map((r) => (r['nama'] ?? '').toString()).where((s) => s.isNotEmpty).toList();
   }
 }
 
@@ -223,6 +241,5 @@ class RepairItem {
   String nama;
   int qty;
   double harga;
-
   RepairItem({required this.nama, this.qty = 1, this.harga = 0});
 }

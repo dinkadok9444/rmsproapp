@@ -71,4 +71,17 @@
 /* Tighten on very small LCD */
 @media (max-width: 380px) {
   .login-card { padding: var(--sp-5) var(--sp-4); }
+  .login-logo h1 { letter-spacing: 1px; }
+}
+
+/* Prevent input overflow on narrow screens */
+.login-card .input,
+.login-card .btn { width: 100%; min-width: 0; }
+.login-card .field { min-width: 0; }
+.login-card .field__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
 }

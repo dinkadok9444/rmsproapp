@@ -6,8 +6,7 @@ import 'package:csv/csv.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import '../../services/supabase_storage.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -15,6 +14,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../theme/app_theme.dart';
 import '../../services/printer_service.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 
 class SvPhoneStockTab extends StatefulWidget {
   final String ownerID;
@@ -25,8 +26,11 @@ class SvPhoneStockTab extends StatefulWidget {
 }
 
 class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
-  final _db = FirebaseFirestore.instance;
-  final _storage = FirebaseStorage.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _tenantId;
+  String? _branchId;
+  final _storage = SupabaseStorageHelper();
   final _searchCtrl = TextEditingController();
   final _printer = PrinterService();
   final _picker = ImagePicker();
@@ -43,7 +47,44 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
   final _tarikhMasukCtrl = TextEditingController();
 
   @override
-  void initState() { super.initState(); _listen(); }
+  void initState() { super.initState(); _init(); }
+
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
+    return 0;
+  }
+
+  Map<String, dynamic> _phoneStockToUi(Map<String, dynamic> r) {
+    final notes = (r['notes'] is Map) ? Map<String, dynamic>.from(r['notes']) : <String, dynamic>{};
+    return {
+      'id': r['id'],
+      'kod': notes['kod'] ?? '',
+      'nama': r['device_name'] ?? notes['nama'] ?? '',
+      'imei': notes['imei'] ?? '',
+      'warna': notes['warna'] ?? '',
+      'storage': notes['storage'] ?? '',
+      'kos': r['cost'] ?? 0,
+      'jual': r['price'] ?? 0,
+      'jualDealer': notes['jualDealer'] ?? 0,
+      'nota': notes['nota'] ?? '',
+      'imageUrl': notes['imageUrl'] ?? '',
+      'tarikh_masuk': notes['tarikh_masuk'] ?? '',
+      'status': r['status'] ?? 'AVAILABLE',
+      'shopID': widget.shopID,
+      'timestamp': _tsFromIso(r['created_at']),
+    };
+  }
+
+  Future<void> _init() async {
+    await _repairService.init();
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+    _listen();
+  }
 
   @override
   void dispose() {
@@ -58,13 +99,17 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
   }
 
   void _listen() {
-    _sub = _db.collection('phone_stock_${widget.ownerID}')
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .listen((snap) {
-      final list = snap.docs.map((d) => {'id': d.id, ...d.data()}).where((d) =>
-          (d['shopID'] ?? '').toString().toUpperCase() == widget.shopID &&
-          (d['status'] ?? '').toString().toUpperCase() != 'SOLD').toList();
+    if (_branchId == null) return;
+    _sub = _sb
+        .from('phone_stock')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows
+          .where((r) => r['deleted_at'] == null && (r['status'] ?? '').toString().toUpperCase() != 'SOLD')
+          .map<Map<String, dynamic>>(_phoneStockToUi)
+          .toList();
+      list.sort((a, b) => ((b['timestamp'] ?? 0) as num).compareTo((a['timestamp'] ?? 0) as num));
       if (mounted) setState(() { _inventory = list; _filter(); });
     });
   }
@@ -108,7 +153,10 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
 
   String _fmt(dynamic ts) {
     if (ts is int) return DateFormat('dd/MM/yy').format(DateTime.fromMillisecondsSinceEpoch(ts));
-    if (ts is Timestamp) return DateFormat('dd/MM/yy').format(ts.toDate());
+    if (ts is String && ts.isNotEmpty) {
+      final dt = DateTime.tryParse(ts);
+      if (dt != null) return DateFormat('dd/MM/yy').format(dt);
+    }
     return '-';
   }
 
@@ -153,9 +201,11 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
 
   Future<String?> _uploadImage(File file, String kod) async {
     final ts = DateTime.now().millisecondsSinceEpoch;
-    final ref = _storage.ref().child('phone_stock/${widget.ownerID}/${kod}_$ts.jpg');
-    final task = await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
-    return await task.ref.getDownloadURL();
+    return await _storage.uploadFile(
+      bucket: 'phone_stock',
+      path: '${widget.ownerID}/${kod}_$ts.jpg',
+      file: file,
+    );
   }
 
   // ═══════════════════════════════════════
@@ -312,21 +362,25 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
                               imageUrl = await _uploadImage(pickedImage!, _kodCtrl.text.trim());
                             }
 
-                            await _db.collection('phone_stock_${widget.ownerID}').add({
-                              'kod': _kodCtrl.text.trim().toUpperCase(),
-                              'nama': _namaCtrl.text.trim().toUpperCase(),
-                              'imei': imeiCtrl.text.trim(),
-                              'warna': warnaCtrl.text.trim().toUpperCase(),
-                              'storage': storageCtrl.text.trim().toUpperCase(),
-                              'kos': double.tryParse(_kosCtrl.text) ?? 0,
-                              'jual': double.tryParse(_jualCtrl.text) ?? 0,
-                              'jualDealer': double.tryParse(jualDealerCtrl.text) ?? 0,
-                              'nota': notaCtrl.text.trim(),
-                              'tarikh_masuk': _tarikhMasukCtrl.text.trim(),
-                              'imageUrl': imageUrl ?? '',
+                            if (_tenantId == null || _branchId == null) return;
+                            await _sb.from('phone_stock').insert({
+                              'tenant_id': _tenantId,
+                              'branch_id': _branchId,
+                              'device_name': _namaCtrl.text.trim().toUpperCase(),
+                              'cost': double.tryParse(_kosCtrl.text) ?? 0,
+                              'price': double.tryParse(_jualCtrl.text) ?? 0,
                               'status': 'AVAILABLE',
-                              'timestamp': DateTime.now().millisecondsSinceEpoch,
-                              'shopID': widget.shopID,
+                              'notes': {
+                                'kod': _kodCtrl.text.trim().toUpperCase(),
+                                'nama': _namaCtrl.text.trim().toUpperCase(),
+                                'imei': imeiCtrl.text.trim(),
+                                'warna': warnaCtrl.text.trim().toUpperCase(),
+                                'storage': storageCtrl.text.trim().toUpperCase(),
+                                'jualDealer': double.tryParse(jualDealerCtrl.text) ?? 0,
+                                'nota': notaCtrl.text.trim(),
+                                'tarikh_masuk': _tarikhMasukCtrl.text.trim(),
+                                'imageUrl': imageUrl ?? '',
+                              },
                             });
                             if (ctx.mounted) Navigator.pop(ctx);
                             _snack('Stok telefon berjaya ditambah');
@@ -493,41 +547,46 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
                                 imageUrl = await _uploadImage(pickedImage!, kodCtrl.text.trim());
                               }
 
-                              final updateData = <String, dynamic>{
+                              final newNotes = {
                                 'kod': kodCtrl.text.trim().toUpperCase(),
                                 'nama': namaCtrl.text.trim().toUpperCase(),
                                 'imei': imeiCtrl.text.trim(),
                                 'warna': warnaCtrl.text.trim().toUpperCase(),
                                 'storage': storageCtrl.text.trim().toUpperCase(),
-                                'kos': double.tryParse(kosCtrl.text) ?? 0,
-                                'jual': double.tryParse(jualCtrl.text) ?? 0,
                                 'jualDealer': double.tryParse(jualDealerCtrl.text) ?? 0,
                                 'nota': notaCtrl.text.trim(),
-                                'status': status,
+                                'imageUrl': imageUrl ?? (item['imageUrl'] ?? ''),
                               };
-                              if (imageUrl != null) updateData['imageUrl'] = imageUrl;
+                              final updateData = <String, dynamic>{
+                                'device_name': namaCtrl.text.trim().toUpperCase(),
+                                'cost': double.tryParse(kosCtrl.text) ?? 0,
+                                'price': double.tryParse(jualCtrl.text) ?? 0,
+                                'status': status,
+                                'notes': newNotes,
+                              };
 
-                              await _db.collection('phone_stock_${widget.ownerID}').doc(item['id']).update(updateData);
+                              await _sb.from('phone_stock').update(updateData).eq('id', item['id']);
 
                               // Bila status SOLD, SELALU masuk history
                               if (status == 'SOLD') {
-                                final existing = await _db.collection('phone_sales_${widget.ownerID}')
-                                    .where('stockDocId', isEqualTo: item['id'])
-                                    .limit(1).get();
-                                if (existing.docs.isEmpty) {
-                                  await _db.collection('phone_sales_${widget.ownerID}').add({
-                                    'kod': kodCtrl.text.trim().toUpperCase(),
-                                    'nama': namaCtrl.text.trim().toUpperCase(),
-                                    'imei': imeiCtrl.text.trim(),
-                                    'warna': warnaCtrl.text.trim().toUpperCase(),
-                                    'storage': storageCtrl.text.trim().toUpperCase(),
-                                    'kos': double.tryParse(kosCtrl.text) ?? 0,
-                                    'jual': double.tryParse(jualCtrl.text) ?? 0,
-                                    'imageUrl': imageUrl ?? (item['imageUrl'] ?? ''),
-                                    'tarikh_jual': DateFormat('yyyy-MM-dd').format(DateTime.now()),
-                                    'timestamp': DateTime.now().millisecondsSinceEpoch,
-                                    'shopID': widget.shopID,
-                                    'stockDocId': item['id'],
+                                final existing = await _sb.from('phone_sales')
+                                    .select()
+                                    .eq('phone_stock_id', item['id'])
+                                    .limit(1);
+                                if (existing.isEmpty) {
+                                  await _sb.from('phone_sales').insert({
+                                    'tenant_id': _tenantId,
+                                    'branch_id': _branchId,
+                                    'phone_stock_id': item['id'],
+                                    'device_name': namaCtrl.text.trim().toUpperCase(),
+                                    'sold_price': double.tryParse(jualCtrl.text) ?? 0,
+                                    'sold_at': DateTime.now().toIso8601String(),
+                                    'notes': {
+                                      ...newNotes,
+                                      'kos': double.tryParse(kosCtrl.text) ?? 0,
+                                      'jual': double.tryParse(jualCtrl.text) ?? 0,
+                                      'tarikh_jual': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+                                    },
                                   });
                                 }
                               }
@@ -575,12 +634,11 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              final data = Map<String, dynamic>.from(item);
-              data.remove('id');
-              data['deletedAt'] = DateTime.now().millisecondsSinceEpoch;
-              data['originalDocId'] = item['id'];
-              await _db.collection('phone_trash_${widget.ownerID}').add(data);
-              await _db.collection('phone_stock_${widget.ownerID}').doc(item['id']).delete();
+              // Soft-delete: set deleted_at (tong sampah = deleted_at != null)
+              await _sb.from('phone_stock').update({
+                'deleted_at': DateTime.now().toIso8601String(),
+                'deleted_by': widget.shopID,
+              }).eq('id', item['id']);
               _snack('Stok dimasukkan ke tong sampah');
             },
             child: const Text('PADAM', style: TextStyle(color: AppColors.red)),
@@ -673,14 +731,13 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
   }
 
   Widget _buildSalesTab() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _db.collection('phone_sales_${widget.ownerID}').orderBy('timestamp', descending: true).limit(100).snapshots(),
+    if (_branchId == null) return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _sb.from('phone_sales').stream(primaryKey: ['id']).eq('branch_id', _branchId!),
       builder: (_, snap) {
         if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: AppColors.primary));
-        final docs = snap.data!.docs.where((d) {
-          final data = d.data() as Map;
-          return data['shopID']?.toString().toUpperCase() == widget.shopID && data['deleted'] != true;
-        }).toList();
+        final docs = snap.data!.where((d) => d['deleted_at'] == null).toList()
+          ..sort((a, b) => _tsFromIso(b['sold_at'] ?? b['created_at']).compareTo(_tsFromIso(a['sold_at'] ?? a['created_at'])));
         if (docs.isEmpty) return const Center(child: Text('Tiada rekod jualan', style: TextStyle(color: AppColors.textMuted)));
         return GridView.builder(
           padding: const EdgeInsets.all(10),
@@ -692,15 +749,19 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
           ),
           itemCount: docs.length,
           itemBuilder: (_, i) {
-            final d = docs[i].data() as Map<String, dynamic>;
-            final saleDocId = docs[i].id;
-            final stockDocId = (d['stockDocId'] ?? '').toString();
-            final nama = (d['nama'] ?? '-').toString();
-            final kos = ((d['kos'] ?? 0) as num).toDouble();
-            final jual = ((d['jual'] ?? 0) as num).toDouble();
+            final raw = docs[i];
+            final notes = (raw['notes'] is Map) ? Map<String, dynamic>.from(raw['notes']) : <String, dynamic>{};
+            final d = {...notes, ...raw};
+            final saleDocId = raw['id'].toString();
+            final stockDocId = (raw['phone_stock_id'] ?? '').toString();
+            final nama = (raw['device_name'] ?? notes['nama'] ?? '-').toString();
+            final kos = ((notes['kos'] ?? 0) as num).toDouble();
+            final jual = ((raw['sold_price'] ?? notes['jual'] ?? 0) as num).toDouble();
             final profit = jual - kos;
-            final tarikh = (d['tarikh_jual'] ?? '').toString();
-            final imageUrl = (d['imageUrl'] ?? '').toString();
+            final tarikh = (notes['tarikh_jual'] ?? '').toString();
+            final imageUrl = (notes['imageUrl'] ?? '').toString();
+            // ignore d unused
+            d.length;
 
             return Container(
               decoration: BoxDecoration(
@@ -770,26 +831,25 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
   }
 
   Widget _buildTrashTab() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _db.collection('phone_sales_${widget.ownerID}').orderBy('deletedAt', descending: true).limit(100).snapshots(),
+    if (_branchId == null) return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _sb.from('phone_sales').stream(primaryKey: ['id']).eq('branch_id', _branchId!),
       builder: (_, snap) {
         if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: AppColors.primary));
-        final docs = snap.data!.docs.where((d) {
-          final data = d.data() as Map;
-          return data['shopID']?.toString().toUpperCase() == widget.shopID && data['deleted'] == true;
-        }).toList();
+        final docs = snap.data!.where((d) => d['deleted_at'] != null).toList();
 
         // Auto delete kekal selepas 30 hari
         for (final doc in docs) {
-          final deletedAt = (doc.data() as Map)['deletedAt'] as int? ?? 0;
+          final deletedAt = _tsFromIso(doc['deleted_at']);
           if (DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(deletedAt)).inDays >= 30) {
-            _db.collection('phone_sales_${widget.ownerID}').doc(doc.id).delete();
+            _sb.from('phone_sales').delete().eq('id', doc['id']);
           }
         }
         final validDocs = docs.where((d) {
-          final deletedAt = (d.data() as Map)['deletedAt'] as int? ?? 0;
+          final deletedAt = _tsFromIso(d['deleted_at']);
           return DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(deletedAt)).inDays < 30;
-        }).toList();
+        }).toList()
+          ..sort((a, b) => _tsFromIso(b['deleted_at']).compareTo(_tsFromIso(a['deleted_at'])));
 
         if (validDocs.isEmpty) return const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
           FaIcon(FontAwesomeIcons.trash, size: 32, color: AppColors.textDim), SizedBox(height: 8),
@@ -806,13 +866,14 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
           ),
           itemCount: validDocs.length,
           itemBuilder: (_, i) {
-            final d = validDocs[i].data() as Map<String, dynamic>;
-            final docId = validDocs[i].id;
-            final nama = (d['nama'] ?? '-').toString();
-            final jual = ((d['jual'] ?? 0) as num).toDouble();
-            final tarikh = (d['tarikh_jual'] ?? '').toString();
-            final imageUrl = (d['imageUrl'] ?? '').toString();
-            final deletedAt = d['deletedAt'] as int? ?? 0;
+            final raw = validDocs[i];
+            final notes = (raw['notes'] is Map) ? Map<String, dynamic>.from(raw['notes']) : <String, dynamic>{};
+            final docId = raw['id'].toString();
+            final nama = (raw['device_name'] ?? notes['nama'] ?? '-').toString();
+            final jual = ((raw['sold_price'] ?? notes['jual'] ?? 0) as num).toDouble();
+            final tarikh = (notes['tarikh_jual'] ?? '').toString();
+            final imageUrl = (notes['imageUrl'] ?? '').toString();
+            final deletedAt = _tsFromIso(raw['deleted_at']);
             final daysLeft = 30 - DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(deletedAt)).inDays;
 
             return Container(
@@ -855,10 +916,7 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
                   child: GestureDetector(
                     onTap: () async {
                       try {
-                        await _db.collection('phone_sales_${widget.ownerID}').doc(docId).update({
-                          'deleted': FieldValue.delete(),
-                          'deletedAt': FieldValue.delete(),
-                        });
+                        await _sb.from('phone_sales').update({'deleted_at': null}).eq('id', docId);
                         _snack('Rekod "$nama" dipulihkan ke history');
                       } catch (e) {
                         _snack('Gagal recover: $e', err: true);
@@ -896,8 +954,8 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
             onPressed: () async {
               Navigator.pop(ctx);
               try {
-                await _db.collection('phone_stock_${widget.ownerID}').doc(stockDocId).update({'status': 'AVAILABLE'});
-                await _db.collection('phone_sales_${widget.ownerID}').doc(saleDocId).delete();
+                await _sb.from('phone_stock').update({'status': 'AVAILABLE'}).eq('id', stockDocId);
+                await _sb.from('phone_sales').delete().eq('id', saleDocId);
                 _snack('Stok "$nama" berjaya di-reverse ke AVAILABLE');
               } catch (e) {
                 _snack('Gagal reverse: $e', err: true);
@@ -922,10 +980,9 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
             onPressed: () async {
               Navigator.pop(ctx);
               try {
-                await _db.collection('phone_sales_${widget.ownerID}').doc(saleDocId).update({
-                  'deleted': true,
-                  'deletedAt': DateTime.now().millisecondsSinceEpoch,
-                });
+                await _sb.from('phone_sales').update({
+                  'deleted_at': DateTime.now().toIso8601String(),
+                }).eq('id', saleDocId);
                 _snack('Rekod "$nama" dipindah ke DELETE');
               } catch (e) {
                 _snack('Gagal delete: $e', err: true);
@@ -991,8 +1048,11 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
       return;
     }
 
-    int count = 0;
-    final batch = _db.batch();
+    if (_tenantId == null || _branchId == null) {
+      _snack('Tenant/branch belum resolved', err: true);
+      return;
+    }
+    final inserts = <Map<String, dynamic>>[];
     final now = DateTime.now();
     final tarikhMasuk = DateFormat('yyyy-MM-dd').format(now);
 
@@ -1001,32 +1061,33 @@ class _SvPhoneStockTabState extends State<SvPhoneStockTab> {
       final nama = (namaIdx < row.length ? row[namaIdx] : '').toString().trim().toUpperCase();
       if (nama.isEmpty) continue;
 
-      final docRef = _db.collection('phone_stock_${widget.ownerID}').doc();
-      batch.set(docRef, {
-        'kod': _generateKod(),
-        'nama': nama,
-        'imei': imeiIdx >= 0 && imeiIdx < row.length ? row[imeiIdx].toString().trim() : '',
-        'warna': warnaIdx >= 0 && warnaIdx < row.length ? row[warnaIdx].toString().trim().toUpperCase() : '',
-        'storage': storageIdx >= 0 && storageIdx < row.length ? row[storageIdx].toString().trim().toUpperCase() : '',
-        'kos': kosIdx >= 0 && kosIdx < row.length ? (double.tryParse(row[kosIdx].toString()) ?? 0) : 0,
-        'jual': jualIdx >= 0 && jualIdx < row.length ? (double.tryParse(row[jualIdx].toString()) ?? 0) : 0,
-        'nota': notaIdx >= 0 && notaIdx < row.length ? row[notaIdx].toString().trim() : '',
-        'imageUrl': '',
-        'tarikh_masuk': tarikhMasuk,
+      inserts.add({
+        'tenant_id': _tenantId,
+        'branch_id': _branchId,
+        'device_name': nama,
+        'cost': kosIdx >= 0 && kosIdx < row.length ? (double.tryParse(row[kosIdx].toString()) ?? 0) : 0,
+        'price': jualIdx >= 0 && jualIdx < row.length ? (double.tryParse(row[jualIdx].toString()) ?? 0) : 0,
         'status': 'AVAILABLE',
-        'timestamp': now.millisecondsSinceEpoch + i,
-        'shopID': widget.shopID,
+        'notes': {
+          'kod': _generateKod(),
+          'nama': nama,
+          'imei': imeiIdx >= 0 && imeiIdx < row.length ? row[imeiIdx].toString().trim() : '',
+          'warna': warnaIdx >= 0 && warnaIdx < row.length ? row[warnaIdx].toString().trim().toUpperCase() : '',
+          'storage': storageIdx >= 0 && storageIdx < row.length ? row[storageIdx].toString().trim().toUpperCase() : '',
+          'nota': notaIdx >= 0 && notaIdx < row.length ? row[notaIdx].toString().trim() : '',
+          'imageUrl': '',
+          'tarikh_masuk': tarikhMasuk,
+        },
       });
-      count++;
     }
 
-    if (count == 0) {
+    if (inserts.isEmpty) {
       _snack('Tiada data sah dalam CSV', err: true);
       return;
     }
 
-    await batch.commit();
-    _snack('$count stok telefon berjaya diimport!');
+    await _sb.from('phone_stock').insert(inserts);
+    _snack('${inserts.length} stok telefon berjaya diimport!');
   }
 
   // ═══════════════════════════════════════

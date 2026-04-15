@@ -1,8 +1,8 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../theme/app_theme.dart';
+import '../../services/supabase_client.dart';
 
 class DaftarManualScreen extends StatefulWidget {
   const DaftarManualScreen({super.key});
@@ -12,7 +12,7 @@ class DaftarManualScreen extends StatefulWidget {
 }
 
 class _DaftarManualScreenState extends State<DaftarManualScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
   List<Map<String, dynamic>> _dealers = [];
   bool _isLoading = true;
 
@@ -49,15 +49,22 @@ class _DaftarManualScreenState extends State<DaftarManualScreen> {
   Future<void> _loadDealers() async {
     setState(() => _isLoading = true);
     try {
-      final snap = await _db
-          .collection('saas_dealers')
-          .orderBy('createdAt', descending: true)
-          .limit(500)
-          .get();
-      _dealers = snap.docs.map((doc) {
-        final d = doc.data();
-        d['id'] = doc.id;
-        return d;
+      final rows = await _sb
+          .from('tenants')
+          .select()
+          .order('created_at', ascending: false)
+          .limit(500);
+      _dealers = rows.map<Map<String, dynamic>>((r) {
+        final config = (r['config'] is Map) ? Map<String, dynamic>.from(r['config']) : <String, dynamic>{};
+        return {
+          'id': r['id'],
+          'ownerID': r['owner_id'],
+          'namaKedai': r['nama_kedai'] ?? '',
+          'ownerName': config['ownerName'] ?? '',
+          'phone': config['ownerContact'] ?? '',
+          'negeri': config['negeri'] ?? '',
+          'status': r['status'] ?? 'Aktif',
+        };
       }).toList();
 
       _dealers.sort((a, b) {
@@ -280,8 +287,8 @@ class _DaftarManualScreenState extends State<DaftarManualScreen> {
                               setModalState(() => isSubmitting = true);
 
                               try {
-                                final existing = await _db.collection('saas_dealers').doc(systemId).get();
-                                if (existing.exists) {
+                                final existing = await _sb.from('tenants').select('id').eq('owner_id', systemId).maybeSingle();
+                                if (existing != null) {
                                   setModalState(() {
                                     idError = 'System ID ini sudah wujud';
                                     isSubmitting = false;
@@ -289,10 +296,8 @@ class _DaftarManualScreenState extends State<DaftarManualScreen> {
                                   return;
                                 }
 
-                                final now = Timestamp.now();
                                 final months = _durationMonths[selectedDuration] ?? 1;
                                 final expiryDate = DateTime.now().add(Duration(days: months * 30));
-                                final expiryTimestamp = Timestamp.fromDate(expiryDate);
                                 final shopID = _generateShopID(selectedNegeri);
                                 final ownerID = systemId;
 
@@ -302,49 +307,41 @@ class _DaftarManualScreenState extends State<DaftarManualScreen> {
                                   'Lost': true, 'MaklumBalas': true, 'Link': true, 'Fungsi_lain': true, 'Settings': true,
                                 };
 
-                                // 1. Create saas_dealers doc
-                                await _db.collection('saas_dealers').doc(ownerID).set({
-                                  'enabledModules': defaultEnabledModules,
-                                  'ownerName': ownerNameCtrl.text.trim(),
-                                  'ownerContact': ownerPhoneCtrl.text.trim(),
-                                  'password': passwordCtrl.text.trim(),
-                                  'namaKedai': shopNameCtrl.text.trim(),
+                                // 1. Create tenants row
+                                final t = await _sb.from('tenants').insert({
+                                  'owner_id': ownerID,
+                                  'nama_kedai': shopNameCtrl.text.trim(),
+                                  'password_hash': passwordCtrl.text.trim(),
+                                  'status': 'Aktif',
+                                  'active': true,
+                                  'expire_date': expiryDate.toIso8601String(),
+                                  'config': {
+                                    'enabledModules': defaultEnabledModules,
+                                    'ownerName': ownerNameCtrl.text.trim(),
+                                    'ownerContact': ownerPhoneCtrl.text.trim(),
+                                    'email': shopEmailCtrl.text.trim(),
+                                    'daerah': districtCtrl.text.trim(),
+                                    'negeri': selectedNegeri,
+                                    'alamat': addressCtrl.text.trim(),
+                                    'duration': selectedDuration,
+                                  },
+                                }).select('id').single();
+                                final tenantId = t['id'] as String;
+
+                                // 2. Create branches row
+                                await _sb.from('branches').insert({
+                                  'tenant_id': tenantId,
+                                  'shop_code': shopID,
+                                  'nama_kedai': shopNameCtrl.text.trim(),
                                   'email': shopEmailCtrl.text.trim(),
                                   'phone': shopPhoneCtrl.text.trim(),
-                                  'daerah': districtCtrl.text.trim(),
-                                  'negeri': selectedNegeri,
                                   'alamat': addressCtrl.text.trim(),
-                                  'status': 'Aktif',
-                                  'joinDate': now,
-                                  'expiry': expiryTimestamp,
-                                  'duration': selectedDuration,
-                                  'shopID': shopID,
-                                  'timestamp': now,
-                                });
-
-                                // 2. Create shops_{ownerID} doc
-                                await _db.collection('shops_$ownerID').doc(shopID).set({
-                                  'enabledModules': defaultEnabledModules,
-                                  'shopName': shopNameCtrl.text.trim(),
-                                  'email': shopEmailCtrl.text.trim(),
-                                  'phone': shopPhoneCtrl.text.trim(),
-                                  'daerah': districtCtrl.text.trim(),
-                                  'negeri': selectedNegeri,
-                                  'alamat': addressCtrl.text.trim(),
-                                  'status': 'Aktif',
-                                  'timestamp': now,
-                                });
-
-                                // 3. Create global_branches doc
-                                await _db.collection('global_branches').doc('$ownerID@$shopID').set({
-                                  'ownerID': ownerID,
-                                  'shopID': shopID,
-                                  'shopName': shopNameCtrl.text.trim(),
-                                  'negeri': selectedNegeri,
-                                  'daerah': districtCtrl.text.trim(),
-                                  'status': 'Aktif',
-                                  'joinDate': now,
-                                  'timestamp': now,
+                                  'enabled_modules': defaultEnabledModules,
+                                  'extras': {
+                                    'daerah': districtCtrl.text.trim(),
+                                    'negeri': selectedNegeri,
+                                  },
+                                  'active': true,
                                 });
 
                                 if (!ctx.mounted) return;
@@ -481,9 +478,11 @@ class _DaftarManualScreenState extends State<DaftarManualScreen> {
   Widget _buildDealerCard(Map<String, dynamic> item) {
     final status = (item['status'] ?? '').toString();
     final isActive = status == 'Aktif';
-    final expiry = item['expiry'] as Timestamp?;
+    final expiryRaw = item['expiry'];
+    DateTime? expiry;
+    if (expiryRaw is String && expiryRaw.isNotEmpty) expiry = DateTime.tryParse(expiryRaw);
     final expiryStr = expiry != null
-        ? '${expiry.toDate().day}/${expiry.toDate().month}/${expiry.toDate().year}'
+        ? '${expiry.day}/${expiry.month}/${expiry.year}'
         : '-';
 
     return Container(

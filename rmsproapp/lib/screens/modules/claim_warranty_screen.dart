@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,6 +15,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_theme.dart';
 import '../../services/printer_service.dart';
 import '../../services/app_language.dart';
+import '../../services/supabase_client.dart';
+import '../../services/repair_service.dart';
 
 const String _cloudRunUrl = 'https://rms-backend-94407896005.asia-southeast1.run.app';
 
@@ -26,13 +27,16 @@ class ClaimWarrantyScreen extends StatefulWidget {
 }
 
 class _ClaimWarrantyScreenState extends State<ClaimWarrantyScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   final _lang = AppLanguage();
   final _searchCtrl = TextEditingController();
   final _repairSearchCtrl = TextEditingController();
 
   String _ownerID = 'admin';
   String _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
   String _filterStatus = 'ALL';
 
   List<Map<String, dynamic>> _claims = [];
@@ -61,55 +65,89 @@ class _ClaimWarrantyScreenState extends State<ClaimWarrantyScreen> {
   }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0].toLowerCase();
-      _shopID = branch.split('@')[1].toUpperCase();
-    }
+    await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
     _listenClaims();
     _listenRepairs();
     _loadBranchSettings();
   }
 
+  Map<String, dynamic> _claimRowToUi(Map r) {
+    final m = Map<String, dynamic>.from(r);
+    m['id'] = r['id'];
+    m['claimID'] = r['claim_code'] ?? r['id'];
+    m['siri'] = r['siri'] ?? '';
+    m['nama'] = r['nama'] ?? '';
+    m['claimStatus'] = r['claim_status'] ?? '';
+    // Unpack catatan jsonb — stashed extra fields
+    final catatan = r['catatan'];
+    if (catatan is String && catatan.isNotEmpty) {
+      try {
+        final parsed = jsonDecode(catatan);
+        if (parsed is Map) m.addAll(Map<String, dynamic>.from(parsed));
+      } catch (_) {}
+    }
+    final c = r['created_at']?.toString();
+    m['timestamp'] = c == null ? 0 : (DateTime.tryParse(c)?.millisecondsSinceEpoch ?? 0);
+    return m;
+  }
+
   void _listenClaims() {
-    _claimsSub = _db.collection('claims_$_ownerID').orderBy('timestamp', descending: true).snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        d['id'] = doc.id;
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) list.add(d);
-      }
+    if (_branchId == null) return;
+    _claimsSub = _sb
+        .from('claims')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .order('created_at', ascending: false)
+        .listen((rows) {
+      final list = rows.map(_claimRowToUi).toList();
       if (mounted) setState(() { _claims = list; _applyFilter(); });
     });
   }
 
   void _listenRepairs() {
-    _repairsSub = _db.collection('repairs_$_ownerID').snapshots().listen((snap) {
+    if (_branchId == null) return;
+    _repairsSub = _sb
+        .from('jobs')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .order('created_at', ascending: false)
+        .listen((rows) {
       final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        if ((d['shopID'] ?? '').toString().toUpperCase() == _shopID) {
-          final nama = (d['nama'] ?? '').toString().toUpperCase();
-          final jenis = (d['jenis_servis'] ?? '').toString().toUpperCase();
-          if (nama != 'JUALAN PANTAS' && jenis != 'JUALAN') list.add(d);
-        }
+      for (final r in rows) {
+        final nama = (r['nama'] ?? '').toString().toUpperCase();
+        final jenis = (r['jenis_servis'] ?? '').toString().toUpperCase();
+        if (nama == 'JUALAN PANTAS' || jenis == 'JUALAN') continue;
+        final m = Map<String, dynamic>.from(r);
+        final c = r['created_at']?.toString();
+        m['timestamp'] = c == null ? 0 : (DateTime.tryParse(c)?.millisecondsSinceEpoch ?? 0);
+        list.add(m);
       }
-      list.sort((a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0));
       if (mounted) setState(() => _repairs = list);
     });
   }
 
   Future<void> _loadBranchSettings() async {
-    final snap = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-    if (snap.exists) {
-      _branchSettings = snap.data() ?? {};
-      final staffRaw = _branchSettings['staffList'];
-      if (staffRaw is List) {
-        _staffList = staffRaw.map((s) => s is String ? s : (s['name'] ?? s['nama'] ?? '').toString()).where((s) => s.isNotEmpty).toList();
-      }
-      if (mounted) setState(() {});
+    if (_branchId == null) return;
+    final row = await _sb
+        .from('branches')
+        .select('*, branch_staff(nama, status)')
+        .eq('id', _branchId!)
+        .maybeSingle();
+    if (row == null) return;
+    _branchSettings = Map<String, dynamic>.from(row);
+    final staffRaw = row['branch_staff'];
+    if (staffRaw is List) {
+      _staffList = staffRaw
+          .where((s) => s is Map && (s['status'] ?? 'active') == 'active')
+          .map((s) => (s['nama'] ?? '').toString())
+          .where((s) => s.isNotEmpty)
+          .toList();
     }
+    if (mounted) setState(() {});
   }
 
   void _applyFilter() {
@@ -350,14 +388,13 @@ class _ClaimWarrantyScreenState extends State<ClaimWarrantyScreen> {
   }
 
   Future<void> _registerClaim(Map<String, dynamic> repair) async {
+    if (_tenantId == null || _branchId == null) return;
     final claimID = _generateClaimID();
     final now = DateTime.now();
-    final timestamp = now.millisecondsSinceEpoch;
 
-    final claimData = {
+    // Extra fields stashed dalam catatan jsonb
+    final extra = {
       'claimID': claimID,
-      'siri': repair['siri'] ?? '-',
-      'nama': repair['nama'] ?? '-',
       'tel': repair['tel'] ?? '-',
       'tel_wasap': repair['tel_wasap'] ?? '',
       'model': repair['model'] ?? '-',
@@ -367,7 +404,6 @@ class _ClaimWarrantyScreenState extends State<ClaimWarrantyScreen> {
       'items_array': repair['items_array'] ?? [],
       'originalWarranty': repair['warranty'] ?? 'TIADA',
       'originalWarrantyExp': repair['warranty_exp'] ?? '',
-      'claimStatus': 'Claim Waiting Approval',
       'claimWarranty': 'TIADA',
       'claimWarrantyTempoh': 0,
       'claimWarrantyExp': '',
@@ -378,14 +414,19 @@ class _ClaimWarrantyScreenState extends State<ClaimWarrantyScreen> {
       'tarikhHantar': DateFormat("yyyy-MM-dd'T'HH:mm").format(now),
       'tarikhSiap': '',
       'tarikhPickup': '',
-      'shopID': _shopID,
-      'ownerID': _ownerID,
-      'timestamp': timestamp,
-      'lastUpdated': timestamp,
     };
 
     try {
-      await _db.collection('claims_$_ownerID').doc(claimID).set(claimData);
+      await _sb.from('claims').insert({
+        'tenant_id': _tenantId,
+        'branch_id': _branchId,
+        'job_id': repair['id'],
+        'siri': repair['siri'] ?? '-',
+        'claim_code': claimID,
+        'nama': repair['nama'] ?? '-',
+        'claim_status': 'Claim Waiting Approval',
+        'catatan': jsonEncode(extra),
+      });
       _snack('Claim #$claimID berjaya didaftarkan!');
     } catch (e) {
       _snack('Ralat: $e', err: true);
@@ -676,7 +717,11 @@ class _ClaimWarrantyScreenState extends State<ClaimWarrantyScreen> {
                         'lastUpdated': DateTime.now().millisecondsSinceEpoch,
                       };
                       try {
-                        await _db.collection('claims_$_ownerID').doc(docID).update(updateData);
+                        // Merge updateData (UI keys) ke catatan jsonb + map status ke claim_status
+                        await _sb.from('claims').update({
+                          'claim_status': updateData['claimStatus'],
+                          'catatan': jsonEncode(updateData),
+                        }).eq('id', docID);
                         if (ctx.mounted) Navigator.pop(ctx);
                         _snack('Claim #$claimID berjaya dikemaskini');
                       } catch (e) {
@@ -729,7 +774,7 @@ class _ClaimWarrantyScreenState extends State<ClaimWarrantyScreen> {
                               onPressed: () async {
                                 Navigator.pop(dCtx);
                                 try {
-                                  await _db.collection('claims_$_ownerID').doc(docID).delete();
+                                  await _sb.from('claims').delete().eq('id', docID);
                                   if (ctx.mounted) Navigator.pop(ctx);
                                   _snack('Claim #$claimID berjaya dipadam');
                                 } catch (e) {
@@ -1049,7 +1094,15 @@ class _ClaimWarrantyScreenState extends State<ClaimWarrantyScreen> {
         final result = jsonDecode(response.body);
         final pdfUrl = result['pdfUrl']?.toString() ?? '';
         if (pdfUrl.isNotEmpty) {
-          await _db.collection('claims_$_ownerID').doc(claimID).update({'pdfUrl_CLAIM': pdfUrl});
+          // Store pdfUrl dalam catatan jsonb (schema takde pdfUrl column)
+          final cur = await _sb.from('claims').select('catatan').eq('claim_code', claimID).maybeSingle();
+          Map<String, dynamic> extra = {};
+          final c = cur?['catatan'];
+          if (c is String && c.isNotEmpty) {
+            try { extra = Map<String, dynamic>.from(jsonDecode(c) as Map); } catch (_) {}
+          }
+          extra['pdfUrl_CLAIM'] = pdfUrl;
+          await _sb.from('claims').update({'catatan': jsonEncode(extra)}).eq('claim_code', claimID);
           _snack('PDF Claim berjaya dijana!');
           _downloadAndOpenPDF(pdfUrl, 'CLAIM', claimID);
         } else {

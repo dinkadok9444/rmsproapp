@@ -5,8 +5,9 @@ import 'dart:math';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../../services/supabase_client.dart';
+import '../../services/repair_service.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -23,12 +24,15 @@ class DbCustScreen extends StatefulWidget {
 
 class _DbCustScreenState extends State<DbCustScreen> {
   final _lang = AppLanguage();
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
   final _searchCtrl = TextEditingController();
   final _dateCtrl = TextEditingController();
 
   String _ownerID = 'admin';
   String _shopID = 'MAIN';
+  String? _tenantId;
+  String? _branchId;
   String _svPass = '';
   bool _hasGalleryAddon = false;
   bool _isLoading = true;
@@ -77,42 +81,29 @@ class _DbCustScreenState extends State<DbCustScreen> {
   }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final branch = prefs.getString('rms_current_branch') ?? '';
-    if (branch.contains('@')) {
-      _ownerID = branch.split('@')[0].toLowerCase();
-      _shopID = branch.split('@')[1].toUpperCase();
+    await _repairService.init();
+    _ownerID = _repairService.ownerID;
+    _shopID = _repairService.shopID;
+    _tenantId = _repairService.tenantId;
+    _branchId = _repairService.branchId;
+
+    // Load tenant settings (svPass, addon_gallery)
+    if (_tenantId != null) {
+      try {
+        final tenant = await _sb.from('tenants').select('addon_gallery, gallery_expire, config').eq('id', _tenantId!).maybeSingle();
+        if (tenant != null) {
+          final cfg = tenant['config'];
+          if (cfg is Map) _svPass = (cfg['svPass'] ?? '').toString();
+          bool hasGal = tenant['addon_gallery'] == true;
+          final exp = tenant['gallery_expire']?.toString();
+          if (hasGal && exp != null) {
+            final dt = DateTime.tryParse(exp);
+            if (dt != null && DateTime.now().isAfter(dt)) hasGal = false;
+          }
+          if (mounted) setState(() => _hasGalleryAddon = hasGal);
+        }
+      } catch (_) {}
     }
-
-    // Load branch settings (svPass)
-    try {
-      final shopSnap = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-      if (shopSnap.exists) {
-        _svPass = (shopSnap.data()?['svPass'] ?? '').toString();
-      }
-    } catch (_) {}
-
-    // Check gallery addon
-    try {
-      final dealerSnap = await _db.collection('saas_dealers').doc(_ownerID).get();
-      if (dealerSnap.exists) {
-        final d = dealerSnap.data()!;
-        bool hasGal = d['addonGallery'] == true;
-        if (hasGal && d['galleryExpire'] != null) {
-          if (DateTime.now().millisecondsSinceEpoch > (d['galleryExpire'] as num)) hasGal = false;
-        }
-        // Also check branchSettings
-        if (!hasGal) {
-          try {
-            final branchSnap = await _db.collection('shops_$_ownerID').doc(_shopID).get();
-            if (branchSnap.exists) {
-              hasGal = branchSnap.data()?['hasGalleryAddon'] == true;
-            }
-          } catch (_) {}
-        }
-        if (mounted) setState(() => _hasGalleryAddon = hasGal);
-      }
-    } catch (_) {}
 
     _listenRepairs();
     _listenPhoneSales();
@@ -121,22 +112,27 @@ class _DbCustScreenState extends State<DbCustScreen> {
   }
 
   void _listenRepairs() {
-    _repairSub = _db.collection('repairs_$_ownerID')
-        .where('shopID', isEqualTo: _shopID)
-        .snapshots().listen((snap) {
+    if (_branchId == null) return;
+    _repairSub = _sb
+        .from('jobs')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .order('created_at', ascending: false)
+        .listen((rows) {
       final list = <Map<String, dynamic>>[];
       final freq = <String, int>{};
-      for (final doc in snap.docs) {
-        final d = Map<String, dynamic>.from(doc.data());
-        d['_docId'] = doc.id;
-        final nama = (d['nama'] ?? '').toString().toUpperCase();
-        final jenis = (d['jenis_servis'] ?? '').toString().toUpperCase();
+      for (final r in rows) {
+        final nama = (r['nama'] ?? '').toString().toUpperCase();
+        final jenis = (r['jenis_servis'] ?? '').toString().toUpperCase();
         if (nama == 'JUALAN PANTAS' || jenis == 'JUALAN') continue;
+        final d = Map<String, dynamic>.from(r);
+        d['_docId'] = r['id'];
+        final c = r['created_at']?.toString();
+        d['timestamp'] = c == null ? 0 : (DateTime.tryParse(c)?.millisecondsSinceEpoch ?? 0);
         list.add(d);
         final tel = (d['tel'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
         if (tel.isNotEmpty) freq[tel] = (freq[tel] ?? 0) + 1;
       }
-      list.sort((a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0));
       if (mounted) {
         setState(() {
           _allRepairs = list;
@@ -149,16 +145,23 @@ class _DbCustScreenState extends State<DbCustScreen> {
   }
 
   void _listenPhoneSales() {
-    _salesSub = _db.collection('phone_sales_$_ownerID')
-        .where('shopID', isEqualTo: _shopID)
-        .snapshots().listen((snap) {
-      final list = <Map<String, dynamic>>[];
-      for (final doc in snap.docs) {
-        final d = Map<String, dynamic>.from(doc.data());
-        d['_docId'] = doc.id;
-        list.add(d);
-      }
-      list.sort((a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0));
+    if (_branchId == null) return;
+    _salesSub = _sb
+        .from('phone_sales')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .order('sold_at', ascending: false)
+        .listen((rows) {
+      final list = rows.map((r) {
+        final d = Map<String, dynamic>.from(r);
+        d['_docId'] = r['id'];
+        d['nama'] = r['device_name'] ?? '';
+        d['tel'] = r['customer_phone'] ?? '';
+        d['custName'] = r['customer_name'] ?? '';
+        final s = r['sold_at']?.toString();
+        d['timestamp'] = s == null ? 0 : (DateTime.tryParse(s)?.millisecondsSinceEpoch ?? 0);
+        return d;
+      }).toList();
       if (mounted) {
         setState(() {
           _allSales = list;
@@ -169,11 +172,25 @@ class _DbCustScreenState extends State<DbCustScreen> {
   }
 
   void _listenReferrals() {
-    _referralSub = _db.collection('referrals_$_ownerID').snapshots().listen((snap) {
+    if (_tenantId == null) return;
+    _referralSub = _sb
+        .from('referrals')
+        .stream(primaryKey: ['id'])
+        .eq('tenant_id', _tenantId!)
+        .listen((rows) {
       final refs = <String, Map<String, dynamic>>{};
-      for (final doc in snap.docs) {
-        final d = Map<String, dynamic>.from(doc.data());
-        d['_docId'] = doc.id;
+      for (final r in rows) {
+        final d = Map<String, dynamic>.from(r);
+        d['_docId'] = r['id'];
+        d['refCode'] = r['code'] ?? '';
+        // Unpack created_by jsonb
+        final cb = r['created_by'];
+        if (cb is String && cb.startsWith('{')) {
+          try {
+            final parsed = jsonDecode(cb);
+            if (parsed is Map) d.addAll(Map<String, dynamic>.from(parsed));
+          } catch (_) {}
+        }
         final tel = (d['tel'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
         if (tel.isNotEmpty) refs[tel] = d;
       }
@@ -182,12 +199,17 @@ class _DbCustScreenState extends State<DbCustScreen> {
   }
 
   void _listenReferralClaims() {
-    _claimsSub = _db.collection('referral_claims_$_ownerID').snapshots().listen((snap) {
+    if (_tenantId == null) return;
+    _claimsSub = _sb
+        .from('referral_claims')
+        .stream(primaryKey: ['id'])
+        .eq('tenant_id', _tenantId!)
+        .listen((rows) {
       final claims = <String, List<Map<String, dynamic>>>{};
-      for (final doc in snap.docs) {
-        final d = Map<String, dynamic>.from(doc.data());
-        d['_docId'] = doc.id;
-        final refCode = (d['referral_code'] ?? '').toString();
+      for (final r in rows) {
+        final d = Map<String, dynamic>.from(r);
+        d['_docId'] = r['id'];
+        final refCode = (r['referral_code'] ?? '').toString();
         if (refCode.isNotEmpty) {
           claims.putIfAbsent(refCode, () => []);
           claims[refCode]!.add(d);
@@ -599,7 +621,8 @@ class _DbCustScreenState extends State<DbCustScreen> {
               onTap: () async {
                 final newStatus = isPaid ? 'BELUM BAYAR' : 'PAID';
                 if (claimDocId.isNotEmpty) {
-                  await _db.collection('referral_claims_$_ownerID').doc(claimDocId).update({'status': newStatus});
+                  final dbStatus = newStatus == 'PAID' ? 'APPROVED' : 'PENDING';
+                  await _sb.from('referral_claims').update({'status': dbStatus}).eq('id', claimDocId);
                   _snack('Status dikemaskini: $newStatus');
                 }
               },
@@ -697,10 +720,18 @@ class _DbCustScreenState extends State<DbCustScreen> {
                   setS(() => saving = true);
                   try {
                     final code = _generateCode('V-');
-                    await _db.collection('repairs_$_ownerID').doc(docId).update({
+                    await _sb.from('jobs').update({
                       'voucher_generated': code,
-                      'voucher_value': value,
-                    });
+                    }).eq('id', docId);
+                    // Optional: also create a shop_vouchers row tied to this voucher
+                    if (_tenantId != null) {
+                      await _sb.from('shop_vouchers').insert({
+                        'tenant_id': _tenantId,
+                        'branch_id': _branchId,
+                        'voucher_code': code,
+                        'allocated_amount': value,
+                      });
+                    }
                     if (ctx.mounted) Navigator.pop(ctx);
                     _snack('Voucher $code berjaya dijana!');
                   } catch (e) {
@@ -819,19 +850,22 @@ class _DbCustScreenState extends State<DbCustScreen> {
                   setS(() => saving = true);
                   try {
                     final code = _generateCode('REF-');
-                    await _db.collection('referrals_$_ownerID').add({
-                      'referral_code': code,
-                      'nama': nama.toUpperCase(),
-                      'tel': tel,
-                      'commission': comm,
-                      'usage_limit': limit,
-                      'usage_count': 0,
-                      'bank_name': bankNameCtrl.text.trim().toUpperCase(),
-                      'bank_account': bankAccCtrl.text.trim(),
-                      'shopID': _shopID,
-                      'ownerID': _ownerID,
-                      'created_at': DateTime.now().millisecondsSinceEpoch,
+                    if (_tenantId == null) return;
+                    await _sb.from('referrals').insert({
+                      'tenant_id': _tenantId,
+                      'code': code,
                       'status': 'ACTIVE',
+                      'max_uses': limit,
+                      'used_count': 0,
+                      'discount_amount': comm,
+                      'created_by': jsonEncode({
+                        'nama': nama.toUpperCase(),
+                        'tel': tel,
+                        'commission': comm,
+                        'usage_limit': limit,
+                        'bank_name': bankNameCtrl.text.trim().toUpperCase(),
+                        'bank_account': bankAccCtrl.text.trim(),
+                      }),
                     });
                     if (ctx.mounted) Navigator.pop(ctx);
                     _snack('Referral $code berjaya dijana!');

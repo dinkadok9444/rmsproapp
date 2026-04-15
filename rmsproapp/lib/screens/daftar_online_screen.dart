@@ -1,8 +1,8 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../theme/app_theme.dart';
+import '../services/supabase_client.dart';
 
 class DaftarOnlineScreen extends StatefulWidget {
   const DaftarOnlineScreen({super.key});
@@ -12,7 +12,7 @@ class DaftarOnlineScreen extends StatefulWidget {
 }
 
 class _DaftarOnlineScreenState extends State<DaftarOnlineScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
   final _formKey = GlobalKey<FormState>();
   bool _isSubmitting = false;
   String? _idError;
@@ -114,8 +114,9 @@ class _DaftarOnlineScreenState extends State<DaftarOnlineScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      final existing = await _db.collection('saas_dealers').doc(systemId).get();
-      if (existing.exists) {
+      // Check duplicate ownerId
+      final existing = await _sb.from('tenants').select('id').eq('owner_id', systemId).maybeSingle();
+      if (existing != null) {
         setState(() {
           _idError = 'System ID ini sudah wujud. Sila pilih ID lain.';
           _isSubmitting = false;
@@ -123,60 +124,52 @@ class _DaftarOnlineScreenState extends State<DaftarOnlineScreen> {
         return;
       }
 
-      final now = Timestamp.now();
       final shopID = _generateShopID(_selectedNegeri);
       final ownerID = systemId;
 
-      // Default all menu modules enabled on registration
       final defaultEnabledModules = <String, bool>{
         'widget': true, 'Stock': true, 'DB_Cust': true, 'Booking': true,
         'Claim_warranty': true, 'Collab': true, 'Profesional': true, 'Refund': true,
         'Lost': true, 'MaklumBalas': true, 'Link': true, 'Fungsi_lain': true, 'Settings': true,
       };
 
-      // 1. Create saas_dealers doc
-      await _db.collection('saas_dealers').doc(ownerID).set({
-        'enabledModules': defaultEnabledModules,
-        'ownerName': _ownerNameCtrl.text.trim(),
-        'ownerContact': _ownerPhoneCtrl.text.trim(),
-        'password': password,
-        'namaKedai': _shopNameCtrl.text.trim(),
+      // 1. Create tenants row
+      final tenantRow = await _sb.from('tenants').insert({
+        'owner_id': ownerID,
+        'nama_kedai': _shopNameCtrl.text.trim(),
+        'password_hash': password,
+        'status': 'Aktif',
+        'active': true,
+        'config': {
+          'ownerName': _ownerNameCtrl.text.trim(),
+          'ownerContact': _ownerPhoneCtrl.text.trim(),
+          'email': _shopEmailCtrl.text.trim(),
+          'daerah': _districtCtrl.text.trim(),
+          'negeri': _selectedNegeri,
+          'alamat': _addressCtrl.text.trim(),
+          'daftarVia': 'online',
+          'enabledModules': defaultEnabledModules,
+        },
+      }).select('id').single();
+      final tenantId = tenantRow['id'] as String;
+
+      // 2. Create branches row (ganti shops_{ownerID})
+      await _sb.from('branches').insert({
+        'tenant_id': tenantId,
+        'shop_code': shopID,
+        'nama_kedai': _shopNameCtrl.text.trim(),
         'email': _shopEmailCtrl.text.trim(),
         'phone': _shopPhoneCtrl.text.trim(),
-        'daerah': _districtCtrl.text.trim(),
-        'negeri': _selectedNegeri,
         'alamat': _addressCtrl.text.trim(),
-        'status': 'Aktif',
-        'joinDate': now,
-        'shopID': shopID,
-        'timestamp': now,
-        'daftarVia': 'online',
+        'enabled_modules': defaultEnabledModules,
+        'extras': {
+          'daerah': _districtCtrl.text.trim(),
+          'negeri': _selectedNegeri,
+        },
+        'active': true,
       });
 
-      // 2. Create shops_{ownerID} doc
-      await _db.collection('shops_$ownerID').doc(shopID).set({
-        'enabledModules': defaultEnabledModules,
-        'shopName': _shopNameCtrl.text.trim(),
-        'email': _shopEmailCtrl.text.trim(),
-        'phone': _shopPhoneCtrl.text.trim(),
-        'daerah': _districtCtrl.text.trim(),
-        'negeri': _selectedNegeri,
-        'alamat': _addressCtrl.text.trim(),
-        'status': 'Aktif',
-        'timestamp': now,
-      });
-
-      // 3. Create global_branches doc
-      await _db.collection('global_branches').doc('$ownerID@$shopID').set({
-        'ownerID': ownerID,
-        'shopID': shopID,
-        'shopName': _shopNameCtrl.text.trim(),
-        'negeri': _selectedNegeri,
-        'daerah': _districtCtrl.text.trim(),
-        'status': 'Aktif',
-        'joinDate': now,
-        'timestamp': now,
-      });
+      // 3. global_branches tak perlu — discovery guna tenants + branches join
 
       if (!mounted) return;
 

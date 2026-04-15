@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
+import '../../services/supabase_client.dart';
 
 class SaasFeedbackScreen extends StatefulWidget {
   const SaasFeedbackScreen({super.key});
@@ -11,7 +11,7 @@ class SaasFeedbackScreen extends StatefulWidget {
 }
 
 class _SaasFeedbackScreenState extends State<SaasFeedbackScreen> with SingleTickerProviderStateMixin {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
   late final TabController _tab;
 
   @override
@@ -23,9 +23,17 @@ class _SaasFeedbackScreenState extends State<SaasFeedbackScreen> with SingleTick
   @override
   void dispose() { _tab.dispose(); super.dispose(); }
 
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
+    return 0;
+  }
+
   String _fmtTs(dynamic v) {
-    if (v == null) return '-';
-    final ms = v is num ? v.toInt() : int.tryParse(v.toString()) ?? 0;
+    final ms = _tsFromIso(v);
     if (ms == 0) return '-';
     return DateFormat('dd/MM/yy HH:mm').format(DateTime.fromMillisecondsSinceEpoch(ms));
   }
@@ -66,18 +74,19 @@ class _SaasFeedbackScreenState extends State<SaasFeedbackScreen> with SingleTick
       ])),
     )) ?? false;
     if (!ok) return;
-    await _db.collection('app_feedback').doc(fb['id']).update({
+    await _sb.from('app_feedback').update({
       'status': 'resolved',
-      'resolvedAt': DateTime.now().millisecondsSinceEpoch,
-      'resolvedBy': 'saas_owner',
-      'resolveNote': noteCtrl.text.trim(),
-    });
+      'resolved_at': DateTime.now().toIso8601String(),
+      'resolve_note': noteCtrl.text.trim(),
+    }).eq('id', fb['id']);
   }
 
   Future<void> _reopen(Map<String, dynamic> fb) async {
-    await _db.collection('app_feedback').doc(fb['id']).update({
-      'status': 'open', 'resolvedAt': null, 'resolvedBy': null, 'resolveNote': null,
-    });
+    await _sb.from('app_feedback').update({
+      'status': 'open',
+      'resolved_at': null,
+      'resolve_note': null,
+    }).eq('id', fb['id']);
   }
 
   @override
@@ -114,13 +123,24 @@ class _SaasFeedbackScreenState extends State<SaasFeedbackScreen> with SingleTick
   }
 
   Widget _buildList({required String status}) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _db.collection('app_feedback').where('status', isEqualTo: status).snapshots(),
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _sb.from('app_feedback').stream(primaryKey: ['id']).eq('status', status),
       builder: (ctx, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
+        if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator(color: AppColors.primary));
         }
-        final docs = (snap.data?.docs ?? []).map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>}).toList();
+        final docs = snap.data!.map<Map<String, dynamic>>((r) {
+          return {
+            ...Map<String, dynamic>.from(r),
+            'senderName': r['sender_name'] ?? '',
+            'senderRole': r['sender_role'] ?? '',
+            'ownerID': '',
+            'shopID': '',
+            'resolveNote': r['resolve_note'] ?? '',
+            'createdAt': _tsFromIso(r['created_at']),
+            'resolvedAt': _tsFromIso(r['resolved_at']),
+          };
+        }).toList();
         docs.sort((a, b) {
           final ka = status == 'resolved' ? (a['resolvedAt'] ?? 0) : (a['createdAt'] ?? 0);
           final kb = status == 'resolved' ? (b['resolvedAt'] ?? 0) : (b['createdAt'] ?? 0);
@@ -162,7 +182,7 @@ class _SaasFeedbackScreenState extends State<SaasFeedbackScreen> with SingleTick
           ),
           const SizedBox(width: 6),
           Expanded(child: Text(
-            '${fb['senderName'] ?? '-'} · ${fb['ownerID'] ?? '-'}@${fb['shopID'] ?? '-'}',
+            (fb['senderName'] ?? '-').toString(),
             style: const TextStyle(color: AppColors.textSub, fontSize: 10, fontWeight: FontWeight.w800),
             overflow: TextOverflow.ellipsis,
           )),

@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
+import '../../services/repair_service.dart';
+import '../../services/supabase_client.dart';
 
 class SvDashboardTab extends StatefulWidget {
   final String ownerID;
@@ -21,10 +23,74 @@ class SvDashboardTab extends StatefulWidget {
 }
 
 class _SvDashboardTabState extends State<SvDashboardTab> {
+  final _sb = SupabaseService.client;
+  final _repairService = RepairService();
+  String? _branchId;
+  List<Map<String, dynamic>> _repairRows = [];
+  List<Map<String, dynamic>> _phoneSalesRows = [];
+  StreamSubscription? _repairSub;
+  StreamSubscription? _phoneSub;
+
   int _segment = 0; // 0 = Job Repair, 1 = Jualan Telefon
   String _filter = 'SEMUA';
   DateTime? _customStart;
   DateTime? _customEnd;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  @override
+  void dispose() {
+    _repairSub?.cancel();
+    _phoneSub?.cancel();
+    super.dispose();
+  }
+
+  int _tsFromIso(dynamic v) {
+    if (v is int) return v;
+    if (v is String && v.isNotEmpty) {
+      final dt = DateTime.tryParse(v);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
+    return 0;
+  }
+
+  Future<void> _init() async {
+    await _repairService.init();
+    _branchId = _repairService.branchId;
+    if (_branchId == null) return;
+    _repairSub = _sb
+        .from('jobs')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map<Map<String, dynamic>>((r) => {
+        ...Map<String, dynamic>.from(r),
+        'timestamp': _tsFromIso(r['created_at']),
+      }).toList();
+      if (mounted) setState(() => _repairRows = list);
+    });
+    _phoneSub = _sb
+        .from('phone_sales')
+        .stream(primaryKey: ['id'])
+        .eq('branch_id', _branchId!)
+        .listen((rows) {
+      final list = rows.map<Map<String, dynamic>>((r) {
+        final notes = (r['notes'] is Map) ? Map<String, dynamic>.from(r['notes']) : <String, dynamic>{};
+        return {
+          ...Map<String, dynamic>.from(r),
+          'jual': r['sold_price'] ?? notes['jual'] ?? 0,
+          'kos': notes['kos'] ?? 0,
+          'shopID': widget.shopID,
+          'timestamp': _tsFromIso(r['sold_at'] ?? r['created_at']),
+        };
+      }).toList();
+      if (mounted) setState(() => _phoneSalesRows = list);
+    });
+  }
 
   bool _isInRange(Map<String, dynamic> data) {
     if (_filter == 'SEMUA') return true;
@@ -258,50 +324,30 @@ class _SvDashboardTabState extends State<SvDashboardTab> {
   // ═══════════════════════════════════════
 
   Widget _buildRepairSegment() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('repairs_${widget.ownerID}')
-          .snapshots(),
-      builder: (context, snapshot) {
-        int totalJobs = 0;
-        int inProgress = 0;
-        int waitingPart = 0;
-        int readyToPickup = 0;
-        int completed = 0;
-        int cancel = 0;
-        int reject = 0;
+    int totalJobs = 0;
+    int inProgress = 0;
+    int waitingPart = 0;
+    int readyToPickup = 0;
+    int completed = 0;
+    int cancel = 0;
+    int reject = 0;
 
-        if (snapshot.hasData) {
-          for (final doc in snapshot.data!.docs) {
-            final data = doc.data() as Map<String, dynamic>;
-            if (!_isInRange(data)) continue;
-            totalJobs++;
-            final status = (data['status'] ?? '').toString().toUpperCase();
-            switch (status) {
-              case 'IN PROGRESS':
-                inProgress++;
-                break;
-              case 'WAITING PART':
-                waitingPart++;
-                break;
-              case 'READY TO PICKUP':
-                readyToPickup++;
-                break;
-              case 'COMPLETED':
-                completed++;
-                break;
-              case 'CANCEL':
-              case 'CANCELLED':
-                cancel++;
-                break;
-              case 'REJECT':
-                reject++;
-                break;
-            }
-          }
-        }
+    for (final data in _repairRows) {
+      if (!_isInRange(data)) continue;
+      totalJobs++;
+      final status = (data['status'] ?? '').toString().toUpperCase();
+      switch (status) {
+        case 'IN PROGRESS': inProgress++; break;
+        case 'WAITING PART': waitingPart++; break;
+        case 'READY TO PICKUP': readyToPickup++; break;
+        case 'COMPLETED': completed++; break;
+        case 'CANCEL':
+        case 'CANCELLED': cancel++; break;
+        case 'REJECT': reject++; break;
+      }
+    }
 
-        return Column(children: [
+    return Column(children: [
           _buildTotalCard(totalJobs, 'JUMLAH JOB', FontAwesomeIcons.screwdriverWrench,
               const Color(0xFF6366F1), const Color(0xFF8B5CF6)),
           const SizedBox(height: 14),
@@ -323,8 +369,6 @@ class _SvDashboardTabState extends State<SvDashboardTab> {
             _buildStatCard('Reject', reject, FontAwesomeIcons.circleXmark, AppColors.red, const Color(0xFFFEE2E2)),
           ]),
         ]);
-      },
-    );
   }
 
   // ═══════════════════════════════════════
@@ -332,51 +376,39 @@ class _SvDashboardTabState extends State<SvDashboardTab> {
   // ═══════════════════════════════════════
 
   Widget _buildPhoneSalesSegment() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('phone_sales_${widget.ownerID}')
-          .snapshots(),
-      builder: (context, snapshot) {
-        int totalSales = 0;
-        int salesToday = 0;
-        double totalJual = 0;
-        double totalKos = 0;
-        double jualToday = 0;
-        double kosToday = 0;
+    int totalSales = 0;
+    int salesToday = 0;
+    double totalJual = 0;
+    double totalKos = 0;
+    double jualToday = 0;
+    double kosToday = 0;
 
-        final now = DateTime.now();
+    final now = DateTime.now();
 
-        if (snapshot.hasData) {
-          for (final doc in snapshot.data!.docs) {
-            final data = doc.data() as Map<String, dynamic>;
-            final shopID = (data['shopID'] ?? '').toString().toUpperCase();
-            if (shopID != widget.shopID) continue;
+    for (final data in _phoneSalesRows) {
+      if (!_isInRange(data)) continue;
 
-            if (!_isInRange(data)) continue;
+      totalSales++;
+      final jual = ((data['jual'] ?? 0) as num).toDouble();
+      final kos = ((data['kos'] ?? 0) as num).toDouble();
+      totalJual += jual;
+      totalKos += kos;
 
-            totalSales++;
-            final jual = ((data['jual'] ?? 0) as num).toDouble();
-            final kos = ((data['kos'] ?? 0) as num).toDouble();
-            totalJual += jual;
-            totalKos += kos;
-
-            // Check if today
-            final ts = data['timestamp'];
-            if (ts is int) {
-              final d = DateTime.fromMillisecondsSinceEpoch(ts);
-              if (d.year == now.year && d.month == now.month && d.day == now.day) {
-                salesToday++;
-                jualToday += jual;
-                kosToday += kos;
-              }
-            }
-          }
+      final ts = data['timestamp'];
+      if (ts is int) {
+        final d = DateTime.fromMillisecondsSinceEpoch(ts);
+        if (d.year == now.year && d.month == now.month && d.day == now.day) {
+          salesToday++;
+          jualToday += jual;
+          kosToday += kos;
         }
+      }
+    }
 
-        final totalProfit = totalJual - totalKos;
-        final profitToday = jualToday - kosToday;
+    final totalProfit = totalJual - totalKos;
+    final profitToday = jualToday - kosToday;
 
-        return Column(children: [
+    return Column(children: [
           // Sales today highlight card
           Container(
             width: double.infinity,
@@ -429,8 +461,6 @@ class _SvDashboardTabState extends State<SvDashboardTab> {
                 totalProfit >= 0 ? const Color(0xFFD1FAE5) : const Color(0xFFFEE2E2)),
           ]),
         ]);
-      },
-    );
   }
 
 

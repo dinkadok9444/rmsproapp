@@ -1,7 +1,7 @@
 /* Pro Mode page */
 .pm-status {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: var(--sp-3);
   align-items: center;
   padding: var(--sp-3);
@@ -9,6 +9,8 @@
   border-radius: var(--radius, 10px);
   border: 1px solid #c4b5fd;
 }
+.pm-status__info { min-width: 0; }
+.pm-status__title, .pm-status__sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pm-status.is-inactive {
   background: var(--bg-subtle, #f1f5f9);
   border-color: var(--border, #e2e8f0);
@@ -43,13 +45,14 @@
   border-radius: var(--radius, 10px);
 }
 .pm-tab {
-  flex: 1; border: 0; background: transparent;
+  flex: 1 1 0; min-width: 0; border: 0; background: transparent;
   padding: 10px 12px;
   font: inherit; font-weight: 600; font-size: var(--fs-sm);
   color: var(--text-muted, #64748b);
   border-radius: calc(var(--radius, 10px) - 2px);
   cursor: pointer;
   display: inline-flex; gap: 8px; align-items: center; justify-content: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pm-tab.is-active {
   background: var(--card-bg, #fff);
@@ -117,6 +120,7 @@
   margin-top: 4px;
   font-weight: 700;
   color: var(--text, #0f172a);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .pm-card__sub {
   font-size: var(--fs-xs);
@@ -145,10 +149,12 @@
   border-radius: var(--radius, 10px);
   background: var(--card-bg, #fff);
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: var(--sp-3);
   align-items: center;
 }
+.pm-dealer > div:not(.pm-dealer__avatar) { min-width: 0; }
+.pm-dealer__name, .pm-dealer__shop, .pm-dealer__tel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pm-dealer__avatar {
   width: 42px; height: 42px; border-radius: 50%;
   background: #ede9fe; color: #7c3aed;

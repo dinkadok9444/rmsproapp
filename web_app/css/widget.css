@@ -37,8 +37,12 @@
 }
 .wg-box__head {
   display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  flex-wrap: wrap;
 }
-.wg-box__title { font-size: var(--fs-sm); font-weight: 900; color: var(--text-primary); letter-spacing: .3px; }
+.wg-box__title {
+  font-size: var(--fs-sm); font-weight: 900; color: var(--text-primary); letter-spacing: .3px;
+  min-width: 0; flex: 1;
+}
 .wg-box__title i { margin-right: 6px; }
 .wg-select {
   padding: 6px 10px;
@@ -79,8 +83,15 @@
   box-shadow: 0 6px 14px rgba(0,0,0,.08);
   border-color: var(--_c);
 }
-.wg-stat__val { color: var(--_c); font-size: 22px; font-weight: 900; line-height: 1.1; }
-.wg-stat__lbl { color: var(--text-muted); font-size: 9px; font-weight: 900; margin-top: 3px; letter-spacing: .3px; }
+.wg-stat { min-width: 0; }
+.wg-stat__val {
+  color: var(--_c); font-size: 22px; font-weight: 900; line-height: 1.1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wg-stat__lbl {
+  color: var(--text-muted); font-size: 9px; font-weight: 900; margin-top: 3px; letter-spacing: .3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* Komponen */
 .wg-komp-search { display: flex; gap: 8px; }
@@ -124,8 +135,12 @@
   border-left: 3px solid var(--cyan);
   border-radius: 8px;
   display: grid; gap: 2px;
+  min-width: 0;
 }
-.wg-komp-row__model { font-size: 11px; font-weight: 800; color: var(--text-primary); }
+.wg-komp-row__model {
+  font-size: 11px; font-weight: 800; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .wg-komp-row__meta  { display: flex; flex-wrap: wrap; gap: 8px; font-size: 10px; }
 .wg-komp-row__kod  { color: var(--cyan); font-weight: 900; }
 .wg-komp-row__info { color: var(--text-muted); }
@@ -142,7 +157,9 @@
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--_c) 25%, transparent);
   background: color-mix(in srgb, var(--_c) 8%, white);
+  min-width: 0;
 }
+.wg-kew__card > div:last-child { min-width: 0; flex: 1; }
 .wg-kew__card.c-green   { --_c: var(--green); }
 .wg-kew__card.c-orange  { --_c: var(--orange); }
 .wg-kew__card.c-red     { --_c: var(--red); }
@@ -156,5 +173,11 @@
   font-size: 14px;
   flex-shrink: 0;
 }
-.wg-kew__lbl { font-size: 9px; font-weight: 900; color: var(--text-muted); letter-spacing: .3px; }
-.wg-kew__val { font-size: 16px; font-weight: 900; color: var(--_c); }
+.wg-kew__lbl {
+  font-size: 9px; font-weight: 900; color: var(--text-muted); letter-spacing: .3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.wg-kew__val {
+  font-size: 16px; font-weight: 900; color: var(--_c);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}

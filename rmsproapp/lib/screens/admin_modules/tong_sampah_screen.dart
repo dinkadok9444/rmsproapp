@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import '../../theme/app_theme.dart';
+import '../../services/supabase_client.dart';
 
 class TongSampahScreen extends StatefulWidget {
   const TongSampahScreen({super.key});
@@ -11,7 +11,7 @@ class TongSampahScreen extends StatefulWidget {
 }
 
 class _TongSampahScreenState extends State<TongSampahScreen> {
-  final _db = FirebaseFirestore.instance;
+  final _sb = SupabaseService.client;
   List<Map<String, dynamic>> _deleted = [];
   bool _isLoading = true;
 
@@ -26,43 +26,33 @@ class _TongSampahScreenState extends State<TongSampahScreen> {
     try {
       final List<Map<String, dynamic>> all = [];
 
-      // Fetch deleted dealers
-      final dealerSnap = await _db
-          .collection('saas_dealers')
-          .where('status', isEqualTo: 'DELETED')
-          .get();
-      for (final doc in dealerSnap.docs) {
-        final d = doc.data();
+      // Fetch deleted tenants
+      final dealerRows = await _sb.from('tenants').select().eq('status', 'DELETED');
+      for (final r in dealerRows) {
+        final config = (r['config'] is Map) ? Map<String, dynamic>.from(r['config']) : <String, dynamic>{};
         all.add({
-          'id': doc.id,
-          'collection': 'saas_dealers',
+          'id': r['id'],
+          'collection': 'tenants',
           'type': 'AKAUN DEALER',
-          'label': (d['namaKedai'] ?? d['ownerName'] ?? doc.id).toString(),
-          'sublabel': d['ownerName'] ?? '-',
-          'timestamp': d['timestamp'] ?? d['createdAt'],
-          ...d,
+          'label': (r['nama_kedai'] ?? config['ownerName'] ?? r['owner_id']).toString(),
+          'sublabel': config['ownerName'] ?? '-',
+          'timestamp': r['created_at'],
         });
       }
 
-      // Fetch deleted complaints
-      final aduanSnap = await _db
-          .collection('aduan_sistem')
-          .where('status', isEqualTo: 'DELETED')
-          .get();
-      for (final doc in aduanSnap.docs) {
-        final d = doc.data();
+      // Fetch deleted complaints (system_complaints table)
+      final aduanRows = await _sb.from('system_complaints').select().eq('status', 'DELETED');
+      for (final r in aduanRows) {
         all.add({
-          'id': doc.id,
-          'collection': 'aduan_sistem',
+          'id': r['id'],
+          'collection': 'system_complaints',
           'type': 'TIKET ADUAN',
-          'label': (d['tajuk'] ?? '-').toString(),
-          'sublabel': d['namaPengirim'] ?? '-',
-          'timestamp': d['timestamp'],
-          ...d,
+          'label': (r['subject'] ?? '-').toString(),
+          'sublabel': r['description'] ?? '-',
+          'timestamp': r['created_at'],
         });
       }
 
-      // Sort by timestamp descending
       all.sort((a, b) {
         final tsA = _toMillis(a['timestamp']);
         final tsB = _toMillis(b['timestamp']);
@@ -79,21 +69,18 @@ class _TongSampahScreenState extends State<TongSampahScreen> {
   }
 
   int _toMillis(dynamic ts) {
-    if (ts is Timestamp) return ts.millisecondsSinceEpoch;
     if (ts is int) return ts;
+    if (ts is String && ts.isNotEmpty) {
+      final dt = DateTime.tryParse(ts);
+      if (dt != null) return dt.millisecondsSinceEpoch;
+    }
     return 0;
   }
 
   String _formatTimestamp(dynamic ts) {
-    if (ts == null) return '-';
-    DateTime? dt;
-    if (ts is Timestamp) {
-      dt = ts.toDate();
-    } else if (ts is int) {
-      dt = DateTime.fromMillisecondsSinceEpoch(ts);
-    }
-    if (dt == null) return '-';
-    return DateFormat('dd/MM/yy HH:mm').format(dt);
+    final ms = _toMillis(ts);
+    if (ms == 0) return '-';
+    return DateFormat('dd/MM/yy HH:mm').format(DateTime.fromMillisecondsSinceEpoch(ms));
   }
 
   void _snack(String msg, {bool err = false}) {
@@ -107,10 +94,10 @@ class _TongSampahScreenState extends State<TongSampahScreen> {
 
   Future<void> _recover(Map<String, dynamic> item) async {
     final collection = item['collection'] as String;
-    final id = item['id'] as String;
-    final newStatus = collection == 'saas_dealers' ? 'Pending' : 'BARU';
+    final id = item['id'].toString();
+    final newStatus = collection == 'tenants' ? 'Pending' : 'BARU';
     try {
-      await _db.collection(collection).doc(id).update({'status': newStatus});
+      await _sb.from(collection).update({'status': newStatus}).eq('id', id);
       _snack('Berjaya dipulihkan');
       _loadDeleted();
     } catch (e) {
@@ -185,7 +172,7 @@ class _TongSampahScreenState extends State<TongSampahScreen> {
     );
     if (confirmed != true) return;
     try {
-      await _db.collection(item['collection']).doc(item['id']).delete();
+      await _sb.from(item['collection']).delete().eq('id', item['id'].toString());
       _snack('Data dipadam sepenuhnya');
       _loadDeleted();
     } catch (e) {

@@ -2,14 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/pdf_url_helper.dart';
+import '../../services/supabase_client.dart';
+import '../../services/supabase_storage.dart';
 
 class TemplatePdfScreen extends StatefulWidget {
   const TemplatePdfScreen({super.key});
@@ -18,8 +18,8 @@ class TemplatePdfScreen extends StatefulWidget {
 }
 
 class _TemplatePdfScreenState extends State<TemplatePdfScreen> {
-  final _db = FirebaseFirestore.instance;
-  final _storage = FirebaseStorage.instance;
+  final _sb = SupabaseService.client;
+  final _storage = SupabaseStorageHelper();
   bool _isLoading = true;
 
   static const _templates = [
@@ -37,7 +37,7 @@ class _TemplatePdfScreenState extends State<TemplatePdfScreen> {
 
   final List<String?> _imageUrls = List.filled(10, null);
   final List<bool> _busy = List.filled(10, false);
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
+  StreamSubscription? _sub;
 
   @override
   void initState() {
@@ -53,9 +53,14 @@ class _TemplatePdfScreenState extends State<TemplatePdfScreen> {
 
   void _listenTemplates() {
     _sub?.cancel();
-    _sub = _db.collection('config').doc('pdf_templates').snapshots().listen(
-      (snap) {
-        final data = snap.data() ?? {};
+    _sub = _sb
+        .from('platform_config')
+        .stream(primaryKey: ['id'])
+        .eq('id', 'pdf_templates')
+        .listen(
+      (rows) {
+        final row = rows.isNotEmpty ? rows.first : null;
+        final data = (row?['value'] is Map) ? Map<String, dynamic>.from(row!['value']) : <String, dynamic>{};
         for (int i = 0; i < 10; i++) {
           final v = data['tpl_${i + 1}'];
           _imageUrls[i] = (v is String && v.isNotEmpty) ? v : null;
@@ -75,8 +80,8 @@ class _TemplatePdfScreenState extends State<TemplatePdfScreen> {
 
   Future<void> _manualRefresh() async {
     try {
-      final snap = await _db.collection('config').doc('pdf_templates').get();
-      final data = snap.data() ?? {};
+      final row = await _sb.from('platform_config').select('value').eq('id', 'pdf_templates').maybeSingle();
+      final data = (row?['value'] is Map) ? Map<String, dynamic>.from(row!['value']) : <String, dynamic>{};
       int count = 0;
       for (int i = 0; i < 10; i++) {
         final v = data['tpl_${i + 1}'];
@@ -88,6 +93,22 @@ class _TemplatePdfScreenState extends State<TemplatePdfScreen> {
     } catch (e) {
       _snack('Ralat: $e', err: true);
     }
+  }
+
+  Future<void> _upsertTemplate(Map<String, dynamic> patch) async {
+    final existing = await _sb.from('platform_config').select('value').eq('id', 'pdf_templates').maybeSingle();
+    final value = (existing?['value'] is Map) ? Map<String, dynamic>.from(existing!['value']) : <String, dynamic>{};
+    value.addAll(patch);
+    value['updatedAt'] = DateTime.now().toIso8601String();
+    await _sb.from('platform_config').upsert({'id': 'pdf_templates', 'value': value});
+  }
+
+  Future<void> _removeTemplateKey(String key) async {
+    final existing = await _sb.from('platform_config').select('value').eq('id', 'pdf_templates').maybeSingle();
+    final value = (existing?['value'] is Map) ? Map<String, dynamic>.from(existing!['value']) : <String, dynamic>{};
+    value.remove(key);
+    value['updatedAt'] = DateTime.now().toIso8601String();
+    await _sb.from('platform_config').upsert({'id': 'pdf_templates', 'value': value});
   }
 
   void _snack(String msg, {bool err = false}) {
@@ -206,17 +227,13 @@ class _TemplatePdfScreenState extends State<TemplatePdfScreen> {
     try {
       final tplId = 'tpl_${index + 1}';
       final bytes = await file.readAsBytes();
-      final ref = _storage.ref('pdf_templates/$tplId.jpg');
-      await ref.putData(
-        Uint8List.fromList(bytes),
-        SettableMetadata(contentType: 'image/jpeg'),
+      final url = await _storage.uploadBytes(
+        bucket: 'pdf_templates',
+        path: '$tplId.jpg',
+        bytes: Uint8List.fromList(bytes),
       );
-      final url = await ref.getDownloadURL();
 
-      await _db.collection('config').doc('pdf_templates').set(
-        {tplId: url, 'updatedAt': FieldValue.serverTimestamp()},
-        SetOptions(merge: true),
-      );
+      await _upsertTemplate({tplId: url});
 
       setState(() => _imageUrls[index] = url);
       _snack('${_templates[index].name} berjaya dimuat naik');
@@ -232,13 +249,10 @@ class _TemplatePdfScreenState extends State<TemplatePdfScreen> {
     setState(() => _busy[index] = true);
     try {
       try {
-        await _storage.ref('pdf_templates/$tplId.jpg').delete();
+        await _storage.delete(bucket: 'pdf_templates', path: '$tplId.jpg');
       } catch (_) {}
 
-      await _db.collection('config').doc('pdf_templates').set(
-        {tplId: FieldValue.delete(), 'updatedAt': FieldValue.serverTimestamp()},
-        SetOptions(merge: true),
-      );
+      await _removeTemplateKey(tplId);
 
       setState(() => _imageUrls[index] = null);
       _snack('${_templates[index].name} dipadam');

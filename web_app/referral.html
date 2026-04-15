@@ -14,8 +14,8 @@
   <link rel="stylesheet" href="css/branch.css">
   <link rel="stylesheet" href="css/settings.css">
   <style>
-    .rf-head{display:flex;align-items:center;gap:8px;padding:12px;background:#fff;border-bottom:1px solid #e2e8f0;}
-    .rf-title{color:#10b981;font-size:14px;font-weight:900;flex:1;}
+    .rf-head{display:flex;align-items:center;gap:8px;padding:12px;background:#fff;border-bottom:1px solid #e2e8f0;flex-wrap:wrap;}
+    .rf-title{color:#10b981;font-size:14px;font-weight:900;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .rf-title i{margin-right:6px;}
     .rf-count{color:#94a3b8;font-size:10px;font-weight:700;}
     .rf-jana-btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:#10b981;color:#000;border:none;border-radius:6px;font-size:9px;font-weight:900;cursor:pointer;}
@@ -24,7 +24,11 @@
     .rf-list{padding:12px;}
     .rf-card{margin-bottom:10px;padding:12px;background:linear-gradient(#fff,#f8fafc);border-radius:12px;border:1px solid rgba(16,185,129,.2);cursor:pointer;}
     .rf-card.suspended{border-color:rgba(220,38,38,.2);}
-    .rf-row1{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+    .rf-row1{display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:0;}
+    .rf-row3{flex-wrap:wrap;}
+    .rf-card{min-width:0;}
+    .rf-bank{min-width:0;overflow:hidden;}
+    .rf-bank-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .rf-nama{color:#0f172a;font-size:13px;font-weight:800;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .rf-badge{padding:2px 6px;border-radius:4px;font-size:8px;font-weight:900;}
     .rf-badge.active{background:rgba(16,185,129,.15);color:#10b981;}
@@ -67,8 +71,8 @@
     .rf-field{margin-bottom:10px;}
     .rf-field label{display:block;color:#475569;font-size:10px;font-weight:900;margin-bottom:4px;}
     .rf-field input{width:100%;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font:inherit;font-size:12px;}
-    .rf-actions{display:flex;gap:6px;margin-top:6px;}
-    .rf-actions button{flex:1;padding:10px;border:none;border-radius:8px;font-weight:900;font-size:11px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;}
+    .rf-actions{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;}
+    .rf-actions button{flex:1 1 auto;min-width:0;padding:10px;border:none;border-radius:8px;font-weight:900;font-size:11px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;}
     .rf-save{background:#f59e0b;color:#000;}
     .rf-toggle{background:#eab308;color:#000;}
     .rf-toggle.active{background:#10b981;color:#000;}
@@ -152,11 +156,8 @@
         <button class="rf-del" id="pinOk" style="flex:1 !important;">PADAM</button>
       </div>
     </div>
-  </div>
-
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
-  <script src="js/firebase-init.js"></script>
+  </div>  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
   <script src="js/referral.js"></script>
 </body>
 </html>

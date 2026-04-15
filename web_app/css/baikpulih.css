@@ -222,10 +222,12 @@ select.bp-input { appearance: none; -webkit-appearance: none; cursor: pointer;
 .bp-item__nama { width: 100%; }
 .bp-item__row2 {
   display: grid;
-  grid-template-columns: 60px 1fr auto 36px;
+  grid-template-columns: 60px minmax(0, 1fr) auto 36px;
   gap: 6px;
   align-items: center;
+  box-sizing: border-box;
 }
+.bp-item__row2 > * { min-width: 0; }
 .bp-item__qty, .bp-item__harga { text-align: center; padding: 10px 10px; }
 .bp-item__sub {
   color: var(--primary);
@@ -463,5 +465,20 @@ select.bp-input { appearance: none; -webkit-appearance: none; cursor: pointer;
 /* ── Responsive ── */
 @media (max-width: 480px) {
   .bp-grid2 { grid-template-columns: 1fr; }
-  .bp-item__row2 { grid-template-columns: 50px 1fr auto 36px; }
+  .bp-item__row2 { grid-template-columns: 50px minmax(0,1fr) auto 36px; }
+  .bp-pattern { grid-template-columns: repeat(3, 44px); gap: 10px; }
+  .bp-pattern-dot { width: 44px; height: 44px; font-size: 12px; }
+  .bp-gallery-card { height: 120px; }
 }
+
+/* ── Hygiene ── */
+.bp-app, .bp-step, .bp-field, .bp-toggle, .bp-item, .bp-gallery, .bp-summary-card, .bp-nav { box-sizing: border-box; }
+.bp-app *, .bp-step * { box-sizing: border-box; }
+.bp-input { min-width: 0; }
+.bp-toggle button { min-width: 0; }
+.bp-navbtn { min-width: 0; }
+.bp-appbar__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp-cust-hit__name, .bp-cust-hit__tel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp-summary > div > span, .bp-summary > div strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.bp-promo-row > * { min-width: 0; }
+.bp-pass-row > * { min-width: 0; }

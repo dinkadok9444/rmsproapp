@@ -1,4 +1,4 @@
-/* Auth — port lib/services/auth_service.dart */
+/* Auth — mirror lib/services/auth_service.dart (Supabase). */
 (function () {
   'use strict';
   if (!document.getElementById('loginSegment')) return;
@@ -12,7 +12,8 @@
   const phoneEl   = document.getElementById('staffPhone');
   const pinEl     = document.getElementById('staffPin');
 
-  // Restore remembered id
+  const DOMAIN = 'rmspro.internal';
+
   const saved = localStorage.getItem('rms_saved_id');
   if (saved) { idEl.value = saved; remember.checked = true; }
 
@@ -29,14 +30,13 @@
     btn.innerHTML = on ? '<i class="fas fa-circle-notch fa-spin"></i> SEDANG MASUK…' : btn.dataset.label;
   }
 
-  function token() {
-    const c = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let t = '';
-    for (let i = 0; i < 16; i++) t += c[Math.floor(Math.random() * c.length)];
-    return t + Date.now().toString(36);
+  async function signIn(email, password) {
+    const { data, error } = await window.sb.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message.includes('Invalid') ? 'Katalaluan Salah' : error.message);
+    return data.user;
   }
 
-  // ---------- Owner / branch / admin login ----------
+  // ---------- Owner / branch / admin ----------
   ownerForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     clearError();
@@ -46,40 +46,55 @@
 
     setLoading(ownerForm, true);
     try {
+      let email, destination;
+
       // 1) Admin
       if (raw.toLowerCase() === 'admin') {
-        if (pass !== 'master123') throw new Error('Katalaluan Salah');
-        localStorage.setItem('rms_session_token', token());
-        localStorage.setItem('rms_user_role', 'admin');
-        localStorage.setItem('rms_saved_id', 'admin');
-        window.location.href = 'dashboard.html';
-        return;
+        email = `admin@${DOMAIN}`;
+        destination = 'dashboard.html';
       }
-
-      // 2) Branch login (format: owner@BRANCH)
-      if (raw.includes('@')) {
+      // 2) Branch login "owner@BRANCH"
+      else if (raw.includes('@')) {
         const [own, br] = raw.split('@');
-        const branchId = own.toLowerCase() + '@' + br.toUpperCase();
-        const snap = await db.collection('global_branches').doc(branchId).get();
-        if (!snap.exists) throw new Error('ID Tidak Wujud');
-        const d = snap.data();
-        if (pass !== d.pass) throw new Error('Katalaluan Salah');
-        finishBranch(branchId, raw);
-        return;
+        email = `owner.${own.toLowerCase()}.${br.toUpperCase()}@${DOMAIN}`;
+        destination = 'branch.html';
+      }
+      // 3) Owner only — first branch picked auto via users.current_branch_id
+      else {
+        email = `${raw.toLowerCase()}@${DOMAIN}`;
+        destination = 'branch.html';
       }
 
-      // 3) Owner only — pick first shop
-      const ownerID = raw.toLowerCase();
-      const snap = await db.collection('saas_dealers').doc(ownerID).get();
-      if (!snap.exists) throw new Error('ID Tidak Dijumpai');
-      const d = snap.data();
-      if (d.status && d.status !== 'Aktif') throw new Error('Akaun digantung');
-      if (pass !== d.pass && pass !== d.password) throw new Error('Katalaluan Salah');
+      await signIn(email, pass);
 
-      const shops = await db.collection('shops_' + ownerID).limit(1).get();
-      if (shops.empty) throw new Error('Sila daftar sekurang-kurangnya satu cawangan.');
-      const branchId = ownerID + '@' + shops.docs[0].id;
-      finishBranch(branchId, raw);
+      // Verify tenant status
+      const ctx = await window.getCurrentUserCtx();
+      if (!ctx) throw new Error('Akaun tidak sah');
+      if (ctx.tenant_id) {
+        const { data: tenant } = await window.sb.from('tenants').select('status').eq('id', ctx.tenant_id).single();
+        if (tenant && tenant.status && tenant.status !== 'Aktif') {
+          await window.sb.auth.signOut();
+          throw new Error('Akaun digantung');
+        }
+      }
+
+      // Owner-only: pick first branch
+      if (ctx.role === 'owner' && !ctx.current_branch_id) {
+        const { data: branch } = await window.sb
+          .from('branches')
+          .select('id, shop_code')
+          .eq('tenant_id', ctx.tenant_id)
+          .limit(1)
+          .maybeSingle();
+        if (!branch) throw new Error('Sila daftar sekurang-kurangnya satu cawangan.');
+        await window.sb.from('users').update({ current_branch_id: branch.id }).eq('id', ctx.id);
+        window.clearUserCtx();
+      }
+
+      if (remember.checked) localStorage.setItem('rms_saved_id', raw);
+      else localStorage.removeItem('rms_saved_id');
+
+      window.location.href = destination;
     } catch (err) {
       showError(err.message || String(err));
       passEl.value = '';
@@ -88,15 +103,7 @@
     }
   });
 
-  function finishBranch(branchId, rawInput) {
-    localStorage.setItem('rms_session_token', token());
-    localStorage.setItem('rms_current_branch', branchId);
-    if (remember.checked) localStorage.setItem('rms_saved_id', rawInput);
-    else localStorage.removeItem('rms_saved_id');
-    window.location.href = 'branch.html';
-  }
-
-  // ---------- Staff login ----------
+  // ---------- Staff login (phone+pin) ----------
   staffForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     clearError();
@@ -106,18 +113,17 @@
 
     setLoading(staffForm, true);
     try {
-      const snap = await db.collection('global_staff').doc(phone).get();
-      if (!snap.exists) throw new Error('No telefon tidak berdaftar');
-      const d = snap.data();
-      if (d.status === 'suspended') throw new Error('Akaun staf digantung');
-      if (d.pin !== pin) throw new Error('PIN salah');
+      // Check global_staff status dulu
+      const { data: gs } = await window.sb
+        .from('global_staff')
+        .select('status, nama, role, tenant_id, shop_code')
+        .eq('phone', phone)
+        .maybeSingle();
+      if (!gs) throw new Error('No telefon tidak berdaftar');
+      if (gs.status === 'suspended') throw new Error('Akaun staf digantung');
 
-      const branchId = (d.ownerID || '') + '@' + (d.shopID || '');
-      localStorage.setItem('rms_session_token', token());
-      localStorage.setItem('rms_current_branch', branchId);
-      localStorage.setItem('rms_staff_name', d.name || '');
-      localStorage.setItem('rms_staff_phone', phone);
-      localStorage.setItem('rms_staff_role', (d.role || 'staff').toLowerCase());
+      await signIn(`staff.${phone}@${DOMAIN}`, pin);
+
       window.location.href = 'branch.html';
     } catch (err) {
       showError(err.message || String(err));

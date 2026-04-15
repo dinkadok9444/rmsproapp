@@ -1,0 +1,6 @@
+# Cloudflare Pages config — RMS Pro web_app
+# Deploy: cd web_app && wrangler pages deploy . --project-name=rmspro-web
+
+name = "rmspro-web"
+compatibility_date = "2026-04-15"
+pages_build_output_dir = "."
