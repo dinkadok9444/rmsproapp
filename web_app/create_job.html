@@ -118,7 +118,11 @@
 
         <label class="set-label"><i class="fas fa-list"></i> Senarai Item / Servis</label>
         <div id="itemsWrap"></div>
-        <button type="button" class="cj-add-item" id="addItem"><i class="fas fa-plus"></i> Tambah Item</button>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">
+          <button type="button" class="cj-add-item" id="addItem" style="margin-top:0;"><i class="fas fa-plus"></i> Tambah Manual</button>
+          <button type="button" class="cj-add-item" id="addFromStock" style="margin-top:0;"><i class="fas fa-boxes-stacked"></i> Tambah dari Stok</button>
+        </div>
+        <div id="stockUsageList" style="margin-top:6px;font-size:11px;color:var(--text-muted,#64748b);"></div>
 
         <div class="cj-total"><span><i class="fas fa-money-bill"></i> Jumlah Harga</span><span id="totalHarga">RM 0.00</span></div>
 
@@ -171,12 +175,9 @@
       </div>
     </section>
 
-  </main>
-
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-storage-compat.js"></script>
-  <script src="js/firebase-init.js"></script>
+  </main>  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/supabase-init.js"></script>
+  <script src="js/storage-helper.js"></script>
   <script src="js/printer.js"></script>
   <script src="js/create_job.js"></script>
 </body>
